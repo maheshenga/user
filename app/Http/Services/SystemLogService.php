@@ -4,6 +4,7 @@ namespace App\Http\Services;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * 系统日志表
@@ -91,7 +92,7 @@ class SystemLogService
         $dbType = config('database.default');
         $check  = match ($dbType) {
             'pgsql' => DB::select("SELECT tablename FROM pg_tables WHERE tablename LIKE '{$this->tableName}'"),
-            default => DB::statement("show tables like '{$this->tableName}'"),
+            default => Schema::hasTable($this->tableName),
         };
         if (empty($check)) {
             $sql = $this->getCreateSql();
