@@ -12,6 +12,7 @@ final class ModuleInstaller
     public function __construct(
         private readonly ModuleManager $manager,
         private readonly ModuleRepository $repository,
+        private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
     ) {}
 
     public function install(string $name, ?int $actorId = null): void
@@ -26,6 +27,7 @@ final class ModuleInstaller
         $newState = $this->installTargetState($oldState);
 
         $this->runLifecycleAction('install', $name, $oldState, $newState, $actorId, function () use ($manifest, $name, $newState): void {
+            $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $name);
             $this->repository->upsertDiscovered($manifest);
             $this->importMenus($manifest);
             $this->repository->setStatus($name, $newState);
@@ -41,6 +43,8 @@ final class ModuleInstaller
             if ($module === null) {
                 throw new InvalidArgumentException("Module not installed: {$name}");
             }
+
+            $this->reservedPrefixes->assertAllowed((string) $module->admin_prefix, $name);
 
             if (! in_array($module->status, ['installed', 'disabled'], true)) {
                 throw new InvalidArgumentException("Module [{$name}] cannot be enabled from status [{$module->status}]");

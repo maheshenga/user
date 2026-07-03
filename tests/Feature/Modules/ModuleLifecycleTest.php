@@ -2,12 +2,14 @@
 
 namespace Tests\Feature\Modules;
 
+use App\Models\SystemModule;
 use App\Models\SystemModuleLog;
 use App\Models\SystemModuleMigration;
 use App\Models\SystemModuleSource;
 use App\Models\SystemModuleVersion;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use JsonException;
 use Tests\Concerns\CreatesModuleTestSchema;
 use Tests\TestCase;
 
@@ -185,6 +187,69 @@ class ModuleLifecycleTest extends TestCase
         ]);
     }
 
+    public function test_install_fails_for_modules_using_reserved_admin_prefixes_and_logs_failure(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        $root = storage_path('framework/testing-modules-reserved-install');
+        $this->ensureModuleFixture($root.DIRECTORY_SEPARATOR.'MallCollision', $this->moduleManifest('mall_collision', 'mall'));
+        $this->ensureModuleFixture($root.DIRECTORY_SEPARATOR.'SystemCollision', $this->moduleManifest('system_collision', 'system'));
+        \Illuminate\Support\Facades\Config::set('modules.path', $root);
+
+        try {
+            foreach ([
+                ['mall_collision', 'mall'],
+                ['system_collision', 'system'],
+            ] as [$name, $prefix]) {
+                $this->artisan('module:install', ['name' => $name])
+                    ->expectsOutputToContain("reserved admin_prefix [{$prefix}]")
+                    ->assertExitCode(1);
+
+                $this->assertDatabaseMissing('system_module', ['name' => $name, 'status' => 'installed']);
+                $this->assertDatabaseHas('system_module_log', [
+                    'module' => $name,
+                    'action' => 'install',
+                    'result' => 'failed',
+                ]);
+            }
+        } finally {
+            $this->deleteDirectory($root);
+        }
+    }
+
+    public function test_enable_fails_for_installed_module_using_reserved_admin_prefix(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+
+        SystemModule::query()->create([
+            'name' => 'dirty_mall',
+            'title' => 'Dirty Mall Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'installed',
+            'path' => base_path('tests/Fixtures/modules/Blog'),
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'mall',
+            'config_json' => json_decode(file_get_contents(base_path('tests/Fixtures/modules/Blog/module.json')), true),
+            'installed_at' => time(),
+        ]);
+
+        $this->artisan('module:enable', ['name' => 'dirty_mall'])
+            ->expectsOutputToContain('reserved admin_prefix [mall]')
+            ->assertExitCode(1);
+
+        $this->assertDatabaseHas('system_module', ['name' => 'dirty_mall', 'status' => 'installed']);
+        $this->assertDatabaseHas('system_module_log', [
+            'module' => 'dirty_mall',
+            'action' => 'enable',
+            'result' => 'failed',
+        ]);
+    }
+
     /**
      * @return array<int, object>
      */
@@ -243,5 +308,70 @@ class ModuleLifecycleTest extends TestCase
         }
 
         $this->fail("Unique index [".implode(', ', $columns)."] was not found on table [{$table}].");
+    }
+
+    /**
+     * @throws JsonException
+     */
+    private function moduleManifest(string $name, string $adminPrefix): string
+    {
+        return json_encode([
+            'schema_version' => '1.0',
+            'name' => $name,
+            'title' => ucfirst($name).' Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'core_version' => '^8.0',
+            'namespace' => 'Modules\\'.str_replace(' ', '', ucwords(str_replace('_', ' ', $name))),
+            'entry' => 'src/Providers/'.str_replace(' ', '', ucwords(str_replace('_', ' ', $name))).'ServiceProvider.php',
+            'admin_prefix' => $adminPrefix,
+            'controllers' => 'src/Controllers',
+            'views' => 'resources/views',
+            'assets' => 'assets',
+            'migrations' => 'database/migrations',
+            'seeders' => 'database/seeders',
+            'permissions' => [],
+            'external_domains' => [],
+            'dependencies' => new \stdClass(),
+            'conflicts' => new \stdClass(),
+            'database' => [
+                'tables' => [],
+                'preserve_on_uninstall' => true,
+            ],
+            'menus' => [],
+        ], JSON_THROW_ON_ERROR);
+    }
+
+    private function ensureModuleFixture(string $path, string $manifest): void
+    {
+        if (! is_dir($path)) {
+            mkdir($path, 0777, true);
+        }
+
+        file_put_contents($path.DIRECTORY_SEPARATOR.'module.json', $manifest);
+    }
+
+    private function deleteDirectory(string $path): void
+    {
+        if (! is_dir($path)) {
+            return;
+        }
+
+        foreach (scandir($path) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $child = $path.DIRECTORY_SEPARATOR.$entry;
+            if (is_dir($child)) {
+                $this->deleteDirectory($child);
+                continue;
+            }
+
+            @unlink($child);
+        }
+
+        @rmdir($path);
     }
 }

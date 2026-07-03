@@ -193,4 +193,35 @@ class ModuleRuntimeTest extends TestCase
         $this->assertContains('blog/reports/post/index', $nodeNames);
         $this->assertContains('blog/reports/post/inheritedAction', $nodeNames);
     }
+
+    public function test_reserved_prefix_enabled_row_falls_back_to_legacy_resolution(): void
+    {
+        SystemModule::query()->create([
+            'name' => 'dirty_mall',
+            'title' => 'Dirty Mall Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'enabled',
+            'path' => base_path('tests/Fixtures/modules/Blog'),
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'mall',
+            'config_json' => json_decode(file_get_contents(base_path('tests/Fixtures/modules/Blog/module.json')), true),
+            'enabled_at' => time(),
+        ]);
+
+        [$class, $action] = app(\App\Modules\ModuleRouteResolver::class)->resolve('mall', 'post', 'index');
+
+        $this->assertSame('App\\Http\\Controllers\\admin\\mall\\PostController', $class);
+        $this->assertSame('index', $action);
+    }
+
+    public function test_non_reserved_prefix_still_resolves_to_module_controller(): void
+    {
+        [$class, $action] = app(\App\Modules\ModuleRouteResolver::class)->resolve('blog', 'post', 'index');
+
+        $this->assertSame('Modules\\Blog\\Controllers\\PostController', $class);
+        $this->assertSame('index', $action);
+    }
 }

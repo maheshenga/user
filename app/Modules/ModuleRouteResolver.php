@@ -6,13 +6,18 @@ use Illuminate\Support\Str;
 
 final class ModuleRouteResolver
 {
-    public function __construct(private readonly ModuleManager $modules)
-    {
-    }
+    public function __construct(
+        private readonly ModuleManager $modules,
+        private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
+    ) {}
 
     public function resolve(string $secondary, string $controller, string $action): array
     {
         $controllerPath = trim(str_replace('\\', '/', $controller), '/');
+        if ($this->reservedPrefixes->isReserved($secondary)) {
+            return [$this->legacyControllerClass($secondary, $controllerPath), $action];
+        }
+
         $manifest = $this->modules->enabledByPrefix($secondary);
         if ($manifest !== null) {
             $class = $this->moduleControllerClass($manifest, $controllerPath);
@@ -27,12 +32,16 @@ final class ModuleRouteResolver
             }
         }
 
+        return [$this->legacyControllerClass($secondary, $controllerPath), $action];
+    }
+
+    private function legacyControllerClass(string $secondary, string $controllerPath): string
+    {
         $legacyController = str_contains($controllerPath, '/')
             ? Str::studly(str_replace('/', '_', $controllerPath))
             : Str::studly($controllerPath);
-        $legacy = config('admin.controller_namespace').$secondary.'\\'.$legacyController.'Controller';
 
-        return [$legacy, $action];
+        return config('admin.controller_namespace').$secondary.'\\'.$legacyController.'Controller';
     }
 
     private function moduleControllerClass(ModuleManifest $manifest, string $controllerPath): string
