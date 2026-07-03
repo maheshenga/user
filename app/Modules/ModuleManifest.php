@@ -26,6 +26,7 @@ final class ModuleManifest
     ];
 
     private const PATH_FIELDS = [
+        'entry' => null,
         'controllers' => 'src/Controllers',
         'views' => 'resources/views',
         'assets' => 'assets',
@@ -121,6 +122,31 @@ final class ModuleManifest
     public function controllersPath(): string
     {
         return (string) $this->data['controllers'];
+    }
+
+    public function viewsPath(): string
+    {
+        return (string) $this->data['views'];
+    }
+
+    public function assetsPath(): string
+    {
+        return (string) $this->data['assets'];
+    }
+
+    public function migrationsPath(): ?string
+    {
+        return isset($this->data['migrations']) ? (string) $this->data['migrations'] : null;
+    }
+
+    public function seedersPath(): ?string
+    {
+        return isset($this->data['seeders']) ? (string) $this->data['seeders'] : null;
+    }
+
+    public function entryPath(): ?string
+    {
+        return isset($this->data['entry']) ? (string) $this->data['entry'] : null;
     }
 
     /**

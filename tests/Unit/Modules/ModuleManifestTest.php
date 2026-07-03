@@ -18,6 +18,9 @@ class ModuleManifestTest extends TestCase
         $this->assertSame('Modules\\Blog', $manifest->namespace());
         $this->assertSame('blog', $manifest->adminPrefix());
         $this->assertStringEndsWith('tests/Fixtures/modules/Blog/src/Controllers', $manifest->controllersPath());
+        $this->assertStringEndsWith('tests/Fixtures/modules/Blog/resources/views', $manifest->viewsPath());
+        $this->assertStringEndsWith('tests/Fixtures/modules/Blog/assets', $manifest->assetsPath());
+        $this->assertStringEndsWith('tests/Fixtures/modules/Blog/database/migrations', (string) $manifest->migrationsPath());
         $this->assertSame('blog/post/index', $manifest->menus()[0]['children'][0]['href']);
     }
 
@@ -67,6 +70,37 @@ class ModuleManifestTest extends TestCase
                 $this->fail('Expected manifest path escape to throw.');
             } catch (InvalidArgumentException $exception) {
                 $this->assertSame('module.json path escapes module root: assets', $exception->getMessage());
+            }
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    /**
+     * @throws JsonException
+     */
+    public function test_manifest_rejects_entry_paths_that_escape_module_root(): void
+    {
+        $path = base_path('storage/framework/testing-invalid-module-entry-path.json');
+        file_put_contents($path, json_encode([
+            'schema_version' => '1.0',
+            'name' => 'blog',
+            'title' => 'Blog Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'core_version' => '^8.0',
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'blog',
+            'entry' => '../outside/BlogServiceProvider.php',
+        ], JSON_THROW_ON_ERROR));
+
+        try {
+            try {
+                ModuleManifest::fromFile($path);
+                $this->fail('Expected manifest entry path escape to throw.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame('module.json path escapes module root: entry', $exception->getMessage());
             }
         } finally {
             @unlink($path);
