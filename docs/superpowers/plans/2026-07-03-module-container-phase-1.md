@@ -25,6 +25,7 @@
 
 - Modify `composer.json`: add `"Modules\\": "modules/"` PSR-4 autoloading.
 - Modify `phpunit.xml`: run automated tests against SQLite in memory so local deployment data is never dropped by test commands.
+- Modify `tests/Feature/ExampleTest.php`: align the existing smoke test with the real `/` behavior, which redirects to `/admin`.
 - Create `config/modules.php`: local module container settings, allowed module types, and phase policy flags.
 - Create `database/migrations/2026_07_03_000001_create_system_module_tables.php`: create `system_module`, `system_module_version`, `system_module_migration`, `system_module_log`, and `system_module_source`.
 - Create `app/Models/SystemModule.php`: Eloquent model for `system_module`.
@@ -121,6 +122,7 @@ final class ModuleRouteResolver
 - Create: `app/Models/SystemModuleSource.php`
 - Create: `tests/Concerns/CreatesModuleTestSchema.php`
 - Test: `tests/Feature/Modules/ModuleLifecycleTest.php`
+- Test: `tests/Feature/ExampleTest.php`
 
 **Interfaces:**
 - Consumes: existing Laravel migration, config, and Eloquent systems.
@@ -414,10 +416,31 @@ E:\code\user\.tools\php-8.3.32\php.exe vendor/bin/phpunit --filter ModuleLifecyc
 
 Expected: PASS.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 10: Fix the existing root smoke test**
+
+Modify `tests/Feature/ExampleTest.php` so it asserts the existing route behavior:
+
+```php
+public function test_the_application_redirects_to_admin(): void
+{
+    $response = $this->get('/');
+
+    $response->assertRedirect('/admin');
+}
+```
+
+Run:
 
 ```bash
-git add composer.json composer.lock phpunit.xml config/modules.php database/migrations/2026_07_03_000001_create_system_module_tables.php app/Models/SystemModule.php app/Models/SystemModuleLog.php app/Models/SystemModuleMigration.php app/Models/SystemModuleVersion.php app/Models/SystemModuleSource.php tests/Concerns/CreatesModuleTestSchema.php tests/Feature/Modules/ModuleLifecycleTest.php
+E:\code\user\.tools\php-8.3.32\php.exe vendor/bin/phpunit tests/Feature/ExampleTest.php
+```
+
+Expected: PASS.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add composer.json phpunit.xml config/modules.php database/migrations/2026_07_03_000001_create_system_module_tables.php app/Models/SystemModule.php app/Models/SystemModuleLog.php app/Models/SystemModuleMigration.php app/Models/SystemModuleVersion.php app/Models/SystemModuleSource.php tests/Concerns/CreatesModuleTestSchema.php tests/Feature/Modules/ModuleLifecycleTest.php tests/Feature/ExampleTest.php
 git commit -m "feat: add module persistence foundation"
 ```
 
