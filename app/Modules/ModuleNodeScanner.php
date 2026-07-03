@@ -14,9 +14,10 @@ use Throwable;
 
 final class ModuleNodeScanner
 {
-    public function __construct(private readonly ModuleManager $modules)
-    {
-    }
+    public function __construct(
+        private readonly ModuleManager $modules,
+        private readonly ModuleAutoloader $autoloader,
+    ) {}
 
     public function getNodeList(): array
     {
@@ -38,6 +39,8 @@ final class ModuleNodeScanner
         if (! is_dir($controllersPath)) {
             return [];
         }
+
+        $this->autoloader->register($manifest);
 
         $nodes = [];
         foreach ($this->controllerFiles($controllersPath) as $file) {

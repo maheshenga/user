@@ -235,6 +235,84 @@ PHP);
         }
     }
 
+    public function test_module_node_scanner_loads_module_local_parent_without_route_bootstrap(): void
+    {
+        $root = storage_path('framework/testing-module-node-autoload');
+        $moduleRoot = $root.DIRECTORY_SEPARATOR.'LocalNodeScan';
+
+        $this->deleteDirectory($root);
+        mkdir($moduleRoot.DIRECTORY_SEPARATOR.'src'.DIRECTORY_SEPARATOR.'Controllers', 0777, true);
+        mkdir($moduleRoot.DIRECTORY_SEPARATOR.'src'.DIRECTORY_SEPARATOR.'Shared', 0777, true);
+        file_put_contents($moduleRoot.DIRECTORY_SEPARATOR.'module.json', json_encode([
+            'schema_version' => '1.0',
+            'name' => 'local_node_scan',
+            'title' => 'Local Node Scan Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'core_version' => '^8.0',
+            'namespace' => 'Modules\\LocalNodeScan',
+            'admin_prefix' => 'localnodes',
+            'controllers' => 'src/Controllers',
+            'views' => 'resources/views',
+            'assets' => 'assets',
+        ], JSON_THROW_ON_ERROR));
+        file_put_contents($moduleRoot.DIRECTORY_SEPARATOR.'src'.DIRECTORY_SEPARATOR.'Shared'.DIRECTORY_SEPARATOR.'BaseReportController.php', <<<'PHP'
+<?php
+
+namespace Modules\LocalNodeScan\Shared;
+
+use App\Http\Controllers\common\Controller;
+
+abstract class BaseReportController extends Controller
+{
+}
+PHP);
+        file_put_contents($moduleRoot.DIRECTORY_SEPARATOR.'src'.DIRECTORY_SEPARATOR.'Controllers'.DIRECTORY_SEPARATOR.'ReportController.php', <<<'PHP'
+<?php
+
+namespace Modules\LocalNodeScan\Controllers;
+
+use App\Http\Services\annotation\ControllerAnnotation;
+use App\Http\Services\annotation\NodeAnnotation;
+use Modules\LocalNodeScan\Shared\BaseReportController;
+
+#[ControllerAnnotation(title: 'Local Node Reports', auth: true)]
+class ReportController extends BaseReportController
+{
+    #[NodeAnnotation(title: 'Local Node Index', auth: true)]
+    public function index(): void
+    {
+    }
+}
+PHP);
+
+        try {
+            SystemModule::query()->create([
+                'name' => 'local_node_scan',
+                'title' => 'Local Node Scan Module',
+                'vendor' => 'easyadmin8',
+                'version' => '1.0.0',
+                'type' => 'private',
+                'trust_level' => 'private',
+                'status' => 'enabled',
+                'path' => $moduleRoot,
+                'namespace' => 'Modules\\LocalNodeScan',
+                'admin_prefix' => 'localnodes',
+                'config_json' => json_decode(file_get_contents($moduleRoot.DIRECTORY_SEPARATOR.'module.json'), true),
+                'enabled_at' => time(),
+            ]);
+
+            $nodes = app(\App\Modules\ModuleNodeScanner::class)->getNodeList();
+            $nodeNames = array_column($nodes, 'node');
+
+            $this->assertContains('localnodes/report', $nodeNames);
+            $this->assertContains('localnodes/report/index', $nodeNames);
+        } finally {
+            $this->deleteDirectory($root);
+        }
+    }
+
     public function test_current_admin_action_uses_module_controller_for_enabled_module(): void
     {
         $response = $this->get('/admin/runtime/report/actionName');
