@@ -84,6 +84,7 @@ class ModuleRuntimeTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('module-blog-post-index');
+        $response->assertSee('CONTROLLER_JS_PATH: "/module-assets/blog/js/post.js"', false);
     }
 
     public function test_enabled_module_asset_is_served(): void
@@ -93,6 +94,48 @@ class ModuleRuntimeTest extends TestCase
         $response->assertOk();
         $response->assertHeader('content-type', 'text/javascript; charset=UTF-8');
         $response->assertSee('module-blog-post');
+    }
+
+    public function test_admin_loader_keeps_absolute_module_paths_and_legacy_relative_branch(): void
+    {
+        $configAdmin = file_get_contents(public_path('static/config-admin.js'));
+
+        $this->assertIsString($configAdmin);
+        $this->assertStringContainsString("CONFIG.CONTROLLER_JS_PATH.startsWith('/')", $configAdmin);
+        $this->assertStringContainsString('controllerJsPath = CONFIG.CONTROLLER_JS_PATH;', $configAdmin);
+        $this->assertStringContainsString('controllerJsPath = BASE_URL + CONFIG.CONTROLLER_JS_PATH;', $configAdmin);
+    }
+
+    public function test_module_asset_rejects_symlink_escape_when_supported(): void
+    {
+        $assetRoot = base_path('tests/Fixtures/modules/Blog/assets');
+        $outsideDir = storage_path('framework/testing/module-runtime');
+        $outsideFile = $outsideDir.DIRECTORY_SEPARATOR.'escaped.js';
+        $linkPath = $assetRoot.DIRECTORY_SEPARATOR.'js'.DIRECTORY_SEPARATOR.'escaped.js';
+
+        if (! is_dir($outsideDir)) {
+            mkdir($outsideDir, 0777, true);
+        }
+
+        file_put_contents($outsideFile, 'outside-root');
+
+        if (file_exists($linkPath) || is_link($linkPath)) {
+            @unlink($linkPath);
+        }
+
+        if (! @symlink($outsideFile, $linkPath)) {
+            @unlink($outsideFile);
+            $this->markTestSkipped('symlink() is unavailable in this environment');
+        }
+
+        try {
+            $response = $this->get('/module-assets/blog/js/escaped.js');
+
+            $response->assertNotFound();
+        } finally {
+            @unlink($linkPath);
+            @unlink($outsideFile);
+        }
     }
 
     public function test_runtime_only_module_route_is_loaded_without_fixture_autoload_mapping(): void

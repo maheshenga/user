@@ -81,7 +81,7 @@ class AdminController extends Controller
         $jsBasePath           = ($secondary ? "{$secondary}/" : '') . strtolower($controller);
         $moduleManifest       = $secondary ? app(\App\Modules\ModuleManager::class)->enabledByPrefix($secondary) : null;
         if ($moduleManifest) {
-            $thisControllerJsPath = "module-assets/{$secondary}/js/" . strtolower($controller) . ".js";
+            $thisControllerJsPath = "/module-assets/{$secondary}/js/" . strtolower($controller) . ".js";
             $autoloadJs = file_exists($moduleManifest->assetsPath() . DIRECTORY_SEPARATOR . 'js' . DIRECTORY_SEPARATOR . strtolower($controller) . '.js');
         } else {
             $thisControllerJsPath = "admin/js/{$jsBasePath}.js";

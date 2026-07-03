@@ -14,15 +14,35 @@ class ModuleAssetController extends Controller
         abort_if($manifest === null, 404);
         abort_if(str_contains($path, '..') || str_starts_with($path, '/'), 404);
 
+        $assetRoot = realpath($manifest->assetsPath());
         $file = $manifest->assetsPath().DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $path);
-        abort_if(! is_file($file), 404);
+        $filePath = realpath($file);
 
-        if (strtolower(pathinfo($file, PATHINFO_EXTENSION)) === 'js') {
-            return response(file_get_contents($file), 200, [
+        abort_if($assetRoot === false || $filePath === false || ! is_file($filePath), 404);
+        abort_if(! $this->isWithinRoot($assetRoot, $filePath), 404);
+
+        if (strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) === 'js') {
+            return response(file_get_contents($filePath), 200, [
                 'Content-Type' => 'text/javascript; charset=UTF-8',
             ]);
         }
 
-        return response()->file($file);
+        return response()->file($filePath);
+    }
+
+    private function isWithinRoot(string $assetRoot, string $filePath): bool
+    {
+        $normalizedRoot = $this->normalizePath($assetRoot);
+        $normalizedFile = $this->normalizePath($filePath);
+
+        return $normalizedFile === $normalizedRoot
+            || str_starts_with($normalizedFile, $normalizedRoot.DIRECTORY_SEPARATOR);
+    }
+
+    private function normalizePath(string $path): string
+    {
+        $normalized = rtrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path), DIRECTORY_SEPARATOR);
+
+        return DIRECTORY_SEPARATOR === '\\' ? strtolower($normalized) : $normalized;
     }
 }
