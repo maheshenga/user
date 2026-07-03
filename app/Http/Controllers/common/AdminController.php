@@ -73,16 +73,17 @@ class AdminController extends Controller
         $this->adminConfig    = $adminConfig = config('admin');
         $this->isDemo         = config('easyadmin.IS_DEMO', false);
         $secondary            = $parameters['secondary'] ?? '';
-        $controller           = $parameters['controller'] ?? 'index';
+        $controller           = trim((string) ($parameters['controllerPath'] ?? $parameters['controller'] ?? 'index'), '/');
         $action               = $parameters['action'] ?? 'index';
         $this->secondary      = $secondary;
         $this->controller     = $controller;
         $this->action         = $action;
-        $jsBasePath           = ($secondary ? "{$secondary}/" : '') . strtolower($controller);
+        $controllerPath       = strtolower($controller);
+        $jsBasePath           = ($secondary ? "{$secondary}/" : '') . $controllerPath;
         $moduleManifest       = $secondary ? app(\App\Modules\ModuleManager::class)->enabledByPrefix($secondary) : null;
         if ($moduleManifest) {
-            $thisControllerJsPath = "/module-assets/{$secondary}/js/" . strtolower($controller) . ".js";
-            $autoloadJs = file_exists($moduleManifest->assetsPath() . DIRECTORY_SEPARATOR . 'js' . DIRECTORY_SEPARATOR . strtolower($controller) . '.js');
+            $thisControllerJsPath = "/module-assets/{$secondary}/js/" . $controllerPath . ".js";
+            $autoloadJs = file_exists($moduleManifest->assetsPath() . DIRECTORY_SEPARATOR . 'js' . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $controllerPath) . '.js');
         } else {
             $thisControllerJsPath = "admin/js/{$jsBasePath}.js";
             $autoloadJs = file_exists(public_path('static/' . $thisControllerJsPath));
@@ -139,9 +140,10 @@ class AdminController extends Controller
     public function fetch(string $template = '', array $args = []): View
     {
         if (empty($template)) {
-            $basePath = ".{$this->controller}.{$this->action}";
+            $controllerViewPath = str_replace('/', '.', $this->controller);
+            $basePath = ".{$controllerViewPath}.{$this->action}";
             if ($this->secondary && app(\App\Modules\ModuleManager::class)->enabledByPrefix($this->secondary)) {
-                $moduleTemplate = 'modules.' . $this->secondary . '::' . $this->controller . '.' . $this->action;
+                $moduleTemplate = 'modules.' . $this->secondary . '::' . $controllerViewPath . '.' . $this->action;
                 if (view()->exists($moduleTemplate)) {
                     $template = $moduleTemplate;
                 }

@@ -87,6 +87,14 @@ class ModuleRuntimeTest extends TestCase
         $response->assertSee('CONTROLLER_JS_PATH: "/module-assets/blog/js/post.js"', false);
     }
 
+    public function test_enabled_module_nested_admin_route_renders_nested_module_view(): void
+    {
+        $response = $this->get('/admin/blog/reports/post/index');
+
+        $response->assertOk();
+        $response->assertSee('module-blog-reports-post-index');
+    }
+
     public function test_enabled_module_asset_is_served(): void
     {
         $response = $this->get('/module-assets/blog/js/post.js');
@@ -152,6 +160,14 @@ class ModuleRuntimeTest extends TestCase
 
         $response->assertOk();
         $response->assertSeeText('Modules\\RuntimeOnly\\Controllers\\ReportController@actionName');
+    }
+
+    public function test_three_segment_module_route_is_not_stolen_by_nested_route_matcher(): void
+    {
+        $response = $this->get('/admin/runtime/report/index');
+
+        $response->assertOk();
+        $response->assertSeeText('runtime-only-index');
     }
 
     public function test_check_login_can_reflect_module_method_annotations(): void

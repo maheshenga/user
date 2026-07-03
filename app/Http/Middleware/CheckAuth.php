@@ -24,7 +24,7 @@ class CheckAuth
     {
         $adminConfig = config('admin');
         $parameters  = request()->route()->parameters;
-        $controller  = $parameters['controller'] ?? 'index';
+        $controller  = $parameters['controllerPath'] ?? $parameters['controller'] ?? 'index';
         $adminId     = session('admin.id', 0);
         try {
             $currentAdminAction        = currentAdminAction();

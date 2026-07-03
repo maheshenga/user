@@ -45,6 +45,12 @@ Route::middleware([CheckInstall::class, RateLimiting::class, CheckLogin::class, 
 
         $adminNamespace = config('admin.controller_namespace');
 
+        // Dynamic route: secondary/nested-controller/action
+        Route::match(['get', 'post'], '/{secondary}/{controllerPath}/{action}', function($secondary, $controllerPath, $action) {
+            [$className, $resolvedAction] = app(\App\Modules\ModuleRouteResolver::class)->resolve($secondary, $controllerPath, $action);
+            return webRouteExtracted($className, $resolvedAction);
+        })->where('controllerPath', '.+/.+');
+
         // Dynamic route: secondary/controller/action
         Route::match(['get', 'post'], '/{secondary}/{controller}/{action}', function($secondary, $controller, $action) {
             [$className, $resolvedAction] = app(\App\Modules\ModuleRouteResolver::class)->resolve($secondary, $controller, $action);

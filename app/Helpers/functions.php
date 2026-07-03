@@ -160,10 +160,10 @@ if (!function_exists('currentAdminAction')) {
         $request    = request();
         $route      = $request->route();
         $parameters = $route?->parameters() ?? [];
-        $controller = $request->controller ?: 'Index';
+        $controller = $parameters['controllerPath'] ?? ($request->controller ?: 'Index');
         $action     = $request->action ?: 'index';
         $name       = $route?->parameter('secondary');
-        $controller = ucfirst($controller);
+        $controller = ucfirst((string) $controller);
         $_name      = '';
         switch ($action) {
             case 'controller':
@@ -172,10 +172,11 @@ if (!function_exists('currentAdminAction')) {
             case 'action':
                 return $action;
             default:
-                if (isset($parameters['secondary'], $parameters['controller'], $parameters['action'])) {
+                if (isset($parameters['secondary'], $parameters['action']) && (isset($parameters['controllerPath']) || isset($parameters['controller']))) {
+                    $controllerPath = (string) ($parameters['controllerPath'] ?? $parameters['controller']);
                     [$className, $resolvedAction] = app(\App\Modules\ModuleRouteResolver::class)->resolve(
                         (string) $parameters['secondary'],
-                        (string) $parameters['controller'],
+                        $controllerPath,
                         (string) $parameters['action'],
                     );
 

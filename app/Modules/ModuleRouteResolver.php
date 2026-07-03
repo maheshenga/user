@@ -12,11 +12,12 @@ final class ModuleRouteResolver
 
     public function resolve(string $secondary, string $controller, string $action): array
     {
+        $controllerPath = trim(str_replace('\\', '/', $controller), '/');
         $manifest = $this->modules->enabledByPrefix($secondary);
         if ($manifest !== null) {
-            $class = $manifest->namespace().'\\Controllers\\'.Str::studly($controller).'Controller';
+            $class = $this->moduleControllerClass($manifest, $controllerPath);
             if (! class_exists($class)) {
-                $controllerFile = $manifest->controllersPath().DIRECTORY_SEPARATOR.Str::studly($controller).'Controller.php';
+                $controllerFile = $this->moduleControllerFile($manifest, $controllerPath);
                 if (is_file($controllerFile)) {
                     require_once $controllerFile;
                 }
@@ -26,8 +27,34 @@ final class ModuleRouteResolver
             }
         }
 
-        $legacy = config('admin.controller_namespace').$secondary.'\\'.Str::studly($controller).'Controller';
+        $legacyController = str_contains($controllerPath, '/')
+            ? Str::studly(str_replace('/', '_', $controllerPath))
+            : Str::studly($controllerPath);
+        $legacy = config('admin.controller_namespace').$secondary.'\\'.$legacyController.'Controller';
 
         return [$legacy, $action];
+    }
+
+    private function moduleControllerClass(ModuleManifest $manifest, string $controllerPath): string
+    {
+        $segments = array_map(
+            static fn (string $segment): string => Str::studly($segment),
+            array_values(array_filter(explode('/', $controllerPath)))
+        );
+
+        return $manifest->namespace().'\\Controllers\\'.implode('\\', $segments).'Controller';
+    }
+
+    private function moduleControllerFile(ModuleManifest $manifest, string $controllerPath): string
+    {
+        $segments = array_map(
+            static fn (string $segment): string => Str::studly($segment),
+            array_values(array_filter(explode('/', $controllerPath)))
+        );
+
+        return $manifest->controllersPath()
+            .DIRECTORY_SEPARATOR
+            .implode(DIRECTORY_SEPARATOR, $segments)
+            .'Controller.php';
     }
 }

@@ -25,13 +25,14 @@ class CheckLogin
         $response = $next($request);
         $adminConfig = config('admin');
         $parameters = request()->route()->parameters;
-        $controller = $parameters['controller'] ?? 'index';
+        $controller = $parameters['controllerPath'] ?? $parameters['controller'] ?? 'index';
 
         if (! in_array($controller, $adminConfig['no_login_controller'])) {
-            if (isset($parameters['secondary'], $parameters['controller'], $parameters['action'])) {
+            if (isset($parameters['secondary'], $parameters['action']) && (isset($parameters['controllerPath']) || isset($parameters['controller']))) {
+                $controllerPath = (string) ($parameters['controllerPath'] ?? $parameters['controller']);
                 [$className, $resolvedAction] = app(\App\Modules\ModuleRouteResolver::class)->resolve(
                     (string) $parameters['secondary'],
-                    (string) $parameters['controller'],
+                    $controllerPath,
                     (string) $parameters['action'],
                 );
             } else {
