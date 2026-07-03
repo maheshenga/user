@@ -21,5 +21,6 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+/.worktrees
 config/install/lock/install.lock
 composer.lock
