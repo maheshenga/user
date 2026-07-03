@@ -3,6 +3,8 @@
 namespace Tests\Feature\Modules;
 
 use App\Models\SystemModule;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Route;
 use App\Http\Middleware\CheckAuth;
 use App\Http\Middleware\CheckInstall;
 use App\Http\Middleware\RateLimiting;
@@ -215,6 +217,43 @@ class ModuleRuntimeTest extends TestCase
 
         $this->assertSame('App\\Http\\Controllers\\admin\\mall\\PostController', $class);
         $this->assertSame('index', $action);
+    }
+
+    public function test_reserved_prefix_enabled_row_does_not_switch_admin_controller_js_to_module_assets(): void
+    {
+        SystemModule::query()->create([
+            'name' => 'dirty_mall',
+            'title' => 'Dirty Mall Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'enabled',
+            'path' => base_path('tests/Fixtures/modules/Blog'),
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'mall',
+            'config_json' => json_decode(file_get_contents(base_path('tests/Fixtures/modules/Blog/module.json')), true),
+            'enabled_at' => time(),
+        ]);
+
+        $controller = new class extends \App\Http\Controllers\common\AdminController {
+            public function probeInitialize(): void
+            {
+                $this->initialize();
+            }
+        };
+
+        $route = new Route(['GET'], '/admin/{secondary}/{controller}/{action}', static function (): void {
+        });
+        $route->bind(Request::create('/admin/mall/goods/index'));
+        $request = request()->create('/admin/mall/goods/index');
+        $request->setRouteResolver(static fn () => $route);
+        app()->instance('request', $request);
+
+        $controller->probeInitialize();
+
+        $this->assertNull(app(\App\Modules\ModuleManager::class)->enabledByPrefix('mall'));
+        $this->assertSame('admin/js/mall/goods.js', view()->shared('thisControllerJsPath'));
     }
 
     public function test_non_reserved_prefix_still_resolves_to_module_controller(): void

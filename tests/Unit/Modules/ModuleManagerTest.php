@@ -125,6 +125,45 @@ class ModuleManagerTest extends TestCase
         $this->assertSame(['blog'], array_keys($modules));
     }
 
+    public function test_enabled_skips_reserved_prefix_rows(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        Config::set('modules.path', base_path('tests/Fixtures/modules'));
+
+        SystemModule::query()->create([
+            'name' => 'blog',
+            'title' => 'Blog Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'enabled',
+            'path' => base_path('tests/Fixtures/modules/Blog'),
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'blog',
+            'enabled_at' => time(),
+        ]);
+
+        SystemModule::query()->create([
+            'name' => 'dirty_mall',
+            'title' => 'Dirty Mall Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'enabled',
+            'path' => base_path('tests/Fixtures/modules/Blog'),
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'mall',
+            'enabled_at' => time(),
+        ]);
+
+        $modules = app(ModuleManager::class)->enabled();
+
+        $this->assertSame(['blog'], array_keys($modules));
+    }
+
     public function test_enabled_by_prefix_skips_bad_enabled_row(): void
     {
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
@@ -173,6 +212,31 @@ class ModuleManagerTest extends TestCase
         $this->assertNull($broken);
         $this->assertNotNull($good);
         $this->assertSame('blog', $good->name());
+    }
+
+    public function test_enabled_by_prefix_returns_null_for_reserved_prefix_rows(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        Config::set('modules.path', base_path('tests/Fixtures/modules'));
+
+        SystemModule::query()->create([
+            'name' => 'dirty_mall',
+            'title' => 'Dirty Mall Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'enabled',
+            'path' => base_path('tests/Fixtures/modules/Blog'),
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'mall',
+            'enabled_at' => time(),
+        ]);
+
+        $manifest = app(ModuleManager::class)->enabledByPrefix('mall');
+
+        $this->assertNull($manifest);
     }
 
     /**

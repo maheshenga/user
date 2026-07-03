@@ -10,6 +10,7 @@ final class ModuleManager
 {
     public function __construct(
         private readonly ModuleRepository $repository,
+        private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
     ) {}
 
     /**
@@ -58,6 +59,10 @@ final class ModuleManager
 
         $manifests = [];
         foreach ($this->repository->enabled() as $module) {
+            if ($this->reservedPrefixes->isReserved((string) $module->admin_prefix)) {
+                continue;
+            }
+
             $manifest = $this->manifestFromRow($module);
             if ($manifest !== null) {
                 $manifests[$manifest->name()] = $manifest;
@@ -69,7 +74,7 @@ final class ModuleManager
 
     public function enabledByPrefix(string $adminPrefix): ?ModuleManifest
     {
-        if (! Schema::hasTable('system_module')) {
+        if (! Schema::hasTable('system_module') || $this->reservedPrefixes->isReserved($adminPrefix)) {
             return null;
         }
 
