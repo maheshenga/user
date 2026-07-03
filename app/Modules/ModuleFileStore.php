@@ -12,8 +12,15 @@ final class ModuleFileStore
             throw new RuntimeException("Module directory not found: {$source}");
         }
 
-        $target = storage_path('modules/backups/'.$this->safeSegment($module).'/'.date('YmdHis').'-'.$this->safeSegment($version).'-'.substr(uniqid('', true), -6));
-        $this->copyDirectory($source, $target);
+        $target = $this->uniqueBackupTarget($module, $version);
+
+        try {
+            $this->copyDirectory($source, $target);
+        } catch (RuntimeException $exception) {
+            $this->deleteDirectoryUnchecked($target);
+
+            throw $exception;
+        }
 
         return $target;
     }
@@ -28,11 +35,22 @@ final class ModuleFileStore
             throw new RuntimeException('Replacement target contains dot segments.');
         }
 
+        if ($this->hasDotSegments($source)) {
+            throw new RuntimeException('Replacement source contains dot segments.');
+        }
+
         $normalizedTarget = $this->normalizePath($target);
         $normalizedSource = $this->normalizePath($source);
 
         if ($normalizedTarget === $normalizedSource) {
             throw new RuntimeException('Replacement target must differ from source.');
+        }
+
+        if (
+            $this->isWithinRoot($normalizedTarget, $normalizedSource)
+            || $this->isWithinRoot($normalizedSource, $normalizedTarget)
+        ) {
+            throw new RuntimeException('Replacement target must not contain or be contained by source.');
         }
 
         $modulesRoot = $this->modulesRoot();
@@ -85,6 +103,10 @@ final class ModuleFileStore
             throw new RuntimeException('Delete path is outside allowed roots.');
         }
 
+        if ($normalizedPath === $root) {
+            throw new RuntimeException('Delete path cannot be a safe root.');
+        }
+
         $this->assertNoSymlinkAncestors($normalizedPath, $root);
         $this->deleteDirectoryUnchecked($path);
     }
@@ -131,10 +153,12 @@ final class ModuleFileStore
             throw new RuntimeException("Source directory not found: {$source}");
         }
 
-        if (! is_dir($target)) {
-            if (! mkdir($target, 0777, true) && ! is_dir($target)) {
-                throw new RuntimeException("Unable to create directory: {$target}");
-            }
+        if (file_exists($target) || is_link($target)) {
+            throw new RuntimeException("Target directory already exists: {$target}");
+        }
+
+        if (! mkdir($target, 0777, true) && ! is_dir($target)) {
+            throw new RuntimeException("Unable to create directory: {$target}");
         }
 
         $entries = scandir($source);
@@ -286,5 +310,17 @@ final class ModuleFileStore
     private function modulesRoot(): string
     {
         return $this->normalizePath((string) config('modules.path'));
+    }
+
+    private function uniqueBackupTarget(string $module, string $version): string
+    {
+        $root = storage_path('modules/backups/'.$this->safeSegment($module));
+        $prefix = date('YmdHis').'-'.$this->safeSegment($version).'-';
+
+        do {
+            $target = $root.DIRECTORY_SEPARATOR.$prefix.bin2hex(random_bytes(4));
+        } while (file_exists($target) || is_link($target));
+
+        return $target;
     }
 }

@@ -365,6 +365,71 @@ class ModulePackageTest extends TestCase
         app(ModuleFileStore::class)->backup($current, 'blog', '1.0.0');
     }
 
+    public function test_failed_backup_removes_partial_backup_directory(): void
+    {
+        if (! function_exists('symlink')) {
+            $this->markTestSkipped('Symlinks are not available.');
+        }
+
+        $current = $this->fixtureRoot.DIRECTORY_SEPARATOR.'partial-backup-source';
+        mkdir($current, 0777, true);
+        file_put_contents($current.DIRECTORY_SEPARATOR.'first.txt', 'copied-before-failure');
+        file_put_contents($current.DIRECTORY_SEPARATOR.'real.txt', 'ok');
+
+        set_error_handler(static fn () => true);
+        $linked = symlink($current.DIRECTORY_SEPARATOR.'real.txt', $current.DIRECTORY_SEPARATOR.'alias.txt');
+        restore_error_handler();
+
+        if ($linked !== true) {
+            $this->markTestSkipped('Symlink creation is not available in this environment.');
+        }
+
+        try {
+            app(ModuleFileStore::class)->backup($current, 'blog', '1.0.0');
+            $this->fail('Expected backup to reject symlink entry.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('Refusing to copy symlink', $exception->getMessage());
+        }
+
+        $backupRoot = storage_path('modules/backups/blog');
+        $entries = is_dir($backupRoot) ? array_values(array_filter(
+            scandir($backupRoot) ?: [],
+            static fn (string $entry): bool => $entry !== '.' && $entry !== '..'
+        )) : [];
+
+        $this->assertSame([], $entries);
+    }
+
+    public function test_replace_rejects_source_and_target_containment(): void
+    {
+        $source = Config::string('modules.path');
+        $target = $source.DIRECTORY_SEPARATOR.'contained-target';
+
+        mkdir($target, 0777, true);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Replacement target must not contain or be contained by source');
+
+        app(ModuleFileStore::class)->replace($target, $source);
+    }
+
+    public function test_public_delete_directory_rejects_safe_root_itself(): void
+    {
+        $root = storage_path('modules/tmp');
+        mkdir($root, 0777, true);
+        file_put_contents($root.DIRECTORY_SEPARATOR.'keep.txt', 'keep');
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Delete path cannot be a safe root');
+
+        try {
+            app(ModuleFileStore::class)->deleteDirectory($root);
+        } finally {
+            $this->assertDirectoryExists($root);
+            $this->assertFileExists($root.DIRECTORY_SEPARATOR.'keep.txt');
+        }
+    }
+
     public function test_public_delete_directory_rejects_non_safe_root(): void
     {
         $outside = $this->fixtureRoot.DIRECTORY_SEPARATOR.'unsafe-delete';
