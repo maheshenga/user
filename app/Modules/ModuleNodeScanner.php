@@ -123,10 +123,6 @@ final class ModuleNodeScanner
         $actionNodes = [];
 
         foreach ($reflectionClass->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            if ($method->class !== $reflectionClass->getName()) {
-                continue;
-            }
-
             if (in_array($method->name, $ignoredMethods, true)) {
                 continue;
             }
