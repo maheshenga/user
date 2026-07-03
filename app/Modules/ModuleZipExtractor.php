@@ -14,30 +14,38 @@ final class ModuleZipExtractor
         }
 
         $target = storage_path('modules/tmp/'.uniqid('module_', true));
-        mkdir($target, 0777, true);
+        if (! mkdir($target, 0777, true) && ! is_dir($target)) {
+            throw new RuntimeException("Unable to create extraction directory: {$target}");
+        }
 
         $zip = new ZipArchive();
         if ($zip->open($zipPath) !== true) {
+            $this->cleanup($target);
             throw new RuntimeException('Unable to open module zip.');
         }
 
         try {
-            for ($index = 0; $index < $zip->numFiles; $index++) {
-                $name = str_replace('\\', '/', (string) $zip->getNameIndex($index));
+            try {
+                for ($index = 0; $index < $zip->numFiles; $index++) {
+                    $name = str_replace('\\', '/', (string) $zip->getNameIndex($index));
 
-                if ($this->isUnsafeEntry($name)) {
-                    throw new RuntimeException("unsafe zip entry: {$name}");
+                    if ($this->isUnsafeEntry($name)) {
+                        throw new RuntimeException("unsafe zip entry: {$name}");
+                    }
                 }
+
+                if (! $zip->extractTo($target)) {
+                    throw new RuntimeException('Unable to extract module zip.');
+                }
+            } finally {
+                $zip->close();
             }
 
-            if (! $zip->extractTo($target)) {
-                throw new RuntimeException('Unable to extract module zip.');
-            }
-        } finally {
-            $zip->close();
+            return $this->moduleRoot($target);
+        } catch (RuntimeException $exception) {
+            $this->cleanup($target);
+            throw $exception;
         }
-
-        return $this->moduleRoot($target);
     }
 
     private function isUnsafeEntry(string $name): bool
@@ -74,11 +82,17 @@ final class ModuleZipExtractor
         if (
             count($children) === 1
             && is_dir($target.DIRECTORY_SEPARATOR.$children[0])
+            && ! is_link($target.DIRECTORY_SEPARATOR.$children[0])
             && is_file($target.DIRECTORY_SEPARATOR.$children[0].DIRECTORY_SEPARATOR.'module.json')
         ) {
             return $target.DIRECTORY_SEPARATOR.$children[0];
         }
 
         throw new RuntimeException('module.json not found in module zip.');
+    }
+
+    private function cleanup(string $path): void
+    {
+        (new ModuleFileStore())->deleteDirectory($path);
     }
 }
