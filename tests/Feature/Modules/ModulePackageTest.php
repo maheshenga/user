@@ -20,6 +20,7 @@ class ModulePackageTest extends TestCase
         app(ModuleFileStore::class)->deleteDirectory($this->fixtureRoot);
         mkdir($this->fixtureRoot, 0777, true);
         Config::set('modules.path', $this->fixtureRoot.DIRECTORY_SEPARATOR.'modules');
+        mkdir(Config::string('modules.path'), 0777, true);
     }
 
     protected function tearDown(): void
@@ -125,6 +126,20 @@ class ModulePackageTest extends TestCase
         $this->assertFileExists($backup.DIRECTORY_SEPARATOR.'module.txt');
     }
 
+    public function test_backup_sanitizes_exact_dot_segments_to_safe_names(): void
+    {
+        $current = $this->fixtureRoot.DIRECTORY_SEPARATOR.'dot-source';
+        mkdir($current, 0777, true);
+        file_put_contents($current.DIRECTORY_SEPARATOR.'module.txt', 'ok');
+
+        $backup = app(ModuleFileStore::class)->backup($current, '..', '..');
+        $normalizedBackup = str_replace('\\', '/', $backup);
+
+        $this->assertStringStartsWith(str_replace('\\', '/', storage_path('modules/backups')).'/_', $normalizedBackup);
+        $this->assertStringContainsString('/_/_-', $normalizedBackup);
+        $this->assertFileExists($backup.DIRECTORY_SEPARATOR.'module.txt');
+    }
+
     public function test_replace_rejects_target_under_non_module_storage_path(): void
     {
         $target = storage_path('logs/module-package-target');
@@ -170,6 +185,67 @@ class ModulePackageTest extends TestCase
         } finally {
             $this->assertSame($before, $this->moduleTmpDirectories());
         }
+    }
+
+    public function test_replace_rejects_target_under_symlink_ancestor(): void
+    {
+        if (! function_exists('symlink')) {
+            $this->markTestSkipped('Symlinks are not available.');
+        }
+
+        $modulesRoot = Config::string('modules.path');
+        $real = $modulesRoot.DIRECTORY_SEPARATOR.'real-parent';
+        $link = $modulesRoot.DIRECTORY_SEPARATOR.'linked-parent';
+        $target = $link.DIRECTORY_SEPARATOR.'child';
+        $source = $this->fixtureRoot.DIRECTORY_SEPARATOR.'source';
+
+        mkdir($real.DIRECTORY_SEPARATOR.'child', 0777, true);
+        mkdir($source, 0777, true);
+        file_put_contents($real.DIRECTORY_SEPARATOR.'child'.DIRECTORY_SEPARATOR.'keep.txt', 'keep');
+        file_put_contents($source.DIRECTORY_SEPARATOR.'new.txt', 'new');
+
+        set_error_handler(static fn () => true);
+        $linked = symlink($real, $link);
+        restore_error_handler();
+
+        if ($linked !== true) {
+            $this->markTestSkipped('Symlink creation is not available in this environment.');
+        }
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Replacement target contains symlink ancestor');
+
+        try {
+            app(ModuleFileStore::class)->replace($target, $source);
+        } finally {
+            $this->assertFileExists($real.DIRECTORY_SEPARATOR.'child'.DIRECTORY_SEPARATOR.'keep.txt');
+            $this->assertFileDoesNotExist($real.DIRECTORY_SEPARATOR.'child'.DIRECTORY_SEPARATOR.'new.txt');
+        }
+    }
+
+    public function test_zip_extractor_rejects_symlink_entries_when_attributes_indicate_symlink(): void
+    {
+        if (! class_exists(\ZipArchive::class) || ! method_exists(\ZipArchive::class, 'setExternalAttributesName')) {
+            $this->markTestSkipped('Zip symlink attributes are not available.');
+        }
+
+        $zipPath = $this->fixtureRoot.DIRECTORY_SEPARATOR.'symlink-entry.zip';
+        $zip = new \ZipArchive();
+        $result = $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        $this->assertTrue($result === true, 'Failed to create zip fixture.');
+        $zip->addFromString('module-link', 'target');
+
+        if (! $zip->setExternalAttributesName('module-link', \ZipArchive::OPSYS_UNIX, 0120000 << 16)) {
+            $zip->close();
+            $this->markTestSkipped('Unable to assign zip symlink attributes.');
+        }
+
+        $zip->close();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('unsafe zip entry');
+
+        app(ModuleZipExtractor::class)->extract($zipPath);
     }
 
     private function createZip(string $zipPath, array $entries): void

@@ -29,7 +29,7 @@ final class ModuleZipExtractor
                 for ($index = 0; $index < $zip->numFiles; $index++) {
                     $name = str_replace('\\', '/', (string) $zip->getNameIndex($index));
 
-                    if ($this->isUnsafeEntry($name)) {
+                    if ($this->isUnsafeEntry($zip, $index, $name)) {
                         throw new RuntimeException("unsafe zip entry: {$name}");
                     }
                 }
@@ -48,7 +48,7 @@ final class ModuleZipExtractor
         }
     }
 
-    private function isUnsafeEntry(string $name): bool
+    private function isUnsafeEntry(ZipArchive $zip, int $index, string $name): bool
     {
         if ($name === '' || str_starts_with($name, '/')) {
             return true;
@@ -64,7 +64,17 @@ final class ModuleZipExtractor
             }
         }
 
-        return false;
+        if (! method_exists($zip, 'getExternalAttributesIndex')) {
+            return false;
+        }
+
+        $attributes = 0;
+        $opsys = 0;
+        if (! $zip->getExternalAttributesIndex($index, $opsys, $attributes)) {
+            return false;
+        }
+
+        return (($attributes >> 16) & 0170000) === 0120000;
     }
 
     private function moduleRoot(string $target): string

@@ -35,7 +35,10 @@ final class ModuleFileStore
             throw new RuntimeException('Replacement target is outside allowed roots.');
         }
 
+        $this->assertNoSymlinkAncestors($target);
+
         $backupPath = null;
+        $cleanupBackup = false;
         if (file_exists($target) || is_link($target)) {
             $backupPath = storage_path('modules/tmp/'.uniqid('replace_backup_', true));
             $this->copyDirectory($target, $backupPath);
@@ -44,16 +47,22 @@ final class ModuleFileStore
         try {
             $this->deleteDirectory($target);
             $this->copyDirectory($source, $target);
+            $cleanupBackup = true;
         } catch (RuntimeException $exception) {
             $this->deleteDirectory($target);
 
             if ($backupPath !== null && is_dir($backupPath)) {
-                $this->copyDirectory($backupPath, $target);
+                try {
+                    $this->copyDirectory($backupPath, $target);
+                    $cleanupBackup = true;
+                } catch (RuntimeException) {
+                    $cleanupBackup = false;
+                }
             }
 
             throw $exception;
         } finally {
-            if ($backupPath !== null) {
+            if ($backupPath !== null && $cleanupBackup) {
                 $this->deleteDirectory($backupPath);
             }
         }
@@ -107,7 +116,12 @@ final class ModuleFileStore
             }
         }
 
-        foreach (scandir($source) ?: [] as $entry) {
+        $entries = scandir($source);
+        if ($entries === false) {
+            throw new RuntimeException("Unable to read directory: {$source}");
+        }
+
+        foreach ($entries as $entry) {
             if ($entry === '.' || $entry === '..') {
                 continue;
             }
@@ -135,7 +149,9 @@ final class ModuleFileStore
 
     private function safeSegment(string $value): string
     {
-        return preg_replace('/[^A-Za-z0-9_.-]/', '_', $value) ?? '_';
+        $safe = preg_replace('/[^A-Za-z0-9_.-]/', '_', $value) ?? '_';
+
+        return in_array($safe, ['', '.', '..'], true) ? '_' : $safe;
     }
 
     private function normalizePath(string $path): string
@@ -183,5 +199,38 @@ final class ModuleFileStore
         }
 
         throw new RuntimeException("Unable to delete path: {$path}");
+    }
+
+    private function assertNoSymlinkAncestors(string $target): void
+    {
+        $root = rtrim((string) config('modules.path'), DIRECTORY_SEPARATOR);
+        $root = $root === '' ? (string) config('modules.path') : $root;
+
+        if (is_link($root)) {
+            throw new RuntimeException('Replacement target contains symlink ancestor.');
+        }
+
+        $parent = dirname($target);
+        if ($parent === '.' || $parent === '') {
+            return;
+        }
+
+        $relative = ltrim(substr($parent, strlen($root)), '\\/');
+        if ($relative === '') {
+            return;
+        }
+
+        $current = $root;
+        foreach (preg_split('#[\\\\/]+#', $relative, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $segment) {
+            $current .= DIRECTORY_SEPARATOR.$segment;
+
+            if (! file_exists($current) && ! is_link($current)) {
+                break;
+            }
+
+            if (is_link($current)) {
+                throw new RuntimeException('Replacement target contains symlink ancestor.');
+            }
+        }
     }
 }
