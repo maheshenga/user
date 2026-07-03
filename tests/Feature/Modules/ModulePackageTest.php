@@ -413,6 +413,47 @@ class ModulePackageTest extends TestCase
         app(ModuleFileStore::class)->replace($target, $source);
     }
 
+    public function test_failed_replace_backup_removes_partial_internal_backup(): void
+    {
+        if (! function_exists('symlink')) {
+            $this->markTestSkipped('Symlinks are not available.');
+        }
+
+        $target = Config::string('modules.path').DIRECTORY_SEPARATOR.'replace-current';
+        $source = $this->fixtureRoot.DIRECTORY_SEPARATOR.'replace-next';
+        mkdir($target, 0777, true);
+        mkdir($source, 0777, true);
+        file_put_contents($target.DIRECTORY_SEPARATOR.'first.txt', 'copied-before-failure');
+        file_put_contents($target.DIRECTORY_SEPARATOR.'real.txt', 'ok');
+        file_put_contents($source.DIRECTORY_SEPARATOR.'new.txt', 'new');
+
+        set_error_handler(static fn () => true);
+        $linked = symlink($target.DIRECTORY_SEPARATOR.'real.txt', $target.DIRECTORY_SEPARATOR.'alias.txt');
+        restore_error_handler();
+
+        if ($linked !== true) {
+            $this->markTestSkipped('Symlink creation is not available in this environment.');
+        }
+
+        try {
+            app(ModuleFileStore::class)->replace($target, $source);
+            $this->fail('Expected replace to reject symlink entry while creating internal backup.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('Refusing to copy symlink', $exception->getMessage());
+        }
+
+        $tmpEntries = $this->moduleTmpDirectories();
+        $replaceBackups = array_values(array_filter(
+            $tmpEntries,
+            static fn (string $entry): bool => str_starts_with($entry, 'replace_backup_')
+        ));
+
+        $this->assertSame([], $replaceBackups);
+        $this->assertFileExists($target.DIRECTORY_SEPARATOR.'first.txt');
+        $this->assertFileExists($target.DIRECTORY_SEPARATOR.'alias.txt');
+        $this->assertFileDoesNotExist($target.DIRECTORY_SEPARATOR.'new.txt');
+    }
+
     public function test_public_delete_directory_rejects_safe_root_itself(): void
     {
         $root = storage_path('modules/tmp');

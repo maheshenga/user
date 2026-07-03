@@ -64,7 +64,14 @@ final class ModuleFileStore
         $cleanupBackup = false;
         if (file_exists($target) || is_link($target)) {
             $backupPath = storage_path('modules/tmp/'.uniqid('replace_backup_', true));
-            $this->copyDirectory($target, $backupPath);
+
+            try {
+                $this->copyDirectory($target, $backupPath);
+            } catch (RuntimeException $exception) {
+                $this->deleteDirectoryUnchecked($backupPath);
+
+                throw $exception;
+            }
         }
 
         try {
