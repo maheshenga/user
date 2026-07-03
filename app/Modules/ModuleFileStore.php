@@ -128,18 +128,9 @@ final class ModuleFileStore
 
     private function isAllowedTarget(string $target): bool
     {
-        $roots = [
-            $this->normalizePath((string) config('modules.path')),
-            $this->normalizePath(storage_path()),
-        ];
+        $root = $this->normalizePath((string) config('modules.path'));
 
-        foreach ($roots as $root) {
-            if ($target === $root || str_starts_with($target, rtrim($root, '/').'/')) {
-                return true;
-            }
-        }
-
-        return false;
+        return $target === $root || str_starts_with($target, rtrim($root, '/').'/');
     }
 
     private function safeSegment(string $value): string

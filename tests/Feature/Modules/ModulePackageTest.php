@@ -125,9 +125,9 @@ class ModulePackageTest extends TestCase
         $this->assertFileExists($backup.DIRECTORY_SEPARATOR.'module.txt');
     }
 
-    public function test_replace_rejects_target_outside_allowed_roots(): void
+    public function test_replace_rejects_target_under_non_module_storage_path(): void
     {
-        $target = base_path('outside-package-target');
+        $target = storage_path('logs/module-package-target');
         $source = $this->fixtureRoot.DIRECTORY_SEPARATOR.'source';
 
         app(ModuleFileStore::class)->deleteDirectory($target);
