@@ -19,6 +19,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        if (class_exists(\App\Modules\ModuleViewRegistrar::class)) {
+            app(\App\Modules\ModuleViewRegistrar::class)->registerEnabled();
+        }
     }
 }

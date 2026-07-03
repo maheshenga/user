@@ -79,8 +79,14 @@ class AdminController extends Controller
         $this->controller     = $controller;
         $this->action         = $action;
         $jsBasePath           = ($secondary ? "{$secondary}/" : '') . strtolower($controller);
-        $thisControllerJsPath = "admin/js/{$jsBasePath}.js";
-        $autoloadJs           = file_exists($thisControllerJsPath);
+        $moduleManifest       = $secondary ? app(\App\Modules\ModuleManager::class)->enabledByPrefix($secondary) : null;
+        if ($moduleManifest) {
+            $thisControllerJsPath = "module-assets/{$secondary}/js/" . strtolower($controller) . ".js";
+            $autoloadJs = file_exists($moduleManifest->assetsPath() . DIRECTORY_SEPARATOR . 'js' . DIRECTORY_SEPARATOR . strtolower($controller) . '.js');
+        } else {
+            $thisControllerJsPath = "admin/js/{$jsBasePath}.js";
+            $autoloadJs = file_exists(public_path('static/' . $thisControllerJsPath));
+        }
         $adminModuleName      = $adminConfig['admin_alias_name'];
         $isSuperAdmin         = session('admin.id') == $adminConfig['super_admin_id'];
         $version              = cache('version');
@@ -134,9 +140,15 @@ class AdminController extends Controller
     {
         if (empty($template)) {
             $basePath = ".{$this->controller}.{$this->action}";
+            if ($this->secondary && app(\App\Modules\ModuleManager::class)->enabledByPrefix($this->secondary)) {
+                $moduleTemplate = 'modules.' . $this->secondary . '::' . $this->controller . '.' . $this->action;
+                if (view()->exists($moduleTemplate)) {
+                    $template = $moduleTemplate;
+                }
+            }
             if ($this->secondary) {
-                $template = 'admin.' . $this->secondary . $basePath;
-            } else {
+                $template = $template ?: 'admin.' . $this->secondary . $basePath;
+            } elseif ($template === '') {
                 $template = 'admin' . $basePath;
             }
         }

@@ -20,36 +20,37 @@ use Illuminate\Support\Str;
 |
 */
 
-// 系统首页
+// 绯荤粺棣栭〉
 Route::get('/', function() {
     return redirect('/' . config('easyadmin.ADMIN'));
 })->middleware([CheckInstall::class]);
 
-// 首次安装管理系统
+// 棣栨瀹夎绠＄悊绯荤粺
 Route::controller(\App\Http\Controllers\common\InstallController::class)->group(function() {
     Route::match(['get', 'post'], '/install', 'index');
 });
 
-// 后台所有路由
+Route::get('/module-assets/{module}/{path}', [\App\Http\Controllers\common\ModuleAssetController::class, 'show'])
+    ->where('path', '.*')
+    ->middleware([CheckInstall::class, CheckLogin::class]);
+
+// 鍚庡彴鎵€鏈夎矾鐢?
 $admin = config('admin.admin_alias_name');
 
 Route::middleware([CheckInstall::class, RateLimiting::class, CheckLogin::class, SystemLog::class, CheckAuth::class])->group(function() use ($admin) {
     Route::prefix($admin)->group(function() {
 
-        // 后台首页
+        // 鍚庡彴棣栭〉
         Route::get('/', [\App\Http\Controllers\admin\IndexController::class, 'index']);
 
         $adminNamespace = config('admin.controller_namespace');
-        // 动态路由 (匹配 secondary/controller/action)
-        Route::match(['get', 'post'], '/{secondary}/{controller}/{action}', function($secondary, $controller, $action) use ($adminNamespace) {
-
-            $namespace = $adminNamespace . $secondary . '\\';
-            $className = $namespace . ucfirst($controller . "Controller");
-            $className = Str::studly($className);
-            return webRouteExtracted($className, $action);
+        // 鍔ㄦ€佽矾鐢?(鍖归厤 secondary/controller/action)
+        Route::match(['get', 'post'], '/{secondary}/{controller}/{action}', function($secondary, $controller, $action) {
+            [$className, $resolvedAction] = app(\App\Modules\ModuleRouteResolver::class)->resolve($secondary, $controller, $action);
+            return webRouteExtracted($className, $resolvedAction);
         });
 
-        // 动态路由 (匹配 controller)
+        // 鍔ㄦ€佽矾鐢?(鍖归厤 controller)
         Route::match(['get', 'post'], '/{controller}/', function($controller) use ($adminNamespace) {
             $namespace = $adminNamespace;
             $className = $namespace . ucfirst($controller . "Controller");
@@ -57,7 +58,7 @@ Route::middleware([CheckInstall::class, RateLimiting::class, CheckLogin::class, 
             return webRouteExtracted($className, $action);
         });
 
-        // 动态路由 (匹配 controller/action)
+        // 鍔ㄦ€佽矾鐢?(鍖归厤 controller/action)
         Route::match(['get', 'post'], '/{controller}/{action}', function($controller, $action) use ($adminNamespace) {
             $namespace = $adminNamespace;
             $className = $namespace . ucfirst($controller . "Controller");
