@@ -20,12 +20,12 @@ use Illuminate\Support\Str;
 |
 */
 
-// 绯荤粺棣栭〉
+// Home redirect
 Route::get('/', function() {
     return redirect('/' . config('easyadmin.ADMIN'));
 })->middleware([CheckInstall::class]);
 
-// 棣栨瀹夎绠＄悊绯荤粺
+// Installer
 Route::controller(\App\Http\Controllers\common\InstallController::class)->group(function() {
     Route::match(['get', 'post'], '/install', 'index');
 });
@@ -34,23 +34,24 @@ Route::get('/module-assets/{module}/{path}', [\App\Http\Controllers\common\Modul
     ->where('path', '.*')
     ->middleware([CheckInstall::class, CheckLogin::class]);
 
-// 鍚庡彴鎵€鏈夎矾鐢?
+// Admin routes
 $admin = config('admin.admin_alias_name');
 
 Route::middleware([CheckInstall::class, RateLimiting::class, CheckLogin::class, SystemLog::class, CheckAuth::class])->group(function() use ($admin) {
     Route::prefix($admin)->group(function() {
 
-        // 鍚庡彴棣栭〉
+        // Admin dashboard
         Route::get('/', [\App\Http\Controllers\admin\IndexController::class, 'index']);
 
         $adminNamespace = config('admin.controller_namespace');
-        // 鍔ㄦ€佽矾鐢?(鍖归厤 secondary/controller/action)
+
+        // Dynamic route: secondary/controller/action
         Route::match(['get', 'post'], '/{secondary}/{controller}/{action}', function($secondary, $controller, $action) {
             [$className, $resolvedAction] = app(\App\Modules\ModuleRouteResolver::class)->resolve($secondary, $controller, $action);
             return webRouteExtracted($className, $resolvedAction);
         });
 
-        // 鍔ㄦ€佽矾鐢?(鍖归厤 controller)
+        // Dynamic route: controller
         Route::match(['get', 'post'], '/{controller}/', function($controller) use ($adminNamespace) {
             $namespace = $adminNamespace;
             $className = $namespace . ucfirst($controller . "Controller");
@@ -58,7 +59,7 @@ Route::middleware([CheckInstall::class, RateLimiting::class, CheckLogin::class, 
             return webRouteExtracted($className, $action);
         });
 
-        // 鍔ㄦ€佽矾鐢?(鍖归厤 controller/action)
+        // Dynamic route: controller/action
         Route::match(['get', 'post'], '/{controller}/{action}', function($controller, $action) use ($adminNamespace) {
             $namespace = $adminNamespace;
             $className = $namespace . ucfirst($controller . "Controller");
@@ -67,7 +68,6 @@ Route::middleware([CheckInstall::class, RateLimiting::class, CheckLogin::class, 
 
     });
 });
-
 
 if (!function_exists('webRouteExtracted')) {
 

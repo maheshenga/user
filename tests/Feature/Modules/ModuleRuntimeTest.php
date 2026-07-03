@@ -60,6 +60,20 @@ class ModuleRuntimeTest extends TestCase
             'config_json' => json_decode(file_get_contents(base_path('tests/Fixtures/modules/Blog/module.json')), true),
             'enabled_at' => time(),
         ]);
+        SystemModule::query()->create([
+            'name' => 'runtime_only',
+            'title' => 'Runtime Only Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'enabled',
+            'path' => base_path('tests/Fixtures/modules/RuntimeOnly'),
+            'namespace' => 'Modules\\RuntimeOnly',
+            'admin_prefix' => 'runtime',
+            'config_json' => json_decode(file_get_contents(base_path('tests/Fixtures/modules/RuntimeOnly/module.json')), true),
+            'enabled_at' => time(),
+        ]);
         app(\App\Modules\ModuleViewRegistrar::class)->registerEnabled();
         $this->withSession(['admin.id' => 1, 'admin.expire_time' => true]);
     }
@@ -79,5 +93,31 @@ class ModuleRuntimeTest extends TestCase
         $response->assertOk();
         $response->assertHeader('content-type', 'text/javascript; charset=UTF-8');
         $response->assertSee('module-blog-post');
+    }
+
+    public function test_runtime_only_module_route_is_loaded_without_fixture_autoload_mapping(): void
+    {
+        $response = $this->get('/admin/runtime/report/index');
+
+        $response->assertOk();
+        $response->assertSeeText('runtime-only-index');
+    }
+
+    public function test_current_admin_action_uses_module_controller_for_enabled_module(): void
+    {
+        $response = $this->get('/admin/runtime/report/actionName');
+
+        $response->assertOk();
+        $response->assertSeeText('Modules\\RuntimeOnly\\Controllers\\ReportController@actionName');
+    }
+
+    public function test_check_login_can_reflect_module_method_annotations(): void
+    {
+        $this->flushSession();
+
+        $response = $this->get('/admin/runtime/report/index');
+
+        $response->assertOk();
+        $response->assertSeeText('runtime-only-index');
     }
 }

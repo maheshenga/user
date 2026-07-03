@@ -158,9 +158,11 @@ if (!function_exists('currentAdminAction')) {
     function currentAdminAction(?string $action = null): string
     {
         $request    = request();
+        $route      = $request->route();
+        $parameters = $route?->parameters() ?? [];
         $controller = $request->controller ?: 'Index';
         $action     = $request->action ?: 'index';
-        $name       = $request->route()->parameter('secondary');
+        $name       = $route?->parameter('secondary');
         $controller = ucfirst($controller);
         $_name      = '';
         switch ($action) {
@@ -170,6 +172,16 @@ if (!function_exists('currentAdminAction')) {
             case 'action':
                 return $action;
             default:
+                if (isset($parameters['secondary'], $parameters['controller'], $parameters['action'])) {
+                    [$className, $resolvedAction] = app(\App\Modules\ModuleRouteResolver::class)->resolve(
+                        (string) $parameters['secondary'],
+                        (string) $parameters['controller'],
+                        (string) $parameters['action'],
+                    );
+
+                    return "{$className}@{$resolvedAction}";
+                }
+
                 if ($name) {
                     $namespace = "App\Http\Controllers\admin\\{$name}\\{$controller}Controller@{$action}";
                 }else {

@@ -15,6 +15,12 @@ final class ModuleRouteResolver
         $manifest = $this->modules->enabledByPrefix($secondary);
         if ($manifest !== null) {
             $class = $manifest->namespace().'\\Controllers\\'.Str::studly($controller).'Controller';
+            if (! class_exists($class)) {
+                $controllerFile = $manifest->controllersPath().DIRECTORY_SEPARATOR.Str::studly($controller).'Controller.php';
+                if (is_file($controllerFile)) {
+                    require_once $controllerFile;
+                }
+            }
             if (class_exists($class)) {
                 return [$class, $action];
             }

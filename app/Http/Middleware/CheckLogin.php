@@ -22,46 +22,60 @@ class CheckLogin
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $response    = $next($request);
+        $response = $next($request);
         $adminConfig = config('admin');
-        $parameters  = request()->route()->parameters;
-        $controller  = $parameters['controller'] ?? 'index';
-        $secondary   = '';
-        if (!empty($parameters['secondary'])) $secondary = $parameters['secondary'];
-        if (!in_array($controller, $adminConfig['no_login_controller'])) {
-            $adminNamespace = config('admin.controller_namespace');
-            $namespace      = $adminNamespace . ($secondary ? $secondary . '\\' : '');
-            $className      = $namespace . ucfirst($controller . "Controller");
-            try {
-                $classObj   = new \ReflectionClass($className);
-                $properties = $classObj->getDefaultProperties();
-                // 整个控制器是否忽略登录
-                $ignoreLogin = $properties['ignoreLogin'] ?? false;
-                if ($ignoreLogin) return $response;
-                if (!empty($parameters['action'])) {
-                    $reflectionMethod = new \ReflectionMethod($className, $parameters['action']);
-                    $attributes       = $reflectionMethod->getAttributes(MiddlewareAnnotation::class);
-                    foreach ($attributes as $attribute) {
-                        $annotation = $attribute->newInstance();
-                        $_ignore    = (array)$annotation->ignore;
-                        // 控制器中的某个方法忽略登录
-                        if (in_array('LOGIN', $_ignore)) return $next($request);
-                    }
-                }
-            }catch (\ReflectionException $e) {
+        $parameters = request()->route()->parameters;
+        $controller = $parameters['controller'] ?? 'index';
+
+        if (! in_array($controller, $adminConfig['no_login_controller'])) {
+            if (isset($parameters['secondary'], $parameters['controller'], $parameters['action'])) {
+                [$className, $resolvedAction] = app(\App\Modules\ModuleRouteResolver::class)->resolve(
+                    (string) $parameters['secondary'],
+                    (string) $parameters['controller'],
+                    (string) $parameters['action'],
+                );
+            } else {
+                $secondary = ! empty($parameters['secondary']) ? $parameters['secondary'] : '';
+                $adminNamespace = config('admin.controller_namespace');
+                $namespace = $adminNamespace.($secondary ? $secondary.'\\' : '');
+                $className = $namespace.ucfirst($controller."Controller");
+                $resolvedAction = $parameters['action'] ?? null;
             }
 
-            $adminId    = session('admin.id', 0);
+            try {
+                $classObj = new \ReflectionClass($className);
+                $properties = $classObj->getDefaultProperties();
+                $ignoreLogin = $properties['ignoreLogin'] ?? false;
+                if ($ignoreLogin) {
+                    return $response;
+                }
+
+                if (! empty($resolvedAction)) {
+                    $reflectionMethod = new \ReflectionMethod($className, $resolvedAction);
+                    $attributes = $reflectionMethod->getAttributes(MiddlewareAnnotation::class);
+                    foreach ($attributes as $attribute) {
+                        $annotation = $attribute->newInstance();
+                        $_ignore = (array) $annotation->ignore;
+                        if (in_array('LOGIN', $_ignore, true)) {
+                            return $next($request);
+                        }
+                    }
+                }
+            } catch (\ReflectionException $e) {
+            }
+
+            $adminId = session('admin.id', 0);
             $expireTime = session('admin.expire_time');
             if (empty($adminId)) {
                 return $this->responseView('请先登录后台', [], __url("/login"));
             }
-            // 判断是否登录过期
+
             if ($expireTime !== true && time() > $expireTime) {
                 $request->session()->forget('admin');
                 return $this->responseView('登录已过期，请重新登录', [], __url("/login"));
             }
         }
+
         return $response;
     }
 }

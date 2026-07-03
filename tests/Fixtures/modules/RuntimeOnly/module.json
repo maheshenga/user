@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "name": "runtime_only",
+  "title": "Runtime Only Module",
+  "vendor": "easyadmin8",
+  "version": "1.0.0",
+  "type": "private",
+  "core_version": "^8.0",
+  "php": ">=8.3",
+  "namespace": "Modules\\RuntimeOnly",
+  "entry": "src/Providers/RuntimeOnlyServiceProvider.php",
+  "admin_prefix": "runtime",
+  "controllers": "src/Controllers",
+  "views": "resources/views",
+  "assets": "assets",
+  "migrations": "database/migrations",
+  "seeders": "database/seeders",
+  "permissions": [],
+  "external_domains": [],
+  "dependencies": {},
+  "conflicts": {},
+  "database": {
+    "tables": [],
+    "preserve_on_uninstall": true
+  },
+  "menus": []
+}
