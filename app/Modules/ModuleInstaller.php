@@ -5,6 +5,7 @@ namespace App\Modules;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use Throwable;
 
 final class ModuleInstaller
 {
@@ -22,54 +23,67 @@ final class ModuleInstaller
 
         $current = $this->repository->installed($name);
         $oldState = $current?->status;
+        $newState = $this->installTargetState($oldState);
 
-        $this->repository->upsertDiscovered($manifest);
-        $this->importMenus($manifest);
-        $this->repository->setStatus($name, 'installed');
-        $this->repository->log('install', $name, $oldState, 'installed', 'success', null, $actorId);
-        $this->clearCaches();
+        $this->runLifecycleAction('install', $name, $oldState, $newState, $actorId, function () use ($manifest, $name, $newState): void {
+            $this->repository->upsertDiscovered($manifest);
+            $this->importMenus($manifest);
+            $this->repository->setStatus($name, $newState);
+        });
     }
 
     public function enable(string $name, ?int $actorId = null): void
     {
         $module = $this->repository->installed($name);
-        if ($module === null) {
-            throw new InvalidArgumentException("Module not installed: {$name}");
-        }
+        $oldState = $module?->status;
 
-        $oldState = $module->status;
+        $this->runLifecycleAction('enable', $name, $oldState, 'enabled', $actorId, function () use ($module, $name): void {
+            if ($module === null) {
+                throw new InvalidArgumentException("Module not installed: {$name}");
+            }
 
-        $this->repository->setStatus($name, 'enabled');
-        $this->repository->log('enable', $name, $oldState, 'enabled', 'success', null, $actorId);
-        $this->clearCaches();
+            if (! in_array($module->status, ['installed', 'disabled'], true)) {
+                throw new InvalidArgumentException("Module [{$name}] cannot be enabled from status [{$module->status}]");
+            }
+
+            $this->repository->setStatus($name, 'enabled');
+        });
     }
 
     public function disable(string $name, ?int $actorId = null): void
     {
         $module = $this->repository->installed($name);
-        if ($module === null) {
-            throw new InvalidArgumentException("Module not installed: {$name}");
-        }
+        $oldState = $module?->status;
 
-        $oldState = $module->status;
+        $this->runLifecycleAction('disable', $name, $oldState, 'disabled', $actorId, function () use ($module, $name): void {
+            if ($module === null) {
+                throw new InvalidArgumentException("Module not installed: {$name}");
+            }
 
-        $this->repository->setStatus($name, 'disabled');
-        $this->repository->log('disable', $name, $oldState, 'disabled', 'success', null, $actorId);
-        $this->clearCaches();
+            if ($module->status !== 'enabled') {
+                throw new InvalidArgumentException("Module [{$name}] cannot be disabled from status [{$module->status}]");
+            }
+
+            $this->repository->setStatus($name, 'disabled');
+        });
     }
 
     public function uninstallPreserve(string $name, ?int $actorId = null): void
     {
         $module = $this->repository->installed($name);
-        if ($module === null) {
-            throw new InvalidArgumentException("Module not installed: {$name}");
-        }
+        $oldState = $module?->status;
 
-        $oldState = $module->status;
+        $this->runLifecycleAction('uninstall', $name, $oldState, 'uninstalled', $actorId, function () use ($module, $name): void {
+            if ($module === null) {
+                throw new InvalidArgumentException("Module not installed: {$name}");
+            }
 
-        $this->repository->setStatus($name, 'uninstalled');
-        $this->repository->log('uninstall', $name, $oldState, 'uninstalled', 'success', null, $actorId);
-        $this->clearCaches();
+            if (! in_array($module->status, ['installed', 'disabled', 'enabled'], true)) {
+                throw new InvalidArgumentException("Module [{$name}] cannot be uninstalled from status [{$module->status}]");
+            }
+
+            $this->repository->setStatus($name, 'uninstalled');
+        });
     }
 
     private function importMenus(ModuleManifest $manifest): void
@@ -127,5 +141,40 @@ final class ModuleInstaller
     {
         Cache::forget(config('modules.cache_key'));
         Cache::forget('version');
+    }
+
+    private function installTargetState(?string $currentState): string
+    {
+        return match ($currentState) {
+            'enabled', 'disabled', 'installed' => $currentState,
+            default => 'installed',
+        };
+    }
+
+    /**
+     * @param  callable(): void  $operation
+     */
+    private function runLifecycleAction(
+        string $action,
+        string $name,
+        ?string $oldState,
+        ?string $newState,
+        ?int $actorId,
+        callable $operation
+    ): void {
+        try {
+            DB::transaction(function () use ($action, $name, $oldState, $newState, $actorId, $operation): void {
+                $operation();
+                $this->repository->log($action, $name, $oldState, $newState, 'success', null, $actorId);
+            });
+        } catch (Throwable $exception) {
+            $this->repository->setLastError($name, $exception->getMessage());
+            $this->repository->log($action, $name, $oldState, $oldState, 'failed', $exception->getMessage(), $actorId);
+
+            throw $exception;
+        }
+
+        $this->repository->setLastError($name, null);
+        $this->clearCaches();
     }
 }

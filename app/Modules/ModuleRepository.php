@@ -4,6 +4,7 @@ namespace App\Modules;
 
 use App\Models\SystemModule;
 use App\Models\SystemModuleLog;
+use Illuminate\Support\Facades\Schema;
 
 final class ModuleRepository
 {
@@ -71,6 +72,10 @@ final class ModuleRepository
 
     public function log(string $action, string $name, ?string $oldState, ?string $newState, string $result, ?string $error = null, ?int $actorId = null): void
     {
+        if (! Schema::hasTable('system_module_log')) {
+            return;
+        }
+
         SystemModuleLog::query()->create([
             'admin_id' => $actorId,
             'module' => $name,
@@ -81,6 +86,18 @@ final class ModuleRepository
             'finished_at' => time(),
             'result' => $result,
             'error_message' => $error,
+        ]);
+    }
+
+    public function setLastError(string $name, ?string $error): void
+    {
+        if (! Schema::hasTable('system_module')) {
+            return;
+        }
+
+        SystemModule::query()->where('name', $name)->update([
+            'last_error' => $error,
+            'update_time' => time(),
         ]);
     }
 }

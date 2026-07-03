@@ -91,6 +91,100 @@ class ModuleLifecycleTest extends TestCase
         $this->assertDatabaseHas('system_module_log', ['module' => 'blog', 'action' => 'disable', 'result' => 'success']);
     }
 
+    public function test_module_commands_fail_gracefully_when_module_tables_are_missing(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+
+        Schema::drop('system_module_source');
+        Schema::drop('system_module_log');
+        Schema::drop('system_module_migration');
+        Schema::drop('system_module_version');
+        Schema::drop('system_module');
+
+        $this->artisan('module:list')
+            ->expectsOutputToContain('Module tables are not installed')
+            ->assertExitCode(1);
+
+        foreach (['discover', 'install', 'enable', 'disable', 'uninstall'] as $command) {
+            $parameters = match ($command) {
+                'install', 'enable', 'disable', 'uninstall' => ['name' => 'blog'],
+                default => [],
+            };
+
+            $this->artisan("module:{$command}", $parameters)
+                ->expectsOutputToContain('Module tables are not installed')
+                ->assertExitCode(1);
+        }
+    }
+
+    public function test_enable_requires_module_to_be_installed_or_disabled(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+
+        app(\App\Modules\ModuleRepository::class)->upsertDiscovered(app(\App\Modules\ModuleManager::class)->manifest('blog'));
+
+        $this->artisan('module:enable', ['name' => 'blog'])
+            ->expectsOutputToContain('cannot be enabled from status [discovered]')
+            ->assertExitCode(1);
+
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'discovered']);
+    }
+
+    public function test_repeated_install_refreshes_manifest_without_downgrading_enabled_and_dedupes_menus(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+
+        $this->artisan('module:install', ['name' => 'blog'])->assertExitCode(0);
+        $this->artisan('module:enable', ['name' => 'blog'])->assertExitCode(0);
+        $beforeCount = DB::table('system_menu')->count();
+
+        $this->artisan('module:install', ['name' => 'blog'])->assertExitCode(0);
+
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'enabled']);
+        $this->assertSame($beforeCount, DB::table('system_menu')->count());
+        $this->assertSame(1, DB::table('system_menu')->where('href', 'blog/post/index')->count());
+    }
+
+    public function test_uninstall_preserve_allows_enabled_and_marks_module_uninstalled(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+
+        $this->artisan('module:install', ['name' => 'blog'])->assertExitCode(0);
+        $this->artisan('module:enable', ['name' => 'blog'])->assertExitCode(0);
+
+        $this->artisan('module:uninstall', ['name' => 'blog'])->assertExitCode(0);
+
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'uninstalled']);
+        $this->assertDatabaseHas('system_module_log', ['module' => 'blog', 'action' => 'uninstall', 'result' => 'success']);
+    }
+
+    public function test_install_failure_rolls_back_partial_changes_and_logs_failure(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+        Schema::drop('system_menu');
+
+        $this->artisan('module:install', ['name' => 'blog'])
+            ->expectsOutputToContain('no such table: system_menu')
+            ->assertExitCode(1);
+
+        $this->assertDatabaseMissing('system_module', ['name' => 'blog']);
+        $this->assertDatabaseHas('system_module_log', [
+            'module' => 'blog',
+            'action' => 'install',
+            'result' => 'failed',
+        ]);
+    }
+
     /**
      * @return array<int, object>
      */

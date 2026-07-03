@@ -171,5 +171,7 @@ class ModuleRuntimeTest extends TestCase
 
         $this->assertContains('blog/post', $nodeNames);
         $this->assertContains('blog/post/index', $nodeNames);
+        $this->assertContains('blog/reports/post', $nodeNames);
+        $this->assertContains('blog/reports/post/index', $nodeNames);
     }
 }
