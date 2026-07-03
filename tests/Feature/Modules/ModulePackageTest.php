@@ -17,7 +17,7 @@ class ModulePackageTest extends TestCase
         parent::setUp();
 
         $this->fixtureRoot = storage_path('framework/testing-module-packages');
-        app(ModuleFileStore::class)->deleteDirectory($this->fixtureRoot);
+        $this->deletePath($this->fixtureRoot);
         mkdir($this->fixtureRoot, 0777, true);
         Config::set('modules.path', $this->fixtureRoot.DIRECTORY_SEPARATOR.'modules');
         mkdir(Config::string('modules.path'), 0777, true);
@@ -25,10 +25,10 @@ class ModulePackageTest extends TestCase
 
     protected function tearDown(): void
     {
-        $store = app(ModuleFileStore::class);
-        $store->deleteDirectory($this->fixtureRoot);
-        $store->deleteDirectory(storage_path('modules/tmp'));
-        $store->deleteDirectory(storage_path('modules/backups'));
+        $this->deletePath($this->fixtureRoot);
+        $this->deletePath(storage_path('modules/tmp'));
+        $this->deletePath(storage_path('modules/backups'));
+        $this->deletePath(storage_path('logs/module-package-target'));
 
         parent::tearDown();
     }
@@ -95,8 +95,10 @@ class ModulePackageTest extends TestCase
         }
 
         $real = $this->fixtureRoot.DIRECTORY_SEPARATOR.'real';
-        $link = $this->fixtureRoot.DIRECTORY_SEPARATOR.'link';
+        $link = storage_path('modules/tmp/link');
+        $this->deletePath(dirname($link));
         mkdir($real, 0777, true);
+        mkdir(dirname($link), 0777, true);
         file_put_contents($real.DIRECTORY_SEPARATOR.'keep.txt', 'keep');
 
         set_error_handler(static fn () => true);
@@ -120,9 +122,10 @@ class ModulePackageTest extends TestCase
         file_put_contents($current.DIRECTORY_SEPARATOR.'module.txt', 'ok');
 
         $backup = app(ModuleFileStore::class)->backup($current, 'blog/module', '1.0.0/../../beta');
+        $normalizedBackup = str_replace('\\', '/', $backup);
 
         $this->assertStringContainsString('blog_module', $backup);
-        $this->assertStringContainsString('1.0.0_.._.._beta-', $backup);
+        $this->assertMatchesRegularExpression('#/blog_module/\d{14}-1\.0\.0_\.\._\.\._beta-[^/]+$#', $normalizedBackup);
         $this->assertFileExists($backup.DIRECTORY_SEPARATOR.'module.txt');
     }
 
@@ -136,7 +139,7 @@ class ModulePackageTest extends TestCase
         $normalizedBackup = str_replace('\\', '/', $backup);
 
         $this->assertStringStartsWith(str_replace('\\', '/', storage_path('modules/backups')).'/_', $normalizedBackup);
-        $this->assertStringContainsString('/_/_-', $normalizedBackup);
+        $this->assertMatchesRegularExpression('#/_/\d{14}-_-[^/]+$#', $normalizedBackup);
         $this->assertFileExists($backup.DIRECTORY_SEPARATOR.'module.txt');
     }
 
@@ -160,7 +163,7 @@ class ModulePackageTest extends TestCase
         $target = storage_path('logs/module-package-target');
         $source = $this->fixtureRoot.DIRECTORY_SEPARATOR.'source';
 
-        app(ModuleFileStore::class)->deleteDirectory($target);
+        $this->deletePath($target);
         mkdir($target, 0777, true);
         mkdir($source, 0777, true);
         file_put_contents($target.DIRECTORY_SEPARATOR.'keep.txt', 'keep');
@@ -174,7 +177,7 @@ class ModulePackageTest extends TestCase
         } finally {
             $this->assertFileExists($target.DIRECTORY_SEPARATOR.'keep.txt');
             $this->assertFileDoesNotExist($target.DIRECTORY_SEPARATOR.'new.txt');
-            app(ModuleFileStore::class)->deleteDirectory($target);
+            $this->deletePath($target);
         }
     }
 
@@ -266,14 +269,50 @@ class ModulePackageTest extends TestCase
         }
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Replacement target contains symlink ancestor');
+        $this->expectExceptionMessage('Replacement target contains dot segments');
 
         try {
             app(ModuleFileStore::class)->replace($target, $source);
         } finally {
             $this->assertFileExists($real.DIRECTORY_SEPARATOR.'child'.DIRECTORY_SEPARATOR.'keep.txt');
             $this->assertFileDoesNotExist($real.DIRECTORY_SEPARATOR.'child'.DIRECTORY_SEPARATOR.'new.txt');
-            app(ModuleFileStore::class)->deleteDirectory($modules2);
+            $this->deletePath($modules2);
+        }
+    }
+
+    public function test_replace_rejects_raw_target_with_symlink_before_dot_segments(): void
+    {
+        if (! function_exists('symlink')) {
+            $this->markTestSkipped('Symlinks are not available.');
+        }
+
+        $modulesRoot = Config::string('modules.path');
+        $outside = $this->fixtureRoot.DIRECTORY_SEPARATOR.'outside';
+        $link = $modulesRoot.DIRECTORY_SEPARATOR.'link-to-outside';
+        $target = $link.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'victim';
+        $source = $this->fixtureRoot.DIRECTORY_SEPARATOR.'outside-source';
+
+        mkdir($outside.DIRECTORY_SEPARATOR.'victim', 0777, true);
+        mkdir($source, 0777, true);
+        file_put_contents($outside.DIRECTORY_SEPARATOR.'victim'.DIRECTORY_SEPARATOR.'keep.txt', 'keep');
+        file_put_contents($source.DIRECTORY_SEPARATOR.'new.txt', 'new');
+
+        set_error_handler(static fn () => true);
+        $linked = symlink($outside, $link);
+        restore_error_handler();
+
+        if ($linked !== true) {
+            $this->markTestSkipped('Symlink creation is not available in this environment.');
+        }
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Replacement target contains dot segments');
+
+        try {
+            app(ModuleFileStore::class)->replace($target, $source);
+        } finally {
+            $this->assertFileExists($outside.DIRECTORY_SEPARATOR.'victim'.DIRECTORY_SEPARATOR.'keep.txt');
+            $this->assertFileDoesNotExist($outside.DIRECTORY_SEPARATOR.'victim'.DIRECTORY_SEPARATOR.'new.txt');
         }
     }
 
@@ -300,6 +339,46 @@ class ModulePackageTest extends TestCase
         $this->expectExceptionMessage('unsafe zip entry');
 
         app(ModuleZipExtractor::class)->extract($zipPath);
+    }
+
+    public function test_backup_rejects_symlink_to_file_entries(): void
+    {
+        if (! function_exists('symlink')) {
+            $this->markTestSkipped('Symlinks are not available.');
+        }
+
+        $current = $this->fixtureRoot.DIRECTORY_SEPARATOR.'symlink-file-source';
+        mkdir($current, 0777, true);
+        file_put_contents($current.DIRECTORY_SEPARATOR.'real.txt', 'ok');
+
+        set_error_handler(static fn () => true);
+        $linked = symlink($current.DIRECTORY_SEPARATOR.'real.txt', $current.DIRECTORY_SEPARATOR.'alias.txt');
+        restore_error_handler();
+
+        if ($linked !== true) {
+            $this->markTestSkipped('Symlink creation is not available in this environment.');
+        }
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Refusing to copy symlink');
+
+        app(ModuleFileStore::class)->backup($current, 'blog', '1.0.0');
+    }
+
+    public function test_public_delete_directory_rejects_non_safe_root(): void
+    {
+        $outside = $this->fixtureRoot.DIRECTORY_SEPARATOR.'unsafe-delete';
+        mkdir($outside, 0777, true);
+        file_put_contents($outside.DIRECTORY_SEPARATOR.'keep.txt', 'keep');
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Delete path is outside allowed roots');
+
+        try {
+            app(ModuleFileStore::class)->deleteDirectory($outside);
+        } finally {
+            $this->assertFileExists($outside.DIRECTORY_SEPARATOR.'keep.txt');
+        }
     }
 
     private function createZip(string $zipPath, array $entries): void
@@ -345,5 +424,28 @@ class ModulePackageTest extends TestCase
             scandir($path) ?: [],
             static fn (string $entry): bool => $entry !== '.' && $entry !== '..'
         ));
+    }
+
+    private function deletePath(string $path): void
+    {
+        if (is_link($path) || is_file($path)) {
+            @unlink($path) || @rmdir($path);
+
+            return;
+        }
+
+        if (! is_dir($path)) {
+            return;
+        }
+
+        foreach (scandir($path) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $this->deletePath($path.DIRECTORY_SEPARATOR.$entry);
+        }
+
+        @rmdir($path);
     }
 }

@@ -12,7 +12,7 @@ final class ModuleFileStore
             throw new RuntimeException("Module directory not found: {$source}");
         }
 
-        $target = storage_path('modules/backups/'.$this->safeSegment($module).'/'.$this->safeSegment($version).'-'.date('YmdHis').'-'.substr(uniqid('', true), -6));
+        $target = storage_path('modules/backups/'.$this->safeSegment($module).'/'.date('YmdHis').'-'.$this->safeSegment($version).'-'.substr(uniqid('', true), -6));
         $this->copyDirectory($source, $target);
 
         return $target;
@@ -24,6 +24,10 @@ final class ModuleFileStore
             throw new RuntimeException("Replacement directory not found: {$source}");
         }
 
+        if ($this->hasDotSegments($target)) {
+            throw new RuntimeException('Replacement target contains dot segments.');
+        }
+
         $normalizedTarget = $this->normalizePath($target);
         $normalizedSource = $this->normalizePath($source);
 
@@ -31,11 +35,12 @@ final class ModuleFileStore
             throw new RuntimeException('Replacement target must differ from source.');
         }
 
-        if (! $this->isAllowedTarget($normalizedTarget)) {
+        $modulesRoot = $this->modulesRoot();
+        if (! $this->isWithinRoot($normalizedTarget, $modulesRoot)) {
             throw new RuntimeException('Replacement target is outside allowed roots.');
         }
 
-        $this->assertNoSymlinkAncestors($normalizedTarget);
+        $this->assertNoSymlinkAncestors($normalizedTarget, $modulesRoot);
 
         $backupPath = null;
         $cleanupBackup = false;
@@ -45,11 +50,11 @@ final class ModuleFileStore
         }
 
         try {
-            $this->deleteDirectory($target);
+            $this->deleteDirectoryUnchecked($target);
             $this->copyDirectory($source, $target);
             $cleanupBackup = true;
         } catch (RuntimeException $exception) {
-            $this->deleteDirectory($target);
+            $this->deleteDirectoryUnchecked($target);
 
             if ($backupPath !== null && is_dir($backupPath)) {
                 try {
@@ -70,8 +75,24 @@ final class ModuleFileStore
 
     public function deleteDirectory(string $path): void
     {
+        if ($this->hasDotSegments($path)) {
+            throw new RuntimeException('Delete path contains dot segments.');
+        }
+
+        $normalizedPath = $this->normalizePath($path);
+        $root = $this->allowedDeleteRoot($normalizedPath);
+        if ($root === null) {
+            throw new RuntimeException('Delete path is outside allowed roots.');
+        }
+
+        $this->assertNoSymlinkAncestors($normalizedPath, $root);
+        $this->deleteDirectoryUnchecked($path);
+    }
+
+    private function deleteDirectoryUnchecked(string $path): void
+    {
         if (is_link($path) || is_file($path)) {
-            $this->deleteLeaf($path);
+            $this->deletePathUnchecked($path);
 
             return;
         }
@@ -88,11 +109,11 @@ final class ModuleFileStore
             $child = $path.DIRECTORY_SEPARATOR.$entry;
 
             if (is_dir($child) && ! is_link($child)) {
-                $this->deleteDirectory($child);
+                $this->deleteDirectoryUnchecked($child);
                 continue;
             }
 
-            $this->deleteLeaf($child);
+            $this->deletePathUnchecked($child);
         }
 
         if (! @rmdir($path)) {
@@ -129,7 +150,11 @@ final class ModuleFileStore
             $from = $source.DIRECTORY_SEPARATOR.$entry;
             $to = $target.DIRECTORY_SEPARATOR.$entry;
 
-            if (is_dir($from) && ! is_link($from)) {
+            if (is_link($from)) {
+                throw new RuntimeException("Refusing to copy symlink: {$from}");
+            }
+
+            if (is_dir($from)) {
                 $this->copyDirectory($from, $to);
                 continue;
             }
@@ -140,11 +165,9 @@ final class ModuleFileStore
         }
     }
 
-    private function isAllowedTarget(string $target): bool
+    private function isWithinRoot(string $path, string $root): bool
     {
-        $root = $this->normalizePath((string) config('modules.path'));
-
-        return $target === $root || str_starts_with($target, rtrim($root, '/').'/');
+        return $path === $root || str_starts_with($path, rtrim($root, '/').'/');
     }
 
     private function safeSegment(string $value): string
@@ -192,7 +215,7 @@ final class ModuleFileStore
         return $prefix.$normalizedPath;
     }
 
-    private function deleteLeaf(string $path): void
+    private function deletePathUnchecked(string $path): void
     {
         if (@unlink($path) || @rmdir($path)) {
             return;
@@ -201,9 +224,9 @@ final class ModuleFileStore
         throw new RuntimeException("Unable to delete path: {$path}");
     }
 
-    private function assertNoSymlinkAncestors(string $target): void
+    private function assertNoSymlinkAncestors(string $target, string $root): void
     {
-        $root = rtrim($this->normalizePath((string) config('modules.path')), '/');
+        $root = rtrim($root, '/');
         $target = str_replace('\\', '/', $target);
 
         if (is_link($root)) {
@@ -232,5 +255,36 @@ final class ModuleFileStore
                 throw new RuntimeException('Replacement target contains symlink ancestor.');
             }
         }
+    }
+
+    private function hasDotSegments(string $path): bool
+    {
+        foreach (preg_split('#[\\\\/]+#', str_replace('\\', '/', $path), -1, PREG_SPLIT_NO_EMPTY) ?: [] as $segment) {
+            if ($segment === '.' || $segment === '..') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function allowedDeleteRoot(string $path): ?string
+    {
+        foreach ([
+            $this->modulesRoot(),
+            $this->normalizePath(storage_path('modules/tmp')),
+            $this->normalizePath(storage_path('modules/backups')),
+        ] as $root) {
+            if ($this->isWithinRoot($path, $root)) {
+                return $root;
+            }
+        }
+
+        return null;
+    }
+
+    private function modulesRoot(): string
+    {
+        return $this->normalizePath((string) config('modules.path'));
     }
 }
