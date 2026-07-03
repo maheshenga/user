@@ -55,6 +55,12 @@ Disable a module:
 php artisan module:disable blog
 ```
 
+Uninstall a module while preserving module-owned data:
+
+```bash
+php artisan module:uninstall blog
+```
+
 ## Runtime Behavior
 
 Enabled modules are resolved before legacy admin controllers only for non-reserved `admin_prefix` values. Reserved EasyAdmin8 admin prefixes continue to resolve through the legacy runtime.

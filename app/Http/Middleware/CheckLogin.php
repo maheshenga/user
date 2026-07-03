@@ -22,7 +22,6 @@ class CheckLogin
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $response = $next($request);
         $adminConfig = config('admin');
         $parameters = request()->route()->parameters;
         $controller = $parameters['controllerPath'] ?? $parameters['controller'] ?? 'index';
@@ -48,7 +47,7 @@ class CheckLogin
                 $properties = $classObj->getDefaultProperties();
                 $ignoreLogin = $properties['ignoreLogin'] ?? false;
                 if ($ignoreLogin) {
-                    return $response;
+                    return $next($request);
                 }
 
                 if (! empty($resolvedAction)) {
@@ -77,6 +76,6 @@ class CheckLogin
             }
         }
 
-        return $response;
+        return $next($request);
     }
 }

@@ -104,7 +104,7 @@ final class ModuleInstaller
     {
         $href = isset($menu['href']) ? (string) $menu['href'] : '';
         $title = (string) ($menu['title'] ?? '');
-        $icon = isset($menu['icon']) ? (string) $menu['icon'] : null;
+        $icon = isset($menu['icon']) ? (string) $menu['icon'] : '';
         $children = is_array($menu['children'] ?? null) ? $menu['children'] : [];
 
         if ($href === '') {

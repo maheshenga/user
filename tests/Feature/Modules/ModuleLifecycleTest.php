@@ -153,6 +153,30 @@ class ModuleLifecycleTest extends TestCase
         $this->assertSame(1, DB::table('system_menu')->where('href', 'blog/post/index')->count());
     }
 
+    public function test_install_uses_empty_icon_for_module_menus_without_icon(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        $root = storage_path('framework/testing-modules-menu-icon');
+        $manifest = json_decode($this->moduleManifest('plain_menu', 'plainmenu'), true, 512, JSON_THROW_ON_ERROR);
+        $manifest['menus'] = [
+            [
+                'title' => 'Plain Menu',
+                'href' => 'plainmenu/post/index',
+            ],
+        ];
+        $this->ensureModuleFixture($root.DIRECTORY_SEPARATOR.'PlainMenu', json_encode($manifest, JSON_THROW_ON_ERROR));
+        \Illuminate\Support\Facades\Config::set('modules.path', $root);
+
+        try {
+            $this->artisan('module:install', ['name' => 'plain_menu'])->assertExitCode(0);
+
+            $this->assertSame('', DB::table('system_menu')->where('href', 'plainmenu/post/index')->value('icon'));
+        } finally {
+            $this->deleteDirectory($root);
+        }
+    }
+
     public function test_uninstall_preserve_allows_enabled_and_marks_module_uninstalled(): void
     {
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);

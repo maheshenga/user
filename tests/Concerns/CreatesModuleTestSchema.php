@@ -15,7 +15,7 @@ trait CreatesModuleTestSchema
                 $table->id();
                 $table->unsignedBigInteger('pid')->default(0);
                 $table->string('title', 120);
-                $table->string('icon', 120)->nullable();
+                $table->string('icon', 120)->default('');
                 $table->string('href', 255)->nullable();
                 $table->string('target', 40)->default('_self');
                 $table->integer('sort')->default(0);

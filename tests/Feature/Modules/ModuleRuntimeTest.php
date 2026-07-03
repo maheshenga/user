@@ -40,6 +40,8 @@ class ModuleRuntimeTest extends TestCase
             ['group' => 'site', 'name' => 'site_version', 'value' => 'test-version'],
             ['group' => 'site', 'name' => 'editor_type', 'value' => 'wangEditor'],
             ['group' => 'site', 'name' => 'iframe_open_top', 'value' => '0'],
+            ['group' => 'module_test', 'name' => 'protected_hits', 'value' => '0'],
+            ['group' => 'module_test', 'name' => 'ignore_hits', 'value' => '0'],
         ]);
         Config::set('modules.path', base_path('tests/Fixtures/modules'));
         $this->withoutMiddleware([
@@ -156,6 +158,83 @@ class ModuleRuntimeTest extends TestCase
         $response->assertSeeText('runtime-only-index');
     }
 
+    public function test_module_runtime_loads_module_local_parent_without_dev_autoload(): void
+    {
+        $root = storage_path('framework/testing-module-local-autoload');
+        $moduleRoot = $root.DIRECTORY_SEPARATOR.'LocalParent';
+
+        $this->deleteDirectory($root);
+        mkdir($moduleRoot.DIRECTORY_SEPARATOR.'src'.DIRECTORY_SEPARATOR.'Controllers', 0777, true);
+        file_put_contents($moduleRoot.DIRECTORY_SEPARATOR.'module.json', json_encode([
+            'schema_version' => '1.0',
+            'name' => 'local_parent',
+            'title' => 'Local Parent Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'core_version' => '^8.0',
+            'namespace' => 'Modules\\LocalParent',
+            'admin_prefix' => 'localparent',
+            'controllers' => 'src/Controllers',
+            'views' => 'resources/views',
+            'assets' => 'assets',
+        ], JSON_THROW_ON_ERROR));
+        file_put_contents($moduleRoot.DIRECTORY_SEPARATOR.'src'.DIRECTORY_SEPARATOR.'Controllers'.DIRECTORY_SEPARATOR.'BaseReportController.php', <<<'PHP'
+<?php
+
+namespace Modules\LocalParent\Controllers;
+
+use App\Http\Controllers\common\Controller;
+
+abstract class BaseReportController extends Controller
+{
+    protected function inheritedMessage(): string
+    {
+        return 'module-local-parent-loaded';
+    }
+}
+PHP);
+        file_put_contents($moduleRoot.DIRECTORY_SEPARATOR.'src'.DIRECTORY_SEPARATOR.'Controllers'.DIRECTORY_SEPARATOR.'ReportController.php', <<<'PHP'
+<?php
+
+namespace Modules\LocalParent\Controllers;
+
+use Illuminate\Http\Response;
+
+class ReportController extends BaseReportController
+{
+    public function index(): Response
+    {
+        return response($this->inheritedMessage());
+    }
+}
+PHP);
+
+        try {
+            SystemModule::query()->create([
+                'name' => 'local_parent',
+                'title' => 'Local Parent Module',
+                'vendor' => 'easyadmin8',
+                'version' => '1.0.0',
+                'type' => 'private',
+                'trust_level' => 'private',
+                'status' => 'enabled',
+                'path' => $moduleRoot,
+                'namespace' => 'Modules\\LocalParent',
+                'admin_prefix' => 'localparent',
+                'config_json' => json_decode(file_get_contents($moduleRoot.DIRECTORY_SEPARATOR.'module.json'), true),
+                'enabled_at' => time(),
+            ]);
+
+            $response = $this->get('/admin/localparent/report/index');
+
+            $response->assertOk();
+            $response->assertSeeText('module-local-parent-loaded');
+        } finally {
+            $this->deleteDirectory($root);
+        }
+    }
+
     public function test_current_admin_action_uses_module_controller_for_enabled_module(): void
     {
         $response = $this->get('/admin/runtime/report/actionName');
@@ -180,6 +259,27 @@ class ModuleRuntimeTest extends TestCase
 
         $response->assertOk();
         $response->assertSeeText('runtime-only-index');
+    }
+
+    public function test_check_login_does_not_execute_protected_module_action_for_guest(): void
+    {
+        $this->flushSession();
+
+        $response = $this->get('/admin/runtime/report/protectedAction');
+
+        $response->assertStatus(200);
+        $this->assertSame('0', DB::table('system_config')->where('group', 'module_test')->where('name', 'protected_hits')->value('value'));
+    }
+
+    public function test_check_login_executes_ignored_module_action_once_for_guest(): void
+    {
+        $this->flushSession();
+
+        $response = $this->get('/admin/runtime/report/ignoreLoginCounter');
+
+        $response->assertOk();
+        $response->assertSeeText('ignore-login-counter');
+        $this->assertSame('1', DB::table('system_config')->where('group', 'module_test')->where('name', 'ignore_hits')->value('value'));
     }
 
     public function test_module_controller_nodes_are_scanned(): void
@@ -262,5 +362,28 @@ class ModuleRuntimeTest extends TestCase
 
         $this->assertSame('Modules\\Blog\\Controllers\\PostController', $class);
         $this->assertSame('index', $action);
+    }
+
+    private function deleteDirectory(string $path): void
+    {
+        if (! is_dir($path)) {
+            return;
+        }
+
+        foreach (scandir($path) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $child = $path.DIRECTORY_SEPARATOR.$entry;
+            if (is_dir($child)) {
+                $this->deleteDirectory($child);
+                continue;
+            }
+
+            @unlink($child);
+        }
+
+        @rmdir($path);
     }
 }
