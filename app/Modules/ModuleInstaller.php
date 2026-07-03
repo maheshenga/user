@@ -13,6 +13,7 @@ final class ModuleInstaller
         private readonly ModuleManager $manager,
         private readonly ModuleRepository $repository,
         private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
+        private readonly ModuleVersionRecorder $versions,
     ) {}
 
     public function install(string $name, ?int $actorId = null): void
@@ -29,6 +30,7 @@ final class ModuleInstaller
         $this->runLifecycleAction('install', $name, $oldState, $newState, $actorId, function () use ($manifest, $name, $newState): void {
             $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $name);
             $this->repository->upsertDiscovered($manifest);
+            $this->versions->record($manifest);
             $this->importMenus($manifest);
             $this->repository->setStatus($name, $newState);
         });
