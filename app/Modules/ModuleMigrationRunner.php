@@ -28,19 +28,19 @@ final class ModuleMigrationRunner
         foreach ($pendingFiles as $file) {
             $migration = basename($file);
 
-            $instance = require $file;
-
-            if (! is_object($instance) || ! method_exists($instance, 'up')) {
-                throw new RuntimeException("Module migration [{$migration}] must return an object with up().");
-            }
-
-            $instance->up();
-
             try {
-                DB::transaction(function () use ($manifest, $migration, $batch): void {
+                DB::transaction(function () use ($manifest, $migration, $batch, $file): void {
                     if (SystemModuleMigration::query()->where('module', $manifest->name())->where('migration', $migration)->exists()) {
                         return;
                     }
+
+                    $instance = require $file;
+
+                    if (! is_object($instance) || ! method_exists($instance, 'up')) {
+                        throw new RuntimeException("Module migration [{$migration}] must return an object with up().");
+                    }
+
+                    $instance->up();
 
                     SystemModuleMigration::query()->create([
                         'module' => $manifest->name(),
@@ -74,18 +74,24 @@ final class ModuleMigrationRunner
     {
         foreach (array_reverse($this->recordedFiles($manifest, $batch)) as $file) {
             $migration = basename($file);
-            $instance = require $file;
+            DB::transaction(function () use ($manifest, $migration, $file): void {
+                if (! SystemModuleMigration::query()->where('module', $manifest->name())->where('migration', $migration)->exists()) {
+                    return;
+                }
 
-            if (! is_object($instance) || ! method_exists($instance, 'down')) {
-                throw new RuntimeException('Module rollback blocked by irreversible migration: '.$migration);
-            }
+                $instance = require $file;
 
-            $instance->down();
+                if (! is_object($instance) || ! method_exists($instance, 'down')) {
+                    throw new RuntimeException('Module rollback blocked by irreversible migration: '.$migration);
+                }
 
-            SystemModuleMigration::query()
-                ->where('module', $manifest->name())
-                ->where('migration', $migration)
-                ->delete();
+                $instance->down();
+
+                SystemModuleMigration::query()
+                    ->where('module', $manifest->name())
+                    ->where('migration', $migration)
+                    ->delete();
+            });
         }
     }
 

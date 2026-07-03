@@ -122,6 +122,60 @@ PHP,
         }
     }
 
+    public function test_migration_runner_skips_up_when_tracking_row_appears_before_transaction_recheck(): void
+    {
+        $root = storage_path('framework/testing-phase2-race-recheck');
+        $manifest = $this->createMigrationModuleFixture(
+            $root,
+            'racecheck',
+            'racecheck',
+            [
+                '2026_07_04_000001_seed_tracking_row.php' => <<<'PHP'
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\DB;
+return new class extends Migration {
+    public function up(): void {
+        DB::table('system_module_migration')->insert([
+            'module' => 'racecheck',
+            'migration' => '2026_07_04_000002_create_should_not_run.php',
+            'batch' => 1,
+            'ran_at' => time(),
+        ]);
+    }
+    public function down(): void {}
+};
+PHP,
+                '2026_07_04_000002_create_should_not_run.php' => <<<'PHP'
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+return new class extends Migration {
+    public function up(): void { Schema::create('should_not_run', fn (Blueprint $table) => $table->id()); }
+    public function down(): void { Schema::dropIfExists('should_not_run'); }
+};
+PHP,
+            ]
+        );
+
+        try {
+            app(\App\Modules\ModuleMigrationRunner::class)->runPending($manifest);
+
+            $this->assertFalse(Schema::hasTable('should_not_run'));
+            $this->assertDatabaseHas('system_module_migration', [
+                'module' => 'racecheck',
+                'migration' => '2026_07_04_000001_seed_tracking_row.php',
+            ]);
+            $this->assertDatabaseHas('system_module_migration', [
+                'module' => 'racecheck',
+                'migration' => '2026_07_04_000002_create_should_not_run.php',
+            ]);
+        } finally {
+            $this->deleteDirectory($root);
+        }
+    }
+
     public function test_rollback_recorded_only_rolls_back_latest_batch(): void
     {
         $root = storage_path('framework/testing-phase2-rollback-latest');
