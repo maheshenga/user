@@ -43,7 +43,40 @@ class ModuleManifestTest extends TestCase
     /**
      * @throws JsonException
      */
-    public function test_manifest_normalizes_relative_paths_without_requiring_existing_directories(): void
+    public function test_manifest_rejects_module_local_paths_that_escape_module_root(): void
+    {
+        $path = base_path('storage/framework/testing-invalid-module-path.json');
+        file_put_contents($path, json_encode([
+            'schema_version' => '1.0',
+            'name' => 'blog',
+            'title' => 'Blog Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'core_version' => '^8.0',
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'blog',
+            'controllers' => './src/Controllers/../Controllers',
+            'views' => 'resources/views/./partials/..',
+            'assets' => '../module-assets',
+        ], JSON_THROW_ON_ERROR));
+
+        try {
+            try {
+                ModuleManifest::fromFile($path);
+                $this->fail('Expected manifest path escape to throw.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame('module.json path escapes module root: assets', $exception->getMessage());
+            }
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    /**
+     * @throws JsonException
+     */
+    public function test_manifest_normalizes_safe_relative_paths_without_requiring_existing_directories(): void
     {
         $path = base_path('storage/framework/testing-normalized-module.json');
         file_put_contents($path, json_encode([
@@ -58,7 +91,7 @@ class ModuleManifestTest extends TestCase
             'admin_prefix' => 'blog',
             'controllers' => './src/Controllers/../Controllers',
             'views' => 'resources/views/./partials/..',
-            'assets' => '../module-assets',
+            'assets' => './assets/./compiled/..',
         ], JSON_THROW_ON_ERROR));
 
         try {
@@ -76,7 +109,7 @@ class ModuleManifestTest extends TestCase
             $manifest->toArray()['views']
         );
         $this->assertSame(
-            str_replace('\\', '/', base_path('storage/module-assets')),
+            str_replace('\\', '/', base_path('storage/framework/assets')),
             $manifest->toArray()['assets']
         );
     }

@@ -25,6 +25,14 @@ final class ModuleManifest
         'admin_prefix',
     ];
 
+    private const PATH_FIELDS = [
+        'controllers' => 'src/Controllers',
+        'views' => 'resources/views',
+        'assets' => 'assets',
+        'migrations' => 'database/migrations',
+        'seeders' => 'database/seeders',
+    ];
+
     /**
      * @param  array<string, mixed>  $data
      */
@@ -58,11 +66,17 @@ final class ModuleManifest
             }
         }
 
-        $basePath = dirname($path);
+        $basePath = self::normalizePath(dirname($path));
         $decoded['path'] = $basePath;
-        $decoded['controllers'] = self::resolvePath($basePath, (string) ($decoded['controllers'] ?? 'src/Controllers'));
-        $decoded['views'] = self::resolvePath($basePath, (string) ($decoded['views'] ?? 'resources/views'));
-        $decoded['assets'] = self::resolvePath($basePath, (string) ($decoded['assets'] ?? 'assets'));
+
+        foreach (self::PATH_FIELDS as $field => $defaultPath) {
+            if (! array_key_exists($field, $decoded) && ! in_array($field, ['controllers', 'views', 'assets'], true)) {
+                continue;
+            }
+
+            $decoded[$field] = self::resolveModulePath($basePath, $field, (string) ($decoded[$field] ?? $defaultPath));
+        }
+
         $decoded['menus'] = is_array($decoded['menus'] ?? null) ? $decoded['menus'] : [];
         $decoded['permissions'] = is_array($decoded['permissions'] ?? null) ? $decoded['permissions'] : [];
 
@@ -149,17 +163,39 @@ final class ModuleManifest
         return $value === null || $value === '';
     }
 
-    private static function resolvePath(string $basePath, string $path): string
+    private static function resolveModulePath(string $basePath, string $field, string $path): string
     {
+        $rootPath = self::normalizePath($basePath);
+
         if ($path === '') {
-            return self::normalizePath($basePath);
+            return $rootPath;
         }
 
         if (str_starts_with($path, DIRECTORY_SEPARATOR) || preg_match('/^[A-Za-z]:[\\\\\\/]/', $path) === 1) {
-            return self::normalizePath($path);
+            $resolvedPath = self::normalizePath($path);
+        } else {
+            $resolvedPath = self::normalizePath($rootPath.DIRECTORY_SEPARATOR.str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path));
         }
 
-        return self::normalizePath($basePath.DIRECTORY_SEPARATOR.str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path));
+        if (! self::isWithinRoot($rootPath, $resolvedPath)) {
+            throw new InvalidArgumentException("module.json path escapes module root: {$field}");
+        }
+
+        return $resolvedPath;
+    }
+
+    private static function isWithinRoot(string $rootPath, string $resolvedPath): bool
+    {
+        $rootComparison = self::comparisonPath($rootPath);
+        $resolvedComparison = self::comparisonPath($resolvedPath);
+
+        return $resolvedComparison === $rootComparison
+            || str_starts_with($resolvedComparison, rtrim($rootComparison, '/').'/');
+    }
+
+    private static function comparisonPath(string $path): string
+    {
+        return preg_match('/^[A-Za-z]:/', $path) === 1 ? strtolower($path) : $path;
     }
 
     private static function normalizePath(string $path): string
