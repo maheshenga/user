@@ -28,6 +28,24 @@ final class ModuleRepository
         );
     }
 
+    public function updateFromManifest(ModuleManifest $manifest, string $status): void
+    {
+        SystemModule::query()->where('name', $manifest->name())->update([
+            'title' => $manifest->title(),
+            'vendor' => $manifest->vendor(),
+            'version' => $manifest->version(),
+            'type' => $manifest->type(),
+            'trust_level' => $manifest->type(),
+            'status' => $status,
+            'path' => $manifest->path(),
+            'namespace' => $manifest->namespace(),
+            'admin_prefix' => $manifest->adminPrefix(),
+            'config_json' => $manifest->toArray(),
+            'last_error' => null,
+            'update_time' => time(),
+        ]);
+    }
+
     public function installed(string $name): ?SystemModule
     {
         return SystemModule::query()->where('name', $name)->first();
