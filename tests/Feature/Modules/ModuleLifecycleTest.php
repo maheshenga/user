@@ -71,6 +71,26 @@ class ModuleLifecycleTest extends TestCase
         $this->assertSame(0, SystemModuleSource::query()->count());
     }
 
+    public function test_module_can_be_installed_enabled_disabled_and_logged(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+
+        $this->artisan('module:install', ['name' => 'blog'])->assertExitCode(0);
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'installed']);
+        $this->assertDatabaseHas('system_menu', ['href' => 'blog/post/index']);
+        $this->assertDatabaseHas('system_module_log', ['module' => 'blog', 'action' => 'install', 'result' => 'success']);
+
+        $this->artisan('module:enable', ['name' => 'blog'])->assertExitCode(0);
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'enabled']);
+        $this->assertDatabaseHas('system_module_log', ['module' => 'blog', 'action' => 'enable', 'result' => 'success']);
+
+        $this->artisan('module:disable', ['name' => 'blog'])->assertExitCode(0);
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'disabled']);
+        $this->assertDatabaseHas('system_module_log', ['module' => 'blog', 'action' => 'disable', 'result' => 'success']);
+    }
+
     /**
      * @return array<int, object>
      */

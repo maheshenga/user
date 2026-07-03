@@ -163,4 +163,13 @@ class ModuleRuntimeTest extends TestCase
         $response->assertOk();
         $response->assertSeeText('runtime-only-index');
     }
+
+    public function test_module_controller_nodes_are_scanned(): void
+    {
+        $nodes = app(\App\Http\Services\NodeService::class)->getNodeList();
+        $nodeNames = array_column($nodes, 'node');
+
+        $this->assertContains('blog/post', $nodeNames);
+        $this->assertContains('blog/post/index', $nodeNames);
+    }
 }

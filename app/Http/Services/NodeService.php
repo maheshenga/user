@@ -21,6 +21,10 @@ class NodeService
         } catch (AnnotationException | \ReflectionException $e) {
             $nodeList = [];
         }
-        return $nodeList;
+        $moduleNodes = class_exists(\App\Modules\ModuleNodeScanner::class)
+            ? app(\App\Modules\ModuleNodeScanner::class)->getNodeList()
+            : [];
+
+        return array_merge($nodeList, $moduleNodes);
     }
 }
