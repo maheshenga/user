@@ -12,7 +12,7 @@ final class ModuleFileStore
             throw new RuntimeException("Module directory not found: {$source}");
         }
 
-        $target = storage_path('modules/backups/'.$this->safeSegment($module).'/'.$this->safeSegment($version).'-'.date('YmdHis'));
+        $target = storage_path('modules/backups/'.$this->safeSegment($module).'/'.$this->safeSegment($version).'-'.date('YmdHis').'-'.substr(uniqid('', true), -6));
         $this->copyDirectory($source, $target);
 
         return $target;
@@ -35,7 +35,7 @@ final class ModuleFileStore
             throw new RuntimeException('Replacement target is outside allowed roots.');
         }
 
-        $this->assertNoSymlinkAncestors($target);
+        $this->assertNoSymlinkAncestors($normalizedTarget);
 
         $backupPath = null;
         $cleanupBackup = false;
@@ -203,8 +203,8 @@ final class ModuleFileStore
 
     private function assertNoSymlinkAncestors(string $target): void
     {
-        $root = rtrim((string) config('modules.path'), DIRECTORY_SEPARATOR);
-        $root = $root === '' ? (string) config('modules.path') : $root;
+        $root = rtrim($this->normalizePath((string) config('modules.path')), '/');
+        $target = str_replace('\\', '/', $target);
 
         if (is_link($root)) {
             throw new RuntimeException('Replacement target contains symlink ancestor.');
@@ -215,14 +215,14 @@ final class ModuleFileStore
             return;
         }
 
-        $relative = ltrim(substr($parent, strlen($root)), '\\/');
+        $relative = ltrim(substr($parent, strlen($root)), '/');
         if ($relative === '') {
             return;
         }
 
         $current = $root;
-        foreach (preg_split('#[\\\\/]+#', $relative, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $segment) {
-            $current .= DIRECTORY_SEPARATOR.$segment;
+        foreach (preg_split('#/+#', $relative, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $segment) {
+            $current .= '/'.$segment;
 
             if (! file_exists($current) && ! is_link($current)) {
                 break;

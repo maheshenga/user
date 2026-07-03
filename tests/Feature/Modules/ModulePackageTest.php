@@ -140,6 +140,21 @@ class ModulePackageTest extends TestCase
         $this->assertFileExists($backup.DIRECTORY_SEPARATOR.'module.txt');
     }
 
+    public function test_backup_uses_unique_suffix_for_same_module_and_version(): void
+    {
+        $current = $this->fixtureRoot.DIRECTORY_SEPARATOR.'same-second-source';
+        mkdir($current, 0777, true);
+        file_put_contents($current.DIRECTORY_SEPARATOR.'module.txt', 'ok');
+
+        $store = app(ModuleFileStore::class);
+        $first = $store->backup($current, 'blog', '1.0.0');
+        $second = $store->backup($current, 'blog', '1.0.0');
+
+        $this->assertNotSame($first, $second);
+        $this->assertFileExists($first.DIRECTORY_SEPARATOR.'module.txt');
+        $this->assertFileExists($second.DIRECTORY_SEPARATOR.'module.txt');
+    }
+
     public function test_replace_rejects_target_under_non_module_storage_path(): void
     {
         $target = storage_path('logs/module-package-target');
@@ -220,6 +235,45 @@ class ModulePackageTest extends TestCase
         } finally {
             $this->assertFileExists($real.DIRECTORY_SEPARATOR.'child'.DIRECTORY_SEPARATOR.'keep.txt');
             $this->assertFileDoesNotExist($real.DIRECTORY_SEPARATOR.'child'.DIRECTORY_SEPARATOR.'new.txt');
+        }
+    }
+
+    public function test_replace_rejects_normalized_target_under_symlink_ancestor(): void
+    {
+        if (! function_exists('symlink')) {
+            $this->markTestSkipped('Symlinks are not available.');
+        }
+
+        $modulesRoot = Config::string('modules.path');
+        $modules2 = dirname($modulesRoot).DIRECTORY_SEPARATOR.'modules2';
+        $real = $modulesRoot.DIRECTORY_SEPARATOR.'real-parent';
+        $link = $modulesRoot.DIRECTORY_SEPARATOR.'linked-parent';
+        $target = $modules2.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'modules'.DIRECTORY_SEPARATOR.'linked-parent'.DIRECTORY_SEPARATOR.'child';
+        $source = $this->fixtureRoot.DIRECTORY_SEPARATOR.'normalized-source';
+
+        mkdir($modules2, 0777, true);
+        mkdir($real.DIRECTORY_SEPARATOR.'child', 0777, true);
+        mkdir($source, 0777, true);
+        file_put_contents($real.DIRECTORY_SEPARATOR.'child'.DIRECTORY_SEPARATOR.'keep.txt', 'keep');
+        file_put_contents($source.DIRECTORY_SEPARATOR.'new.txt', 'new');
+
+        set_error_handler(static fn () => true);
+        $linked = symlink($real, $link);
+        restore_error_handler();
+
+        if ($linked !== true) {
+            $this->markTestSkipped('Symlink creation is not available in this environment.');
+        }
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Replacement target contains symlink ancestor');
+
+        try {
+            app(ModuleFileStore::class)->replace($target, $source);
+        } finally {
+            $this->assertFileExists($real.DIRECTORY_SEPARATOR.'child'.DIRECTORY_SEPARATOR.'keep.txt');
+            $this->assertFileDoesNotExist($real.DIRECTORY_SEPARATOR.'child'.DIRECTORY_SEPARATOR.'new.txt');
+            app(ModuleFileStore::class)->deleteDirectory($modules2);
         }
     }
 
