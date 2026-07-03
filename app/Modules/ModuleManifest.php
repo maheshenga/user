@@ -164,6 +164,52 @@ final class ModuleManifest
 
     private static function normalizePath(string $path): string
     {
-        return str_replace('\\', '/', $path);
+        $path = str_replace('\\', '/', $path);
+        $prefix = '';
+
+        if (preg_match('/^[A-Za-z]:/', $path) === 1) {
+            $prefix = substr($path, 0, 2);
+            $path = substr($path, 2);
+        } elseif (str_starts_with($path, '//')) {
+            $prefix = '//';
+            $path = substr($path, 2);
+        }
+
+        $isAbsolute = str_starts_with($path, '/');
+        $segments = preg_split('#/+#', $path, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $normalized = [];
+
+        foreach ($segments as $segment) {
+            if ($segment === '.') {
+                continue;
+            }
+
+            if ($segment === '..') {
+                if ($normalized !== [] && end($normalized) !== '..') {
+                    array_pop($normalized);
+                    continue;
+                }
+
+                if (! $isAbsolute) {
+                    $normalized[] = $segment;
+                }
+
+                continue;
+            }
+
+            $normalized[] = $segment;
+        }
+
+        $normalizedPath = implode('/', $normalized);
+
+        if ($isAbsolute) {
+            $normalizedPath = '/'.$normalizedPath;
+        }
+
+        if ($normalizedPath === '' && $isAbsolute) {
+            $normalizedPath = '/';
+        }
+
+        return $prefix.$normalizedPath;
     }
 }

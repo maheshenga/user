@@ -3,6 +3,7 @@
 namespace App\Modules;
 
 use App\Models\SystemModule;
+use InvalidArgumentException;
 use Illuminate\Support\Facades\Schema;
 
 final class ModuleManager
@@ -28,7 +29,10 @@ final class ModuleManager
             }
             $manifestPath = $root.DIRECTORY_SEPARATOR.$entry.DIRECTORY_SEPARATOR.'module.json';
             if (is_file($manifestPath)) {
-                $manifest = ModuleManifest::fromFile($manifestPath);
+                $manifest = $this->loadManifest($manifestPath);
+                if ($manifest === null) {
+                    continue;
+                }
                 $modules[$manifest->name()] = $manifest;
             }
         }
@@ -53,7 +57,7 @@ final class ModuleManager
         }
 
         $manifests = [];
-        foreach (SystemModule::query()->where('status', 'enabled')->get() as $module) {
+        foreach ($this->repository->enabled() as $module) {
             $manifest = $this->manifestFromRow($module);
             if ($manifest !== null) {
                 $manifests[$manifest->name()] = $manifest;
@@ -82,6 +86,15 @@ final class ModuleManager
             return null;
         }
 
-        return ModuleManifest::fromFile($manifestPath);
+        return $this->loadManifest($manifestPath);
+    }
+
+    private function loadManifest(string $manifestPath): ?ModuleManifest
+    {
+        try {
+            return ModuleManifest::fromFile($manifestPath);
+        } catch (InvalidArgumentException) {
+            return null;
+        }
     }
 }

@@ -32,6 +32,16 @@ final class ModuleRepository
         return SystemModule::query()->where('name', $name)->first();
     }
 
+    /**
+     * @return iterable<SystemModule>
+     */
+    public function enabled(): iterable
+    {
+        return SystemModule::query()
+            ->where('status', 'enabled')
+            ->get();
+    }
+
     public function enabledByPrefix(string $adminPrefix): ?SystemModule
     {
         return SystemModule::query()
