@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0",
+  "name": "blog",
+  "title": "Blog Module",
+  "vendor": "easyadmin8",
+  "version": "1.0.0",
+  "type": "private",
+  "core_version": "^8.0",
+  "php": ">=8.3",
+  "namespace": "Modules\\Blog",
+  "entry": "src/Providers/BlogServiceProvider.php",
+  "admin_prefix": "blog",
+  "controllers": "src/Controllers",
+  "views": "resources/views",
+  "assets": "assets",
+  "migrations": "database/migrations",
+  "seeders": "database/seeders",
+  "permissions": ["menu:write", "node:write"],
+  "external_domains": [],
+  "dependencies": {},
+  "conflicts": {},
+  "database": {
+    "tables": ["blog_posts"],
+    "preserve_on_uninstall": true
+  },
+  "menus": [
+    {
+      "title": "Blog",
+      "icon": "fa fa-edit",
+      "href": "",
+      "children": [
+        {
+          "title": "Posts",
+          "icon": "fa fa-file-text",
+          "href": "blog/post/index"
+        }
+      ]
+    }
+  ]
+}
