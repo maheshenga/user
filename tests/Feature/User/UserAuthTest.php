@@ -5,9 +5,12 @@ namespace Tests\Feature\User;
 use App\Models\UserAccount;
 use App\Models\UserLoginLog;
 use App\Models\UserProfile;
+use App\Http\Middleware\CheckInstall;
 use App\User\UserAuthService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Carbon;
 use InvalidArgumentException;
@@ -214,6 +217,8 @@ class UserAuthTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('code', 1)
             ->assertJsonPath('data.user.mobile', '13800000005');
+
+        $this->assertArrayNotHasKey('password', $response->json('data.user'));
     }
 
     public function test_login_endpoint_sets_user_session(): void
@@ -232,6 +237,9 @@ class UserAuthTest extends TestCase
             ->assertJsonPath('code', 1)
             ->assertJsonPath('data.user.email', 'endpoint@example.com')
             ->assertSessionHas('user.email', 'endpoint@example.com');
+
+        $this->assertArrayNotHasKey('password', $response->json('data.user'));
+        $this->assertArrayNotHasKey('password', session('user'));
     }
 
     public function test_logout_endpoint_clears_user_session(): void
@@ -249,6 +257,52 @@ class UserAuthTest extends TestCase
     {
         $response = $this->postJson('/user/register', [
             'password' => '12345',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('code', 0);
+    }
+
+    public function test_user_auth_endpoint_routes_use_install_guard_and_throttle(): void
+    {
+        foreach (['/user/register', '/user/login', '/user/logout'] as $path) {
+            $route = Route::getRoutes()->match(Request::create($path, 'POST'));
+            $middleware = $route->gatherMiddleware();
+
+            $this->assertContains(CheckInstall::class, $middleware);
+            $this->assertTrue(
+                collect($middleware)->contains(fn (string $name): bool => str_starts_with($name, 'throttle:')),
+                "{$path} route must be rate limited.",
+            );
+        }
+    }
+
+    public function test_register_endpoint_returns_error_for_duplicate_mobile(): void
+    {
+        app(UserAuthService::class)->register([
+            'mobile' => '13800000011',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $response = $this->postJson('/user/register', [
+            'mobile' => '13800000011',
+            'password' => 'secret123',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('code', 0);
+    }
+
+    public function test_login_endpoint_returns_error_for_bad_credentials(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'bad-login@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $response = $this->postJson('/user/login', [
+            'account' => 'bad-login@example.com',
+            'password' => 'wrong-password',
         ]);
 
         $response->assertOk()
