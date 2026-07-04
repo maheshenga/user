@@ -51,6 +51,30 @@ class ModulePackageTest extends TestCase
         app(ModuleZipExtractor::class)->extract($zipPath);
     }
 
+    public function test_zip_extractor_rejects_zip_with_too_many_entries(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive extension is not available.');
+        }
+
+        $zipPath = $this->fixtureRoot.DIRECTORY_SEPARATOR.'too-many-entries.zip';
+        $zip = new \ZipArchive();
+        $result = $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        $this->assertTrue($result === true, 'Failed to create zip fixture.');
+        $zip->addFromString('module.json', $this->moduleManifest('entrylimit'));
+
+        for ($index = 0; $index < 1001; $index++) {
+            $zip->addFromString("files/{$index}.txt", 'x');
+        }
+
+        $zip->close();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('module zip is too large');
+
+        app(ModuleZipExtractor::class)->extract($zipPath);
+    }
+
     public function test_zip_extractor_returns_module_root_for_single_nested_directory(): void
     {
         if (! class_exists(\ZipArchive::class)) {

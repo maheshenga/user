@@ -7,6 +7,10 @@ use ZipArchive;
 
 final class ModuleZipExtractor
 {
+    private const MAX_ENTRIES = 1000;
+    private const MAX_ENTRY_UNCOMPRESSED_BYTES = 20 * 1024 * 1024;
+    private const MAX_TOTAL_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
+
     public function extract(string $zipPath): string
     {
         if (! class_exists(ZipArchive::class)) {
@@ -26,8 +30,24 @@ final class ModuleZipExtractor
 
         try {
             try {
+                $totalUncompressedBytes = 0;
+
                 for ($index = 0; $index < $zip->numFiles; $index++) {
-                    $name = str_replace('\\', '/', (string) $zip->getNameIndex($index));
+                    if ($index >= self::MAX_ENTRIES) {
+                        throw new RuntimeException('module zip is too large: too many entries');
+                    }
+
+                    $rawName = $zip->getNameIndex($index);
+                    if ($rawName === false) {
+                        throw new RuntimeException("unsafe zip entry: index {$index}");
+                    }
+
+                    $name = str_replace('\\', '/', $rawName);
+                    $totalUncompressedBytes += $this->entryUncompressedSize($zip, $index, $name);
+
+                    if ($totalUncompressedBytes > self::MAX_TOTAL_UNCOMPRESSED_BYTES) {
+                        throw new RuntimeException('module zip is too large: total uncompressed size exceeds limit');
+                    }
 
                     if ($this->isUnsafeEntry($zip, $index, $name)) {
                         throw new RuntimeException("unsafe zip entry: {$name}");
@@ -46,6 +66,21 @@ final class ModuleZipExtractor
             $this->cleanup($target);
             throw $exception;
         }
+    }
+
+    private function entryUncompressedSize(ZipArchive $zip, int $index, string $name): int
+    {
+        $stat = $zip->statIndex($index);
+        if (! is_array($stat) || ! isset($stat['size'])) {
+            throw new RuntimeException("unsafe zip entry: {$name}");
+        }
+
+        $size = (int) $stat['size'];
+        if ($size > self::MAX_ENTRY_UNCOMPRESSED_BYTES) {
+            throw new RuntimeException('module zip is too large: entry uncompressed size exceeds limit');
+        }
+
+        return $size;
     }
 
     private function isUnsafeEntry(ZipArchive $zip, int $index, string $name): bool

@@ -14,6 +14,7 @@ final class ModuleInstaller
         private readonly ModuleRepository $repository,
         private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
         private readonly ModuleVersionRecorder $versions,
+        private readonly ModuleMigrationRunner $migrations,
     ) {}
 
     public function install(string $name, ?int $actorId = null): void
@@ -32,6 +33,7 @@ final class ModuleInstaller
             $this->repository->upsertDiscovered($manifest);
             $this->versions->record($manifest);
             $this->importMenus($manifest);
+            $this->migrations->runPending($manifest);
             $this->repository->setStatus($name, $newState);
         });
     }

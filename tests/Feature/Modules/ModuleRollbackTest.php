@@ -202,7 +202,6 @@ class ModuleRollbackTest extends TestCase
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         $this->writeMigration($modulePath, '2026_07_04_000001_create_shared_table.php', 'shared_rollback_keep');
         app(ModuleInstaller::class)->install('blog');
-        $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000001_create_shared_table.php');
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
@@ -225,7 +224,6 @@ class ModuleRollbackTest extends TestCase
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         $this->writeMigration($modulePath, '2026_07_04_000001_create_shared_table.php', 'shared_rollback_remove');
         app(ModuleInstaller::class)->install('blog');
-        $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000001_create_shared_table.php');
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));

@@ -415,6 +415,38 @@ PHP;
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
     }
 
+    public function test_zip_install_runs_module_migrations(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive extension is not available.');
+        }
+
+        $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog-install-migration.zip';
+        $migration = <<<'PHP'
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+return new class extends Migration {
+    public function up(): void { Schema::create('zip_install_items', fn (Blueprint $table) => $table->id()); }
+    public function down(): void { Schema::dropIfExists('zip_install_items'); }
+};
+PHP;
+        $this->createZip($zipPath, [
+            'Blog/module.json' => $this->manifest('blog', '1.0.0'),
+            'Blog/database/migrations/2026_07_04_000001_create_zip_install_items.php' => $migration,
+        ]);
+
+        app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+
+        $this->assertTrue(DB::getSchemaBuilder()->hasTable('zip_install_items'));
+        $this->assertDatabaseHas('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000001_create_zip_install_items.php',
+            'batch' => 1,
+        ]);
+    }
+
     public function test_bad_manifest_zip_cleans_extracted_directory(): void
     {
         if (! class_exists(\ZipArchive::class)) {

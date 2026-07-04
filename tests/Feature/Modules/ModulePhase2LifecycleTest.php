@@ -44,6 +44,53 @@ class ModulePhase2LifecycleTest extends TestCase
         $this->assertSame('blog', $snapshot->manifest_json['name']);
     }
 
+    public function test_install_runs_pending_module_migrations_before_marking_installed(): void
+    {
+        $parent = storage_path('framework/testing-phase2-install-migrations');
+        $root = $parent.DIRECTORY_SEPARATOR.'Installmigrator';
+        $this->createMigrationModuleFixture(
+            $root,
+            'installmigrator',
+            'installmigrator',
+            [
+                '2026_07_04_000001_create_install_migrator_items.php' => <<<'PHP'
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+return new class extends Migration {
+    public function up(): void { Schema::create('install_migrator_items', fn (Blueprint $table) => $table->id()); }
+    public function down(): void { Schema::dropIfExists('install_migrator_items'); }
+};
+PHP,
+            ]
+        );
+
+        try {
+            Config::set('modules.path', $parent);
+
+            app(\App\Modules\ModuleInstaller::class)->install('installmigrator');
+
+            $this->assertTrue(Schema::hasTable('install_migrator_items'));
+            $this->assertDatabaseHas('system_module_migration', [
+                'module' => 'installmigrator',
+                'migration' => '2026_07_04_000001_create_install_migrator_items.php',
+                'batch' => 1,
+            ]);
+            $this->assertDatabaseHas('system_module', [
+                'name' => 'installmigrator',
+                'status' => 'installed',
+            ]);
+            $this->assertDatabaseHas('system_module_log', [
+                'module' => 'installmigrator',
+                'action' => 'install',
+                'result' => 'success',
+            ]);
+        } finally {
+            $this->deleteDirectory($parent);
+        }
+    }
+
     public function test_migration_runner_runs_only_unrecorded_module_migrations(): void
     {
         $root = storage_path('framework/testing-phase2-migrations');
