@@ -73,6 +73,23 @@ class ModuleLifecycleTest extends TestCase
         $this->assertSame(0, SystemModuleSource::query()->count());
     }
 
+    public function test_discovered_module_starts_pending_review(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+
+        app(\App\Modules\ModuleManager::class)->discover();
+        app(\App\Modules\ModuleRepository::class)->upsertDiscovered(
+            app(\App\Modules\ModuleManager::class)->manifest('blog')
+        );
+
+        $this->assertDatabaseHas('system_module', [
+            'name' => 'blog',
+            'status' => 'pending_review',
+        ]);
+    }
+
     public function test_module_can_be_installed_enabled_disabled_and_logged(): void
     {
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
@@ -130,10 +147,10 @@ class ModuleLifecycleTest extends TestCase
         app(\App\Modules\ModuleRepository::class)->upsertDiscovered(app(\App\Modules\ModuleManager::class)->manifest('blog'));
 
         $this->artisan('module:enable', ['name' => 'blog'])
-            ->expectsOutputToContain('cannot be enabled from status [discovered]')
+            ->expectsOutputToContain('cannot be enabled from status [pending_review]')
             ->assertExitCode(1);
 
-        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'discovered']);
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'pending_review']);
     }
 
     public function test_repeated_install_refreshes_manifest_without_downgrading_enabled_and_dedupes_menus(): void

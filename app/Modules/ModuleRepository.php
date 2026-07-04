@@ -19,7 +19,7 @@ final class ModuleRepository
                 'version' => $manifest->version(),
                 'type' => $manifest->type(),
                 'trust_level' => $manifest->type(),
-                'status' => SystemModule::query()->where('name', $manifest->name())->value('status') ?: 'discovered',
+                'status' => SystemModule::query()->where('name', $manifest->name())->value('status') ?: 'pending_review',
                 'path' => $manifest->path(),
                 'namespace' => $manifest->namespace(),
                 'admin_prefix' => $manifest->adminPrefix(),
@@ -98,6 +98,38 @@ final class ModuleRepository
             ->where('admin_prefix', $adminPrefix)
             ->where('status', 'enabled')
             ->first();
+    }
+
+    public function approve(string $name, ?int $actorId = null): void
+    {
+        $module = SystemModule::query()->where('name', $name)->firstOrFail();
+        $oldState = (string) $module->status;
+        if (! in_array($oldState, ['pending_review', 'rejected'], true)) {
+            throw new \InvalidArgumentException("Module [{$name}] cannot be approved from status [{$oldState}]");
+        }
+
+        $module->update([
+            'status' => 'approved',
+            'last_error' => null,
+            'update_time' => time(),
+        ]);
+        $this->log('approve', $name, $oldState, 'approved', 'success', null, $actorId);
+    }
+
+    public function reject(string $name, string $reason, ?int $actorId = null): void
+    {
+        $module = SystemModule::query()->where('name', $name)->firstOrFail();
+        $oldState = (string) $module->status;
+        if (! in_array($oldState, ['pending_review', 'approved'], true)) {
+            throw new \InvalidArgumentException("Module [{$name}] cannot be rejected from status [{$oldState}]");
+        }
+
+        $module->update([
+            'status' => 'rejected',
+            'last_error' => $reason,
+            'update_time' => time(),
+        ]);
+        $this->log('reject', $name, $oldState, 'rejected', 'success', $reason, $actorId);
     }
 
     public function setStatus(string $name, string $status, ?string $error = null): SystemModule
