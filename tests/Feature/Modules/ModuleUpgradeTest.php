@@ -337,6 +337,59 @@ PHP;
         $this->assertSame(1, DB::table('system_module')->where('name', 'blog')->count());
     }
 
+    public function test_zip_upgrade_keeps_unique_failure_inside_migration_fatal(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive extension is not available.');
+        }
+
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
+        app(ModuleInstaller::class)->install('blog');
+
+        $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog-unique-migration-fails.zip';
+        $migration = <<<'PHP'
+<?php
+
+return new class {
+    public function up(): void
+    {
+        \Illuminate\Support\Facades\DB::statement('CREATE TABLE module_unique_probe (id integer primary key, value varchar(10) not null unique)');
+        \Illuminate\Support\Facades\DB::table('module_unique_probe')->insert(['value' => 'same']);
+        \Illuminate\Support\Facades\DB::table('module_unique_probe')->insert(['value' => 'same']);
+    }
+
+    public function down(): void
+    {
+        \Illuminate\Support\Facades\DB::statement('DROP TABLE IF EXISTS module_unique_probe');
+    }
+};
+PHP;
+        $this->createZip($zipPath, [
+            'Blog/module.json' => $this->manifest('blog', '1.1.0'),
+            'Blog/new.txt' => 'new',
+            'Blog/database/migrations/2026_07_04_000002_unique_fails.php' => $migration,
+        ]);
+
+        try {
+            app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+            $this->fail('Expected zip upgrade migration unique constraint to fail.');
+        } catch (\Illuminate\Database\QueryException $exception) {
+            $this->assertStringContainsString('module_unique_probe', $exception->getMessage());
+        }
+
+        $this->assertFalse(DB::getSchemaBuilder()->hasTable('module_unique_probe'));
+        $restoredManifest = json_decode(file_get_contents($modulePath.DIRECTORY_SEPARATOR.'module.json') ?: '', true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('1.0.0', $restoredManifest['version']);
+        $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        $this->assertFileDoesNotExist($modulePath.DIRECTORY_SEPARATOR.'new.txt');
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
+        $this->assertDatabaseMissing('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000002_unique_fails.php',
+        ]);
+    }
+
     public function test_zip_install_accepts_flat_zip_and_cleans_temp_directory(): void
     {
         if (! class_exists(\ZipArchive::class)) {

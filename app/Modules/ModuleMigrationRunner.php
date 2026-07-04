@@ -29,50 +29,50 @@ final class ModuleMigrationRunner
         foreach ($pendingFiles as $file) {
             $migration = basename($file);
 
-            try {
-                DB::transaction(function () use ($manifest, $migration, $batch, $file): void {
-                    if (SystemModuleMigration::query()->where('module', $manifest->name())->where('migration', $migration)->exists()) {
-                        return;
-                    }
+            DB::transaction(function () use ($manifest, $migration, $batch, $file): void {
+                if (SystemModuleMigration::query()->where('module', $manifest->name())->where('migration', $migration)->exists()) {
+                    return;
+                }
 
-                    $instance = require $file;
+                $instance = require $file;
 
-                    if (! is_object($instance) || ! method_exists($instance, 'up')) {
-                        throw new RuntimeException("Module migration [{$migration}] must return an object with up().");
-                    }
+                if (! is_object($instance) || ! method_exists($instance, 'up')) {
+                    throw new RuntimeException("Module migration [{$migration}] must return an object with up().");
+                }
 
-                    try {
-                        $instance->up();
-                    } catch (Throwable $exception) {
-                        if (method_exists($instance, 'down')) {
-                            try {
-                                $instance->down();
-                            } catch (Throwable $cleanupException) {
-                                throw new RuntimeException(
-                                    "Module migration cleanup failed for [{$migration}] after original failure [{$exception->getMessage()}]: {$cleanupException->getMessage()}",
-                                    0,
-                                    $exception
-                                );
-                            }
+                try {
+                    $instance->up();
+                } catch (Throwable $exception) {
+                    if (method_exists($instance, 'down')) {
+                        try {
+                            $instance->down();
+                        } catch (Throwable $cleanupException) {
+                            throw new RuntimeException(
+                                "Module migration cleanup failed for [{$migration}] after original failure [{$exception->getMessage()}]: {$cleanupException->getMessage()}",
+                                0,
+                                $exception
+                            );
                         }
-
-                        throw $exception;
                     }
 
+                    throw $exception;
+                }
+
+                try {
                     SystemModuleMigration::query()->create([
                         'module' => $manifest->name(),
                         'migration' => $migration,
                         'batch' => $batch,
                         'ran_at' => time(),
                     ]);
-                });
-            } catch (QueryException $exception) {
-                if ($this->isDuplicateTrackingRow($exception)) {
-                    continue;
-                }
+                } catch (QueryException $exception) {
+                    if ($this->isDuplicateTrackingRow($exception)) {
+                        return;
+                    }
 
-                throw $exception;
-            }
+                    throw $exception;
+                }
+            });
         }
     }
 
@@ -192,7 +192,8 @@ final class ModuleMigrationRunner
     {
         $message = $exception->getMessage();
 
-        return str_contains($message, 'UNIQUE constraint failed')
+        return (str_contains($message, 'UNIQUE constraint failed')
+                && str_contains($message, 'system_module_migration'))
             || str_contains($message, 'Duplicate entry');
     }
 }
