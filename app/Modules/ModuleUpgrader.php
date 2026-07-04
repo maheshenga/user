@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use RuntimeException;
 use Throwable;
 
 final class ModuleUpgrader
@@ -24,6 +25,7 @@ final class ModuleUpgrader
     {
         $module = $this->installedModule($name);
         $manifest = ModuleManifest::fromFile(rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json');
+        $this->assertManifestName($manifest, $name);
 
         $this->upgradeInstalled($manifest, (string) $module->status, (string) $module->version, $actorId);
     }
@@ -36,12 +38,16 @@ final class ModuleUpgrader
             $manifest = ModuleManifest::fromFile($extracted.DIRECTORY_SEPARATOR.'module.json');
 
             if ($expectedName !== null && $manifest->name() !== $expectedName) {
-                throw new InvalidArgumentException("Expected module [{$expectedName}], got [{$manifest->name()}].");
+                $this->assertManifestName($manifest, $expectedName);
             }
 
             $module = $this->repository->installed($manifest->name());
             if ($module === null) {
                 $target = rtrim((string) config('modules.path', base_path('modules')), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.Str::studly($manifest->name());
+                if (file_exists($target)) {
+                    throw new RuntimeException("Module target already exists: {$target}");
+                }
+
                 $this->files->replace($target, $extracted);
                 try {
                     $this->installer->install($manifest->name(), $actorId);
@@ -79,6 +85,13 @@ final class ModuleUpgrader
         }
 
         return $module;
+    }
+
+    private function assertManifestName(ModuleManifest $manifest, string $expectedName): void
+    {
+        if ($manifest->name() !== $expectedName) {
+            throw new InvalidArgumentException("Expected module [{$expectedName}], got [{$manifest->name()}].");
+        }
     }
 
     private function upgradeInstalled(ModuleManifest $manifest, string $status, string $currentVersion, ?int $actorId): void

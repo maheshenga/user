@@ -6,6 +6,7 @@ use App\Models\SystemModuleVersion;
 use App\Modules\ModuleInstaller;
 use App\Modules\ModuleUpgrader;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use JsonException;
 use Tests\Concerns\CreatesModuleTestSchema;
 use Tests\TestCase;
@@ -90,6 +91,29 @@ class ModuleUpgradeTest extends TestCase
         ]);
     }
 
+    public function test_local_upgrade_rejects_manifest_name_mismatch(): void
+    {
+        $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        app(ModuleInstaller::class)->install('blog');
+
+        $this->writeModule('Blog', $this->manifest('shop', '1.1.0'));
+
+        try {
+            app(ModuleUpgrader::class)->upgradeLocal('blog');
+            $this->fail('Expected local upgrade to reject manifest name mismatch.');
+        } catch (\InvalidArgumentException $exception) {
+            $this->assertStringContainsString('Expected module [blog], got [shop].', $exception->getMessage());
+        }
+
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
+        $this->assertDatabaseMissing('system_module_version', ['module' => 'shop', 'version' => '1.1.0']);
+        $this->assertDatabaseMissing('system_module_log', [
+            'module' => 'shop',
+            'action' => 'upgrade',
+            'result' => 'success',
+        ]);
+    }
+
     public function test_zip_upgrade_replaces_installed_module_and_records_version_and_log(): void
     {
         if (! class_exists(\ZipArchive::class)) {
@@ -118,6 +142,28 @@ class ModuleUpgradeTest extends TestCase
             'action' => 'upgrade',
             'result' => 'success',
         ]);
+    }
+
+    public function test_zip_upgrade_rejects_expected_name_mismatch_and_cleans_temp_directory(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive extension is not available.');
+        }
+
+        $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog.zip';
+        $this->createZip($zipPath, [
+            'Blog/module.json' => $this->manifest('blog', '1.0.0'),
+        ]);
+        $before = $this->moduleTmpDirectories();
+
+        try {
+            app(ModuleUpgrader::class)->upgradeZip($zipPath, 'shop');
+            $this->fail('Expected zip upgrade to reject expected name mismatch.');
+        } catch (\InvalidArgumentException $exception) {
+            $this->assertStringContainsString('Expected module [shop], got [blog].', $exception->getMessage());
+        }
+
+        $this->assertSame($before, $this->moduleTmpDirectories());
     }
 
     public function test_zip_upgrade_restores_files_when_validation_fails_after_replace(): void
@@ -182,6 +228,80 @@ class ModuleUpgradeTest extends TestCase
 
         $this->assertFileDoesNotExist($this->root.DIRECTORY_SEPARATOR.'Blog');
         $this->assertDatabaseMissing('system_module', ['name' => 'blog']);
+    }
+
+    public function test_zip_install_rejects_existing_target_directory_without_overwrite(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive extension is not available.');
+        }
+
+        $target = $this->root.DIRECTORY_SEPARATOR.'Blog';
+        mkdir($target, 0777, true);
+        file_put_contents($target.DIRECTORY_SEPARATOR.'keep.txt', 'keep');
+
+        $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog-install-existing.zip';
+        $this->createZip($zipPath, [
+            'Blog/module.json' => $this->manifest('blog', '1.0.0'),
+            'Blog/new.txt' => 'new',
+        ]);
+
+        try {
+            app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+            $this->fail('Expected zip install to reject existing target directory.');
+        } catch (\RuntimeException|\InvalidArgumentException $exception) {
+            $this->assertStringContainsString('already exists', $exception->getMessage());
+        }
+
+        $this->assertFileExists($target.DIRECTORY_SEPARATOR.'keep.txt');
+        $this->assertFileDoesNotExist($target.DIRECTORY_SEPARATOR.'new.txt');
+        $this->assertDatabaseMissing('system_module', ['name' => 'blog']);
+    }
+
+    public function test_zip_upgrade_restores_files_and_database_when_migration_fails(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive extension is not available.');
+        }
+
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
+        app(ModuleInstaller::class)->install('blog');
+
+        $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog-migration-fails.zip';
+        $migration = <<<'PHP'
+<?php
+
+return new class {
+    public function up(): void
+    {
+        throw new RuntimeException('boom');
+    }
+};
+PHP;
+        $this->createZip($zipPath, [
+            'Blog/module.json' => $this->manifest('blog', '1.1.0'),
+            'Blog/new.txt' => 'new',
+            'Blog/database/migrations/2026_07_04_000001_boom.php' => $migration,
+        ]);
+
+        try {
+            app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+            $this->fail('Expected zip upgrade migration to fail.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('boom', $exception->getMessage());
+        }
+
+        $restoredManifest = json_decode(file_get_contents($modulePath.DIRECTORY_SEPARATOR.'module.json') ?: '', true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('1.0.0', $restoredManifest['version']);
+        $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        $this->assertFileDoesNotExist($modulePath.DIRECTORY_SEPARATOR.'new.txt');
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
+        $this->assertDatabaseMissing('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000001_boom.php',
+        ]);
+        $this->assertSame(1, DB::table('system_module')->where('name', 'blog')->count());
     }
 
     public function test_zip_install_accepts_flat_zip_and_cleans_temp_directory(): void
