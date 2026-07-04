@@ -7,6 +7,7 @@ use App\Modules\ModuleInstaller;
 use App\Modules\ModuleRollbacker;
 use App\Models\SystemModuleMigration;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 use JsonException;
@@ -43,6 +44,7 @@ class ModuleRollbackTest extends TestCase
         $this->deletePath($this->root);
         $this->deletePath(storage_path('modules/tmp'));
         $this->deletePath(storage_path('modules/backups'));
+        $this->deletePath(storage_path('modules/locks'));
 
         parent::tearDown();
     }
@@ -81,6 +83,40 @@ class ModuleRollbackTest extends TestCase
             'action' => 'rollback',
             'result' => 'success',
         ]);
+    }
+
+    public function test_rollback_rejects_non_installed_statuses_without_changing_files_or_database(): void
+    {
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
+        app(ModuleInstaller::class)->install('blog');
+        app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
+
+        foreach (['discovered', 'uninstalled', 'failed'] as $status) {
+            \App\Models\SystemModule::query()->where('name', 'blog')->update([
+                'status' => $status,
+                'version' => '1.1.0',
+                'last_error' => null,
+            ]);
+            DB::table('system_module_log')->delete();
+
+            try {
+                app(ModuleRollbacker::class)->rollback('blog');
+                $this->fail("Expected rollback to reject {$status} status.");
+            } catch (InvalidArgumentException $exception) {
+                $this->assertStringContainsString("cannot be rolled back from status [{$status}]", $exception->getMessage());
+            }
+
+            $this->assertSame('current', file_get_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt'));
+            $this->assertDatabaseHas('system_module', [
+                'name' => 'blog',
+                'version' => '1.1.0',
+                'status' => $status,
+                'last_error' => null,
+            ]);
+            $this->assertSame(0, DB::table('system_module_log')->count());
+        }
     }
 
     public function test_rollback_without_backup_sets_last_error_and_logs_failure(): void
@@ -183,6 +219,98 @@ class ModuleRollbackTest extends TestCase
         ]);
     }
 
+    public function test_rollback_blocks_when_recorded_migration_missing_from_backup_has_no_current_file(): void
+    {
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
+        app(ModuleInstaller::class)->install('blog');
+        app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
+        SystemModuleMigration::query()->create([
+            'module' => 'blog',
+            'migration' => '2026_07_04_000002_missing_current_file.php',
+            'batch' => 2,
+            'ran_at' => time(),
+        ]);
+
+        try {
+            app(ModuleRollbacker::class)->rollback('blog');
+            $this->fail('Expected rollback to require the current migration file.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('Recorded module migration file is missing: 2026_07_04_000002_missing_current_file.php', $exception->getMessage());
+        }
+
+        $this->assertSame('current', file_get_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt'));
+        $this->assertDatabaseHas('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000002_missing_current_file.php',
+        ]);
+    }
+
+    public function test_rollback_rejects_busy_module_lock(): void
+    {
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
+        app(ModuleInstaller::class)->install('blog');
+        app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
+
+        $lockDir = storage_path('modules/locks');
+        mkdir($lockDir, 0777, true);
+        $lock = fopen($lockDir.DIRECTORY_SEPARATOR.'blog.lock', 'c');
+        $this->assertIsResource($lock);
+        $this->assertTrue(flock($lock, LOCK_EX | LOCK_NB));
+
+        try {
+            app(ModuleRollbacker::class)->rollback('blog');
+            $this->fail('Expected rollback to reject a busy module lock.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('already upgrading', $exception->getMessage());
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+
+        $this->assertSame('current', file_get_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt'));
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
+    }
+
+    public function test_rollback_restores_current_files_when_migration_down_fails_after_file_replace(): void
+    {
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
+        app(ModuleInstaller::class)->install('blog');
+        app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
+
+        unlink($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
+        $this->writeFailingDownMigration($modulePath, '2026_07_04_000002_restore_order.php');
+        SystemModuleMigration::query()->create([
+            'module' => 'blog',
+            'migration' => '2026_07_04_000002_restore_order.php',
+            'batch' => 2,
+            'ran_at' => time(),
+        ]);
+        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+            'version' => '1.1.0',
+            'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
+        ]);
+
+        try {
+            app(ModuleRollbacker::class)->rollback('blog');
+            $this->fail('Expected rollback migration down to fail after file replace.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('down saw restored files', $exception->getMessage());
+        }
+
+        $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'current.txt');
+        $this->assertFileDoesNotExist($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        $this->assertDatabaseHas('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000002_restore_order.php',
+        ]);
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.1.0']);
+    }
+
     public function test_rollback_copy_preflight_failure_does_not_rollback_migration(): void
     {
         if (! function_exists('symlink')) {
@@ -260,6 +388,27 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void { Schema::create('{$table}', fn (Blueprint \$table) => \$table->id()); }
     public function down(): void { Schema::dropIfExists('{$table}'); }
+};
+PHP);
+    }
+
+    private function writeFailingDownMigration(string $modulePath, string $filename): void
+    {
+        $path = $modulePath.DIRECTORY_SEPARATOR.'database'.DIRECTORY_SEPARATOR.'migrations';
+        if (! is_dir($path)) {
+            mkdir($path, 0777, true);
+        }
+
+        $probe = addslashes($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        file_put_contents($path.DIRECTORY_SEPARATOR.$filename, <<<PHP
+<?php
+return new class {
+    public function down(): void
+    {
+        if (file_exists('{$probe}')) {
+            throw new RuntimeException('down saw restored files');
+        }
+    }
 };
 PHP);
     }

@@ -17,13 +17,25 @@ final class ModuleRollbacker
 
     public function rollback(string $name, ?int $actorId = null): void
     {
+        $this->withModuleLock($name, function () use ($name, $actorId): void {
+            $this->rollbackLocked($name, $actorId);
+        });
+    }
+
+    private function rollbackLocked(string $name, ?int $actorId): void
+    {
         $module = $this->repository->installed($name);
         if ($module === null) {
             throw new InvalidArgumentException("Module not installed: {$name}");
         }
 
         $status = (string) $module->status;
+        if (! in_array($status, ['installed', 'enabled', 'disabled'], true)) {
+            throw new InvalidArgumentException("Module [{$name}] cannot be rolled back from status [{$status}]");
+        }
+
         $restoreSource = null;
+        $currentSource = null;
 
         try {
             $backup = $this->latestBackup($name);
@@ -34,10 +46,19 @@ final class ModuleRollbacker
             $current = ModuleManifest::fromFile($currentPath.DIRECTORY_SEPARATOR.'module.json');
             $this->assertManifestName($current, $name);
             $restoreSource = $this->files->copyToTemp($backup, 'rollback_restore_');
+            $currentSource = $this->files->copyToTemp($currentPath, 'rollback_current_');
+            $rollbackCurrent = ModuleManifest::fromFile($currentSource.DIRECTORY_SEPARATOR.'module.json');
+            $this->assertManifestName($rollbackCurrent, $name);
 
-            $this->migrations->assertMissingReversible($current, $target);
-            $this->migrations->rollbackMissingFrom($current, $target);
+            $this->migrations->assertMissingReversible($rollbackCurrent, $target);
             $this->files->replace($currentPath, $restoreSource);
+            try {
+                $this->migrations->rollbackMissingFrom($rollbackCurrent, $target);
+            } catch (Throwable $exception) {
+                $this->files->replace($currentPath, $currentSource);
+
+                throw $exception;
+            }
 
             $restored = ModuleManifest::fromFile($currentPath.DIRECTORY_SEPARATOR.'module.json');
             $this->repository->restoreVersion($restored, $status);
@@ -51,6 +72,12 @@ final class ModuleRollbacker
             if ($restoreSource !== null && is_dir($restoreSource)) {
                 try {
                     $this->files->deleteDirectory($restoreSource);
+                } catch (Throwable) {
+                }
+            }
+            if ($currentSource !== null && is_dir($currentSource)) {
+                try {
+                    $this->files->deleteDirectory($currentSource);
                 } catch (Throwable) {
                 }
             }
@@ -96,5 +123,50 @@ final class ModuleRollbacker
     {
         Cache::forget(config('modules.cache_key'));
         Cache::forget('version');
+    }
+
+    /**
+     * @param  callable(): void  $operation
+     */
+    private function withModuleLock(string $module, callable $operation): void
+    {
+        $dir = storage_path('modules/locks');
+        if (! is_dir($dir) && ! mkdir($dir, 0777, true) && ! is_dir($dir)) {
+            throw new RuntimeException("Unable to create module lock directory: {$dir}");
+        }
+
+        $path = $dir.DIRECTORY_SEPARATOR.$this->safeLockSegment($module).'.lock';
+        $handle = fopen($path, 'c');
+        if ($handle === false) {
+            throw new RuntimeException("Unable to open module lock: {$path}");
+        }
+
+        try {
+            $deadline = microtime(true) + 2.0;
+            do {
+                if (flock($handle, LOCK_EX | LOCK_NB)) {
+                    try {
+                        $operation();
+                    } finally {
+                        flock($handle, LOCK_UN);
+                    }
+
+                    return;
+                }
+
+                usleep(50_000);
+            } while (microtime(true) < $deadline);
+
+            throw new RuntimeException("Module [{$module}] is already upgrading.");
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function safeLockSegment(string $value): string
+    {
+        $safe = preg_replace('/[^A-Za-z0-9_.-]/', '_', $value) ?? '_';
+
+        return in_array($safe, ['', '.', '..'], true) ? '_' : $safe;
     }
 }

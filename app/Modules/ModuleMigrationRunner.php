@@ -212,11 +212,6 @@ final class ModuleMigrationRunner
     private function recordedMissingFiles(ModuleManifest $current, ModuleManifest $target): array
     {
         $currentPath = $current->migrationsPath();
-        if ($currentPath === null || ! is_dir($currentPath)) {
-            return [];
-        }
-
-        $currentMap = array_fill_keys(array_map('basename', $this->migrationFiles($currentPath)), true);
         $targetPath = $target->migrationsPath();
         $targetMap = $targetPath !== null && is_dir($targetPath)
             ? array_fill_keys(array_map('basename', $this->migrationFiles($targetPath)), true)
@@ -229,8 +224,12 @@ final class ModuleMigrationRunner
 
         foreach ($records as $record) {
             $migration = (string) $record->migration;
-            if (! isset($currentMap[$migration]) || isset($targetMap[$migration])) {
+            if (isset($targetMap[$migration])) {
                 continue;
+            }
+
+            if ($currentPath === null || ! is_dir($currentPath)) {
+                throw new RuntimeException('Recorded module migration file is missing: '.$migration);
             }
 
             $file = rtrim($currentPath, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$migration;
