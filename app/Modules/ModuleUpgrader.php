@@ -23,11 +23,13 @@ final class ModuleUpgrader
 
     public function upgradeLocal(string $name, ?int $actorId = null): void
     {
-        $module = $this->installedModule($name);
-        $manifest = ModuleManifest::fromFile(rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json');
-        $this->assertManifestName($manifest, $name);
+        $this->withModuleLock($name, function () use ($name, $actorId): void {
+            $module = $this->installedModule($name);
+            $manifest = ModuleManifest::fromFile(rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json');
+            $this->assertManifestName($manifest, $name);
 
-        $this->upgradeInstalled($manifest, (string) $module->status, (string) $module->version, $actorId);
+            $this->upgradeInstalled($manifest, (string) $module->status, (string) $module->version, $actorId);
+        });
     }
 
     public function upgradeZip(string $zipPath, ?string $expectedName = null, ?int $actorId = null): void
@@ -37,41 +39,43 @@ final class ModuleUpgrader
         try {
             $manifest = ModuleManifest::fromFile($extracted.DIRECTORY_SEPARATOR.'module.json');
 
-            if ($expectedName !== null && $manifest->name() !== $expectedName) {
-                $this->assertManifestName($manifest, $expectedName);
-            }
-
-            $module = $this->repository->installed($manifest->name());
-            if ($module === null) {
-                $target = rtrim((string) config('modules.path', base_path('modules')), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.Str::studly($manifest->name());
-                if (file_exists($target)) {
-                    throw new RuntimeException("Module target already exists: {$target}");
+            $this->withModuleLock($manifest->name(), function () use ($manifest, $extracted, $expectedName, $actorId): void {
+                if ($expectedName !== null && $manifest->name() !== $expectedName) {
+                    $this->assertManifestName($manifest, $expectedName);
                 }
 
-                $this->files->replace($target, $extracted);
+                $module = $this->repository->installed($manifest->name());
+                if ($module === null) {
+                    $target = rtrim((string) config('modules.path', base_path('modules')), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.Str::studly($manifest->name());
+                    if (file_exists($target)) {
+                        throw new RuntimeException("Module target already exists: {$target}");
+                    }
+
+                    $this->files->replace($target, $extracted);
+                    try {
+                        $this->installer->install($manifest->name(), $actorId);
+                    } catch (Throwable $exception) {
+                        $this->files->deleteDirectory($target);
+
+                        throw $exception;
+                    }
+
+                    return;
+                }
+
+                $this->assertUpgradeable((string) $module->status, (string) $module->version, $manifest);
+                $backup = $this->files->backup((string) $module->path, $manifest->name(), (string) $module->version);
+                $this->files->replace((string) $module->path, $extracted);
+
+                $fresh = ModuleManifest::fromFile(rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json');
                 try {
-                    $this->installer->install($manifest->name(), $actorId);
+                    $this->upgradeInstalled($fresh, (string) $module->status, (string) $module->version, $actorId);
                 } catch (Throwable $exception) {
-                    $this->files->deleteDirectory($target);
+                    $this->files->replace((string) $module->path, $backup);
 
                     throw $exception;
                 }
-
-                return;
-            }
-
-            $this->assertUpgradeable((string) $module->status, (string) $module->version, $manifest);
-            $backup = $this->files->backup((string) $module->path, $manifest->name(), (string) $module->version);
-            $this->files->replace((string) $module->path, $extracted);
-
-            $fresh = ModuleManifest::fromFile(rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json');
-            try {
-                $this->upgradeInstalled($fresh, (string) $module->status, (string) $module->version, $actorId);
-            } catch (Throwable $exception) {
-                $this->files->replace((string) $module->path, $backup);
-
-                throw $exception;
-            }
+            });
         } finally {
             $this->cleanupExtracted($extracted);
         }
@@ -156,5 +160,50 @@ final class ModuleUpgrader
     {
         Cache::forget(config('modules.cache_key'));
         Cache::forget('version');
+    }
+
+    /**
+     * @param  callable(): void  $operation
+     */
+    private function withModuleLock(string $module, callable $operation): void
+    {
+        $dir = storage_path('modules/locks');
+        if (! is_dir($dir) && ! mkdir($dir, 0777, true) && ! is_dir($dir)) {
+            throw new RuntimeException("Unable to create module lock directory: {$dir}");
+        }
+
+        $path = $dir.DIRECTORY_SEPARATOR.$this->safeLockSegment($module).'.lock';
+        $handle = fopen($path, 'c');
+        if ($handle === false) {
+            throw new RuntimeException("Unable to open module lock: {$path}");
+        }
+
+        try {
+            $deadline = microtime(true) + 2.0;
+            do {
+                if (flock($handle, LOCK_EX | LOCK_NB)) {
+                    try {
+                        $operation();
+                    } finally {
+                        flock($handle, LOCK_UN);
+                    }
+
+                    return;
+                }
+
+                usleep(50_000);
+            } while (microtime(true) < $deadline);
+
+            throw new RuntimeException("Module [{$module}] is already upgrading.");
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function safeLockSegment(string $value): string
+    {
+        $safe = preg_replace('/[^A-Za-z0-9_.-]/', '_', $value) ?? '_';
+
+        return in_array($safe, ['', '.', '..'], true) ? '_' : $safe;
     }
 }

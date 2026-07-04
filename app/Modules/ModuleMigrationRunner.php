@@ -6,6 +6,7 @@ use App\Models\SystemModuleMigration;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
+use Throwable;
 
 final class ModuleMigrationRunner
 {
@@ -40,7 +41,23 @@ final class ModuleMigrationRunner
                         throw new RuntimeException("Module migration [{$migration}] must return an object with up().");
                     }
 
-                    $instance->up();
+                    try {
+                        $instance->up();
+                    } catch (Throwable $exception) {
+                        if (method_exists($instance, 'down')) {
+                            try {
+                                $instance->down();
+                            } catch (Throwable $cleanupException) {
+                                throw new RuntimeException(
+                                    "Module migration cleanup failed for [{$migration}] after original failure [{$exception->getMessage()}]: {$cleanupException->getMessage()}",
+                                    0,
+                                    $exception
+                                );
+                            }
+                        }
+
+                        throw $exception;
+                    }
 
                     SystemModuleMigration::query()->create([
                         'module' => $manifest->name(),

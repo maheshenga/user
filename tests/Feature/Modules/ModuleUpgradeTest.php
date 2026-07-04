@@ -40,6 +40,7 @@ class ModuleUpgradeTest extends TestCase
         $this->deletePath($this->root);
         $this->deletePath(storage_path('modules/tmp'));
         $this->deletePath(storage_path('modules/backups'));
+        $this->deletePath(storage_path('modules/locks'));
 
         parent::tearDown();
     }
@@ -112,6 +113,31 @@ class ModuleUpgradeTest extends TestCase
             'action' => 'upgrade',
             'result' => 'success',
         ]);
+    }
+
+    public function test_local_upgrade_rejects_busy_module_lock(): void
+    {
+        $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        app(ModuleInstaller::class)->install('blog');
+        $this->writeModule('Blog', $this->manifest('blog', '1.1.0'));
+
+        $lockDir = storage_path('modules/locks');
+        mkdir($lockDir, 0777, true);
+        $lock = fopen($lockDir.DIRECTORY_SEPARATOR.'blog.lock', 'c');
+        $this->assertIsResource($lock);
+        $this->assertTrue(flock($lock, LOCK_EX | LOCK_NB));
+
+        try {
+            app(ModuleUpgrader::class)->upgradeLocal('blog');
+            $this->fail('Expected local upgrade to reject a busy module lock.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('already upgrading', $exception->getMessage());
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
     }
 
     public function test_zip_upgrade_replaces_installed_module_and_records_version_and_log(): void
@@ -275,7 +301,13 @@ class ModuleUpgradeTest extends TestCase
 return new class {
     public function up(): void
     {
+        \Illuminate\Support\Facades\DB::statement('CREATE TABLE module_upgrade_cleanup_probe (id integer primary key)');
         throw new RuntimeException('boom');
+    }
+
+    public function down(): void
+    {
+        \Illuminate\Support\Facades\DB::statement('DROP TABLE IF EXISTS module_upgrade_cleanup_probe');
     }
 };
 PHP;
@@ -292,6 +324,7 @@ PHP;
             $this->assertSame('boom', $exception->getMessage());
         }
 
+        $this->assertFalse(DB::getSchemaBuilder()->hasTable('module_upgrade_cleanup_probe'));
         $restoredManifest = json_decode(file_get_contents($modulePath.DIRECTORY_SEPARATOR.'module.json') ?: '', true, 512, JSON_THROW_ON_ERROR);
         $this->assertSame('1.0.0', $restoredManifest['version']);
         $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'old.txt');
