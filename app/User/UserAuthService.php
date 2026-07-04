@@ -3,10 +3,11 @@
 namespace App\User;
 
 use App\Models\UserAccount;
-use BadMethodCallException;
+use App\Models\UserLoginLog;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use InvalidArgumentException;
 
 final class UserAuthService
@@ -65,7 +66,49 @@ final class UserAuthService
 
     public function login(array $payload, string $ip): array
     {
-        throw new BadMethodCallException('Login is implemented in Task 3.');
+        $password = (string) ($payload['password'] ?? '');
+        [$loginType, $account] = $this->loginTypeAndAccount($payload['account'] ?? null);
+
+        if ($account === null || $password === '') {
+            throw new InvalidArgumentException('Account and password are required.');
+        }
+
+        $user = UserAccount::query()
+            ->where($loginType, $account)
+            ->first();
+
+        if ($user === null || ! Hash::check($password, $user->password)) {
+            $message = 'Invalid account or password.';
+
+            $this->writeLoginLog(null, $account, $loginType, $ip, 'failed', $message);
+
+            throw new InvalidArgumentException($message);
+        }
+
+        if (! UserAccountStatus::canLogin($user->status)) {
+            $message = 'User account is not active.';
+
+            $this->writeLoginLog($user, $account, $loginType, $ip, 'failed', $message);
+
+            throw new InvalidArgumentException($message);
+        }
+
+        $user->forceFill([
+            'last_login_at' => now(),
+            'last_login_ip' => $ip,
+            'update_time' => time(),
+        ])->save();
+
+        $this->writeLoginLog($user, $account, $loginType, $ip, 'success');
+
+        $user->refresh();
+        $publicUser = $this->publicUser($user);
+
+        session(['user' => $publicUser]);
+
+        return [
+            'user' => $publicUser,
+        ];
     }
 
     public function logout(): void
@@ -89,6 +132,44 @@ final class UserAuthService
         $email = $this->normalizeNullableString($value);
 
         return $email === null ? null : strtolower($email);
+    }
+
+    /**
+     * @return array{0: string, 1: ?string}
+     */
+    private function loginTypeAndAccount(mixed $value): array
+    {
+        $account = $this->normalizeNullableString($value);
+
+        if ($account === null) {
+            return ['mobile', null];
+        }
+
+        if (str_contains($account, '@')) {
+            return ['email', strtolower($account)];
+        }
+
+        return ['mobile', $account];
+    }
+
+    private function writeLoginLog(
+        ?UserAccount $user,
+        string $account,
+        string $loginType,
+        string $ip,
+        string $result,
+        string $errorMessage = ''
+    ): void {
+        UserLoginLog::query()->create([
+            'user_id' => $user?->id,
+            'account' => $account,
+            'login_type' => $loginType,
+            'ip' => $ip,
+            'user_agent' => substr((string) request()->userAgent(), 0, 500),
+            'result' => $result,
+            'error_message' => $errorMessage,
+            'create_time' => time(),
+        ]);
     }
 
     private function duplicateRegistrationException(QueryException $exception, ?string $mobile, ?string $email): ?InvalidArgumentException

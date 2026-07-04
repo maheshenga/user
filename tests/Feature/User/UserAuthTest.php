@@ -153,6 +153,118 @@ class UserAuthTest extends TestCase
         ]);
     }
 
+    public function test_user_can_login_with_mobile_and_logout(): void
+    {
+        $service = app(UserAuthService::class);
+
+        $service->register([
+            'mobile' => '13800000003',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $result = $service->login([
+            'account' => '13800000003',
+            'password' => 'secret123',
+        ], '127.0.0.2');
+
+        $this->assertSame('13800000003', $result['user']['mobile']);
+        $this->assertSame($result['user']['id'], session('user.id'));
+        $this->assertDatabaseHas('user_login_log', [
+            'user_id' => $result['user']['id'],
+            'account' => '13800000003',
+            'login_type' => 'mobile',
+            'result' => 'success',
+        ]);
+
+        $service->logout();
+
+        $this->assertNull(session('user'));
+    }
+
+    public function test_user_can_login_with_email(): void
+    {
+        $service = app(UserAuthService::class);
+
+        $service->register([
+            'email' => 'login@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $result = $service->login([
+            'account' => 'LOGIN@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.2');
+
+        $this->assertSame('login@example.com', $result['user']['email']);
+        $this->assertDatabaseHas('user_login_log', [
+            'user_id' => $result['user']['id'],
+            'account' => 'login@example.com',
+            'login_type' => 'email',
+            'result' => 'success',
+        ]);
+    }
+
+    public function test_login_rejects_wrong_password_and_logs_failure(): void
+    {
+        $service = app(UserAuthService::class);
+
+        $service->register([
+            'mobile' => '13800000007',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        try {
+            $service->login([
+                'account' => '13800000007',
+                'password' => 'wrong-password',
+            ], '127.0.0.2');
+
+            $this->fail('Expected wrong password login to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Invalid account or password.', $exception->getMessage());
+        } finally {
+            $this->assertDatabaseHas('user_login_log', [
+                'user_id' => null,
+                'account' => '13800000007',
+                'login_type' => 'mobile',
+                'result' => 'failed',
+                'error_message' => 'Invalid account or password.',
+            ]);
+        }
+    }
+
+    public function test_disabled_user_cannot_login(): void
+    {
+        $service = app(UserAuthService::class);
+
+        $service->register([
+            'email' => 'disabled@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $user = UserAccount::query()->where('email', 'disabled@example.com')->firstOrFail();
+        $user->update(['status' => 'disabled']);
+
+        try {
+            $service->login([
+                'account' => 'disabled@example.com',
+                'password' => 'secret123',
+            ], '127.0.0.2');
+
+            $this->fail('Expected disabled user login to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('User account is not active.', $exception->getMessage());
+        } finally {
+            $this->assertDatabaseHas('user_login_log', [
+                'user_id' => $user->id,
+                'account' => 'disabled@example.com',
+                'login_type' => 'email',
+                'result' => 'failed',
+                'error_message' => 'User account is not active.',
+            ]);
+        }
+    }
+
     public function test_register_requires_mobile_or_email(): void
     {
         $this->expectException(InvalidArgumentException::class);
