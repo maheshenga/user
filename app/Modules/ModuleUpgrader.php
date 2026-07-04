@@ -27,6 +27,8 @@ final class ModuleUpgrader
             $module = $this->installedModule($name);
             $manifest = ModuleManifest::fromFile(rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json');
             $this->assertManifestName($manifest, $name);
+            $this->assertUpgradeable((string) $module->status, (string) $module->version, $manifest);
+            $this->files->backup((string) $module->path, $manifest->name(), (string) $module->version);
 
             $this->upgradeInstalled($manifest, (string) $module->status, (string) $module->version, $actorId);
         });
@@ -105,9 +107,9 @@ final class ModuleUpgrader
         try {
             DB::transaction(function () use ($manifest, $status, $currentVersion, $actorId): void {
                 $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $manifest->name());
+                $this->migrations->runPending($manifest);
                 $this->repository->updateFromManifest($manifest, $status);
                 $this->versions->record($manifest);
-                $this->migrations->runPending($manifest);
                 $this->repository->log('upgrade', $manifest->name(), $status, $status, 'success', null, $actorId);
             });
         } catch (Throwable $exception) {

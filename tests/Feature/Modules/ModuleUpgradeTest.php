@@ -69,13 +69,18 @@ class ModuleUpgradeTest extends TestCase
 
     public function test_local_upgrade_updates_version_and_records_history(): void
     {
-        $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
         app(ModuleInstaller::class)->install('blog');
 
-        $this->writeModule('Blog', $this->manifest('blog', '1.1.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
 
         app(ModuleUpgrader::class)->upgradeLocal('blog', 7);
 
+        $backups = $this->moduleBackupDirectories('blog');
+        $this->assertCount(1, $backups);
+        $this->assertFileExists($backups[0].DIRECTORY_SEPARATOR.'old.txt');
+        $this->assertFileExists($backups[0].DIRECTORY_SEPARATOR.'module.json');
         $this->assertDatabaseHas('system_module', [
             'name' => 'blog',
             'version' => '1.1.0',
@@ -494,6 +499,28 @@ PHP;
         $dirs = array_values(array_filter(
             scandir($root) ?: [],
             static fn (string $entry): bool => $entry !== '.' && $entry !== '..'
+        ));
+        sort($dirs);
+
+        return $dirs;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function moduleBackupDirectories(string $module): array
+    {
+        $root = storage_path('modules/backups/'.$module);
+        if (! is_dir($root)) {
+            return [];
+        }
+
+        $dirs = array_values(array_map(
+            static fn (string $entry): string => $root.DIRECTORY_SEPARATOR.$entry,
+            array_filter(
+                scandir($root) ?: [],
+                static fn (string $entry): bool => $entry !== '.' && $entry !== '..'
+            )
         ));
         sort($dirs);
 
