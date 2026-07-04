@@ -104,6 +104,7 @@ final class UserAuthService
         $user->refresh();
         $publicUser = $this->publicUser($user);
 
+        session()->regenerate();
         session(['user' => $publicUser]);
 
         return [

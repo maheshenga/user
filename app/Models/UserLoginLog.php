@@ -6,6 +6,11 @@ class UserLoginLog extends BaseModel
 {
     public static function bootSoftDeletes() {}
 
+    public function delete()
+    {
+        return $this->newQueryWithoutScopes()->whereKey($this->getKey())->delete();
+    }
+
     protected $table = 'user_login_log';
 
     protected $guarded = [];

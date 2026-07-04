@@ -111,7 +111,7 @@ class AccountController extends AdminController
     #[NodeAnnotation(title: 'Detail', auth: true)]
     public function detail(): View|JsonResponse
     {
-        $id = request()->input('id');
+        $id = (int) request()->input('id', 0);
         $user = UserAccount::query()->find($id);
 
         if (empty($user)) {

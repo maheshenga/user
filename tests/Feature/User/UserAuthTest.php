@@ -485,6 +485,25 @@ class UserAuthTest extends TestCase
         $this->assertArrayNotHasKey('password', session('user'));
     }
 
+    public function test_successful_login_regenerates_session_id(): void
+    {
+        $service = app(UserAuthService::class);
+
+        $service->register([
+            'mobile' => '13800000012',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $previousSessionId = session()->getId();
+
+        $service->login([
+            'account' => '13800000012',
+            'password' => 'secret123',
+        ], '127.0.0.2');
+
+        $this->assertNotSame($previousSessionId, session()->getId());
+    }
+
     public function test_login_log_truncates_user_agent_to_500_characters(): void
     {
         $service = app(UserAuthService::class);
