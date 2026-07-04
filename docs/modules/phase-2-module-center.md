@@ -6,6 +6,7 @@ Supported:
 
 - list installed and discovered modules;
 - inspect manifest details and module operation logs;
+- approve or reject newly discovered modules before first install;
 - discover, install, enable, disable, and uninstall-preserve modules;
 - upgrade from the local module directory;
 - upload a zip package to install or upgrade a module;
@@ -20,6 +21,12 @@ Not supported in Phase 2:
 - marketplace or remote repository;
 - automatic update scheduler;
 - destructive uninstall.
+
+## Administrator Review
+
+Newly discovered modules enter `pending_review`.
+
+An administrator must approve the module before first install. Rejected modules cannot be installed until approved again. Review decisions are recorded in module logs with actions `approve` and `reject`; reject reasons are stored in `last_error` and the module log `error_message`.
 
 Backups are stored under:
 
