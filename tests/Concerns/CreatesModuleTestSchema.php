@@ -2,6 +2,9 @@
 
 namespace Tests\Concerns;
 
+use App\Modules\ModuleInstaller;
+use App\Modules\ModuleManager;
+use App\Modules\ModuleRepository;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -62,5 +65,21 @@ trait CreatesModuleTestSchema
             ['id' => 1],
             ['status' => 1, 'auth_ids' => '']
         );
+    }
+
+    protected function approveModuleForInstall(string $name, ?int $actorId = 1): void
+    {
+        $manifest = app(ModuleManager::class)->manifest($name);
+        $this->assertNotNull($manifest, "Test module [{$name}] manifest should exist.");
+
+        $repository = app(ModuleRepository::class);
+        $repository->upsertDiscovered($manifest);
+        $repository->approve($name, $actorId);
+    }
+
+    protected function installApprovedModule(string $name, ?int $actorId = null): void
+    {
+        $this->approveModuleForInstall($name, $actorId ?? 1);
+        app(ModuleInstaller::class)->install($name, $actorId);
     }
 }

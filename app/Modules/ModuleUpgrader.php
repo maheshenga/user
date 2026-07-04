@@ -18,7 +18,6 @@ final class ModuleUpgrader
         private readonly ModuleVersionRecorder $versions,
         private readonly ModuleMigrationRunner $migrations,
         private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
-        private readonly ModuleInstaller $installer,
     ) {}
 
     public function upgradeLocal(string $name, ?int $actorId = null): void
@@ -48,6 +47,8 @@ final class ModuleUpgrader
 
                 $module = $this->repository->installed($manifest->name());
                 if ($module === null) {
+                    $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $manifest->name());
+
                     $target = rtrim((string) config('modules.path', base_path('modules')), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.Str::studly($manifest->name());
                     if (file_exists($target)) {
                         throw new RuntimeException("Module target already exists: {$target}");
@@ -55,12 +56,14 @@ final class ModuleUpgrader
 
                     $this->files->replace($target, $extracted);
                     try {
-                        $this->installer->install($manifest->name(), $actorId);
+                        $this->repository->upsertDiscovered(ModuleManifest::fromFile($target.DIRECTORY_SEPARATOR.'module.json'));
                     } catch (Throwable $exception) {
                         $this->files->deleteDirectory($target);
 
                         throw $exception;
                     }
+
+                    $this->clearCaches();
 
                     return;
                 }

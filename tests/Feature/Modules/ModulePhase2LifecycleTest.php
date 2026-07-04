@@ -32,7 +32,7 @@ class ModulePhase2LifecycleTest extends TestCase
     {
         Config::set('modules.path', base_path('tests/Fixtures/modules'));
 
-        app(\App\Modules\ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
 
         $this->assertDatabaseHas('system_module_version', [
             'module' => 'blog',
@@ -69,7 +69,7 @@ PHP,
         try {
             Config::set('modules.path', $parent);
 
-            app(\App\Modules\ModuleInstaller::class)->install('installmigrator');
+            $this->installApprovedModule('installmigrator');
 
             $this->assertTrue(Schema::hasTable('install_migrator_items'));
             $this->assertDatabaseHas('system_module_migration', [

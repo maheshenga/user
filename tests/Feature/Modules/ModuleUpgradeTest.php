@@ -3,7 +3,6 @@
 namespace Tests\Feature\Modules;
 
 use App\Models\SystemModuleVersion;
-use App\Modules\ModuleInstaller;
 use App\Modules\ModuleUpgrader;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -48,7 +47,7 @@ class ModuleUpgradeTest extends TestCase
     public function test_local_upgrade_rejects_same_or_lower_version(): void
     {
         $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
 
         $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         $this->assertLocalUpgradeFailsBecauseVersionIsNotGreater();
@@ -71,7 +70,7 @@ class ModuleUpgradeTest extends TestCase
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
 
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
 
@@ -100,7 +99,7 @@ class ModuleUpgradeTest extends TestCase
     public function test_local_upgrade_rejects_manifest_name_mismatch(): void
     {
         $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
 
         $this->writeModule('Blog', $this->manifest('shop', '1.1.0'));
 
@@ -123,7 +122,7 @@ class ModuleUpgradeTest extends TestCase
     public function test_local_upgrade_rejects_busy_module_lock(): void
     {
         $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         $this->writeModule('Blog', $this->manifest('blog', '1.1.0'));
 
         $lockDir = storage_path('modules/locks');
@@ -153,7 +152,7 @@ class ModuleUpgradeTest extends TestCase
 
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
 
         $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog.zip';
         $this->createZip($zipPath, [
@@ -205,7 +204,7 @@ class ModuleUpgradeTest extends TestCase
 
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         Config::set('modules.reserved_admin_prefixes', ['admin']);
 
         $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog-reserved.zip';
@@ -297,7 +296,7 @@ class ModuleUpgradeTest extends TestCase
 
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
 
         $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog-migration-fails.zip';
         $migration = <<<'PHP'
@@ -350,7 +349,7 @@ PHP;
 
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
 
         $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog-unique-migration-fails.zip';
         $migration = <<<'PHP'
@@ -395,7 +394,7 @@ PHP;
         ]);
     }
 
-    public function test_zip_install_accepts_flat_zip_and_cleans_temp_directory(): void
+    public function test_zip_install_stages_flat_zip_for_admin_review_and_cleans_temp_directory(): void
     {
         if (! class_exists(\ZipArchive::class)) {
             $this->markTestSkipped('ZipArchive extension is not available.');
@@ -412,7 +411,11 @@ PHP;
 
         $this->assertSame($before, $this->moduleTmpDirectories());
         $this->assertFileExists($this->root.DIRECTORY_SEPARATOR.'Blog'.DIRECTORY_SEPARATOR.'flat.txt');
-        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
+        $this->assertDatabaseHas('system_module', [
+            'name' => 'blog',
+            'version' => '1.0.0',
+            'status' => 'pending_review',
+        ]);
     }
 
     public function test_zip_install_runs_module_migrations(): void
@@ -438,6 +441,9 @@ PHP;
         ]);
 
         app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+        $this->assertFalse(DB::getSchemaBuilder()->hasTable('zip_install_items'));
+
+        $this->installApprovedModule('blog');
 
         $this->assertTrue(DB::getSchemaBuilder()->hasTable('zip_install_items'));
         $this->assertDatabaseHas('system_module_migration', [

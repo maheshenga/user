@@ -3,7 +3,6 @@
 namespace Tests\Feature\Modules;
 
 use App\Modules\ModuleFileStore;
-use App\Modules\ModuleInstaller;
 use App\Modules\ModuleRollbacker;
 use App\Models\SystemModuleMigration;
 use App\Models\SystemModuleVersion;
@@ -55,7 +54,7 @@ class ModuleRollbackTest extends TestCase
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
@@ -90,7 +89,7 @@ class ModuleRollbackTest extends TestCase
     public function test_rollback_restores_version_history_metadata_before_backup_manifest_metadata(): void
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
 
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.1.0');
@@ -120,7 +119,7 @@ class ModuleRollbackTest extends TestCase
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
 
@@ -153,7 +152,7 @@ class ModuleRollbackTest extends TestCase
     public function test_rollback_without_backup_sets_last_error_and_logs_failure(): void
     {
         $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
 
         try {
             app(ModuleRollbacker::class)->rollback('blog', 6);
@@ -179,7 +178,7 @@ class ModuleRollbackTest extends TestCase
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'keep.txt', 'current');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         $backup = app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
         file_put_contents($backup.DIRECTORY_SEPARATOR.'module.json', $this->manifest('shop', '1.0.0'));
 
@@ -201,7 +200,7 @@ class ModuleRollbackTest extends TestCase
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         $this->writeMigration($modulePath, '2026_07_04_000001_create_shared_table.php', 'shared_rollback_keep');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
@@ -223,7 +222,7 @@ class ModuleRollbackTest extends TestCase
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         $this->writeMigration($modulePath, '2026_07_04_000001_create_shared_table.php', 'shared_rollback_remove');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
@@ -252,7 +251,7 @@ class ModuleRollbackTest extends TestCase
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         unlink($modulePath.DIRECTORY_SEPARATOR.'old.txt');
@@ -292,7 +291,7 @@ class ModuleRollbackTest extends TestCase
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         unlink($modulePath.DIRECTORY_SEPARATOR.'old.txt');
@@ -329,7 +328,7 @@ class ModuleRollbackTest extends TestCase
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
         SystemModuleMigration::query()->create([
             'module' => 'blog',
@@ -356,7 +355,7 @@ class ModuleRollbackTest extends TestCase
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         $lockDir = storage_path('modules/locks');
@@ -382,7 +381,7 @@ class ModuleRollbackTest extends TestCase
     public function test_rollback_chooses_newest_backup_timestamp_before_directory_mtime(): void
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.11.0'));
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
 
         $root = storage_path('modules/backups/blog');
         mkdir($root, 0777, true);
@@ -410,7 +409,7 @@ class ModuleRollbackTest extends TestCase
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         unlink($modulePath.DIRECTORY_SEPARATOR.'old.txt');
@@ -446,7 +445,7 @@ class ModuleRollbackTest extends TestCase
         }
 
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         $backup = app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
@@ -472,7 +471,7 @@ class ModuleRollbackTest extends TestCase
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
-        app(ModuleInstaller::class)->install('blog');
+        $this->installApprovedModule('blog');
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         unlink($modulePath.DIRECTORY_SEPARATOR.'old.txt');
