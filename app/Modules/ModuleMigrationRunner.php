@@ -112,6 +112,42 @@ final class ModuleMigrationRunner
         }
     }
 
+    public function assertMissingReversible(ModuleManifest $current, ModuleManifest $target): void
+    {
+        foreach ($this->recordedMissingFiles($current, $target) as $file) {
+            $instance = require $file;
+
+            if (! is_object($instance) || ! method_exists($instance, 'down')) {
+                throw new RuntimeException('Module rollback blocked by irreversible migration: '.basename($file));
+            }
+        }
+    }
+
+    public function rollbackMissingFrom(ModuleManifest $current, ModuleManifest $target): void
+    {
+        foreach (array_reverse($this->recordedMissingFiles($current, $target)) as $file) {
+            $migration = basename($file);
+            DB::transaction(function () use ($current, $migration, $file): void {
+                if (! SystemModuleMigration::query()->where('module', $current->name())->where('migration', $migration)->exists()) {
+                    return;
+                }
+
+                $instance = require $file;
+
+                if (! is_object($instance) || ! method_exists($instance, 'down')) {
+                    throw new RuntimeException('Module rollback blocked by irreversible migration: '.$migration);
+                }
+
+                $instance->down();
+
+                SystemModuleMigration::query()
+                    ->where('module', $current->name())
+                    ->where('migration', $migration)
+                    ->delete();
+            });
+        }
+    }
+
     private function nextBatch(string $module): int
     {
         return ((int) SystemModuleMigration::query()->where('module', $module)->max('batch')) + 1;
@@ -162,6 +198,44 @@ final class ModuleMigrationRunner
 
             if (! is_file($file)) {
                 throw new RuntimeException('Recorded module migration file is missing: '.$record->migration);
+            }
+
+            $files[] = $file;
+        }
+
+        return $files;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function recordedMissingFiles(ModuleManifest $current, ModuleManifest $target): array
+    {
+        $currentPath = $current->migrationsPath();
+        if ($currentPath === null || ! is_dir($currentPath)) {
+            return [];
+        }
+
+        $currentMap = array_fill_keys(array_map('basename', $this->migrationFiles($currentPath)), true);
+        $targetPath = $target->migrationsPath();
+        $targetMap = $targetPath !== null && is_dir($targetPath)
+            ? array_fill_keys(array_map('basename', $this->migrationFiles($targetPath)), true)
+            : [];
+        $records = SystemModuleMigration::query()
+            ->where('module', $current->name())
+            ->orderBy('id')
+            ->get();
+        $files = [];
+
+        foreach ($records as $record) {
+            $migration = (string) $record->migration;
+            if (! isset($currentMap[$migration]) || isset($targetMap[$migration])) {
+                continue;
+            }
+
+            $file = rtrim($currentPath, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$migration;
+            if (! is_file($file)) {
+                throw new RuntimeException('Recorded module migration file is missing: '.$migration);
             }
 
             $files[] = $file;

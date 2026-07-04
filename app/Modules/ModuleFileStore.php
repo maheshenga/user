@@ -98,6 +98,21 @@ final class ModuleFileStore
         }
     }
 
+    public function copyToTemp(string $source, string $prefix): string
+    {
+        $target = storage_path('modules/tmp/'.uniqid($this->safeSegment($prefix), true));
+
+        try {
+            $this->copyDirectory($source, $target);
+        } catch (RuntimeException $exception) {
+            $this->deleteDirectoryUnchecked($target);
+
+            throw $exception;
+        }
+
+        return $target;
+    }
+
     public function deleteDirectory(string $path): void
     {
         if ($this->hasDotSegments($path)) {

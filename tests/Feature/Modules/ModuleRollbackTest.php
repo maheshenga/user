@@ -5,7 +5,10 @@ namespace Tests\Feature\Modules;
 use App\Modules\ModuleFileStore;
 use App\Modules\ModuleInstaller;
 use App\Modules\ModuleRollbacker;
+use App\Models\SystemModuleMigration;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Schema;
+use InvalidArgumentException;
 use JsonException;
 use RuntimeException;
 use Tests\Concerns\CreatesModuleTestSchema;
@@ -105,6 +108,110 @@ class ModuleRollbackTest extends TestCase
         ]);
     }
 
+    public function test_rollback_rejects_backup_manifest_name_mismatch_without_changing_files_or_database(): void
+    {
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'keep.txt', 'current');
+        app(ModuleInstaller::class)->install('blog');
+        $backup = app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
+        file_put_contents($backup.DIRECTORY_SEPARATOR.'module.json', $this->manifest('shop', '1.0.0'));
+
+        try {
+            app(ModuleRollbacker::class)->rollback('blog');
+            $this->fail('Expected rollback to reject a mismatched backup manifest.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('Expected module [blog], got [shop].', $exception->getMessage());
+        }
+
+        $this->assertSame('current', file_get_contents($modulePath.DIRECTORY_SEPARATOR.'keep.txt'));
+        $this->assertDatabaseHas('system_module', [
+            'name' => 'blog',
+            'version' => '1.0.0',
+        ]);
+    }
+
+    public function test_rollback_keeps_recorded_migration_that_exists_in_current_and_backup_manifests(): void
+    {
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        $this->writeMigration($modulePath, '2026_07_04_000001_create_shared_table.php', 'shared_rollback_keep');
+        app(ModuleInstaller::class)->install('blog');
+        $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000001_create_shared_table.php');
+        app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
+
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
+        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+            'version' => '1.1.0',
+            'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
+        ]);
+
+        app(ModuleRollbacker::class)->rollback('blog');
+
+        $this->assertTrue(Schema::hasTable('shared_rollback_keep'));
+        $this->assertDatabaseHas('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000001_create_shared_table.php',
+        ]);
+    }
+
+    public function test_rollback_removes_recorded_migration_missing_from_backup_manifest(): void
+    {
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        $this->writeMigration($modulePath, '2026_07_04_000001_create_shared_table.php', 'shared_rollback_remove');
+        app(ModuleInstaller::class)->install('blog');
+        $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000001_create_shared_table.php');
+        app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
+
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
+        $this->writeMigration($modulePath, '2026_07_04_000002_create_added_table.php', 'added_rollback_remove');
+        $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000002_create_added_table.php', 2);
+        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+            'version' => '1.1.0',
+            'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
+        ]);
+
+        app(ModuleRollbacker::class)->rollback('blog');
+
+        $this->assertTrue(Schema::hasTable('shared_rollback_remove'));
+        $this->assertFalse(Schema::hasTable('added_rollback_remove'));
+        $this->assertDatabaseHas('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000001_create_shared_table.php',
+        ]);
+        $this->assertDatabaseMissing('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000002_create_added_table.php',
+        ]);
+    }
+
+    public function test_rollback_copy_preflight_failure_does_not_rollback_migration(): void
+    {
+        if (! function_exists('symlink')) {
+            $this->markTestSkipped('symlink unavailable.');
+        }
+
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        app(ModuleInstaller::class)->install('blog');
+        $backup = app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
+
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
+        $this->writeMigration($modulePath, '2026_07_04_000002_create_added_table.php', 'added_preflight_keep');
+        $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000002_create_added_table.php');
+        symlink($backup.DIRECTORY_SEPARATOR.'module.json', $backup.DIRECTORY_SEPARATOR.'bad-link');
+
+        try {
+            app(ModuleRollbacker::class)->rollback('blog');
+            $this->fail('Expected rollback preflight to reject symlink in backup.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('Refusing to copy symlink', $exception->getMessage());
+        }
+
+        $this->assertTrue(Schema::hasTable('added_preflight_keep'));
+        $this->assertDatabaseHas('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000002_create_added_table.php',
+        ]);
+    }
+
     /**
      * @throws JsonException
      */
@@ -136,6 +243,37 @@ class ModuleRollbackTest extends TestCase
         file_put_contents($path.DIRECTORY_SEPARATOR.'module.json', $manifest);
 
         return $path;
+    }
+
+    private function writeMigration(string $modulePath, string $filename, string $table): void
+    {
+        $path = $modulePath.DIRECTORY_SEPARATOR.'database'.DIRECTORY_SEPARATOR.'migrations';
+        if (! is_dir($path)) {
+            mkdir($path, 0777, true);
+        }
+
+        file_put_contents($path.DIRECTORY_SEPARATOR.$filename, <<<PHP
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+return new class extends Migration {
+    public function up(): void { Schema::create('{$table}', fn (Blueprint \$table) => \$table->id()); }
+    public function down(): void { Schema::dropIfExists('{$table}'); }
+};
+PHP);
+    }
+
+    private function runAndRecordMigration(string $modulePath, string $module, string $filename, int $batch = 1): void
+    {
+        $migration = require $modulePath.DIRECTORY_SEPARATOR.'database'.DIRECTORY_SEPARATOR.'migrations'.DIRECTORY_SEPARATOR.$filename;
+        $migration->up();
+        SystemModuleMigration::query()->create([
+            'module' => $module,
+            'migration' => $filename,
+            'batch' => $batch,
+            'ran_at' => time(),
+        ]);
     }
 
     private function deletePath(string $path): void

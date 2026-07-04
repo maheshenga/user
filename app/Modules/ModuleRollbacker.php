@@ -23,17 +23,21 @@ final class ModuleRollbacker
         }
 
         $status = (string) $module->status;
+        $restoreSource = null;
 
         try {
             $backup = $this->latestBackup($name);
-            ModuleManifest::fromFile($backup.DIRECTORY_SEPARATOR.'module.json');
+            $target = ModuleManifest::fromFile($backup.DIRECTORY_SEPARATOR.'module.json');
+            $this->assertManifestName($target, $name);
 
             $currentPath = rtrim((string) $module->path, DIRECTORY_SEPARATOR);
             $current = ModuleManifest::fromFile($currentPath.DIRECTORY_SEPARATOR.'module.json');
+            $this->assertManifestName($current, $name);
+            $restoreSource = $this->files->copyToTemp($backup, 'rollback_restore_');
 
-            $this->migrations->assertReversible($current);
-            $this->migrations->rollbackRecorded($current);
-            $this->files->replace($currentPath, $backup);
+            $this->migrations->assertMissingReversible($current, $target);
+            $this->migrations->rollbackMissingFrom($current, $target);
+            $this->files->replace($currentPath, $restoreSource);
 
             $restored = ModuleManifest::fromFile($currentPath.DIRECTORY_SEPARATOR.'module.json');
             $this->repository->restoreVersion($restored, $status);
@@ -43,6 +47,13 @@ final class ModuleRollbacker
             $this->repository->log('rollback', $name, $status, $status, 'failed', $exception->getMessage(), $actorId);
 
             throw $exception;
+        } finally {
+            if ($restoreSource !== null && is_dir($restoreSource)) {
+                try {
+                    $this->files->deleteDirectory($restoreSource);
+                } catch (Throwable) {
+                }
+            }
         }
 
         $this->clearCaches();
@@ -52,18 +63,33 @@ final class ModuleRollbacker
     {
         $root = storage_path('modules/backups/'.$name);
         $entries = is_dir($root)
-            ? array_values(array_filter(scandir($root) ?: [], static fn (string $entry): bool => $entry !== '.' && $entry !== '..'))
+            ? array_values(array_filter(scandir($root) ?: [], static function (string $entry) use ($root): bool {
+                $path = $root.DIRECTORY_SEPARATOR.$entry;
+
+                return $entry !== '.' && $entry !== '..' && is_dir($path) && is_file($path.DIRECTORY_SEPARATOR.'module.json');
+            }))
             : [];
-        rsort($entries);
+        usort($entries, static function (string $left, string $right) use ($root): int {
+            $leftTime = filemtime($root.DIRECTORY_SEPARATOR.$left) ?: 0;
+            $rightTime = filemtime($root.DIRECTORY_SEPARATOR.$right) ?: 0;
+
+            return ($rightTime <=> $leftTime) ?: strcmp($right, $left);
+        });
 
         foreach ($entries as $entry) {
             $path = $root.DIRECTORY_SEPARATOR.$entry;
-            if (is_dir($path) && is_file($path.DIRECTORY_SEPARATOR.'module.json')) {
-                return $path;
-            }
+
+            return $path;
         }
 
         throw new RuntimeException("No backup found for module: {$name}");
+    }
+
+    private function assertManifestName(ModuleManifest $manifest, string $expectedName): void
+    {
+        if ($manifest->name() !== $expectedName) {
+            throw new InvalidArgumentException("Expected module [{$expectedName}], got [{$manifest->name()}].");
+        }
     }
 
     private function clearCaches(): void
