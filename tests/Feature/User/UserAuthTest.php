@@ -204,6 +204,47 @@ class UserAuthTest extends TestCase
         ]);
     }
 
+    public function test_login_requires_account_and_password_without_logging(): void
+    {
+        $service = app(UserAuthService::class);
+
+        foreach ([['password' => 'secret123'], ['account' => '13800000008']] as $payload) {
+            try {
+                $service->login($payload, '127.0.0.2');
+
+                $this->fail('Expected missing login credentials to fail.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame('Account and password are required.', $exception->getMessage());
+            }
+        }
+
+        $this->assertSame(0, UserLoginLog::query()->count());
+    }
+
+    public function test_nonexistent_account_login_logs_normalized_failure(): void
+    {
+        $service = app(UserAuthService::class);
+
+        try {
+            $service->login([
+                'account' => ' MISSING@EXAMPLE.COM ',
+                'password' => 'secret123',
+            ], '127.0.0.2');
+
+            $this->fail('Expected nonexistent account login to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Invalid account or password.', $exception->getMessage());
+        }
+
+        $this->assertDatabaseHas('user_login_log', [
+            'user_id' => null,
+            'account' => 'missing@example.com',
+            'login_type' => 'email',
+            'result' => 'failed',
+            'error_message' => 'Invalid account or password.',
+        ]);
+    }
+
     public function test_login_rejects_wrong_password_and_logs_failure(): void
     {
         $service = app(UserAuthService::class);
@@ -263,6 +304,102 @@ class UserAuthTest extends TestCase
                 'error_message' => 'User account is not active.',
             ]);
         }
+    }
+
+    public function test_frozen_user_cannot_login(): void
+    {
+        $service = app(UserAuthService::class);
+
+        $service->register([
+            'email' => 'frozen@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $user = UserAccount::query()->where('email', 'frozen@example.com')->firstOrFail();
+        $user->update(['status' => 'frozen']);
+
+        try {
+            $service->login([
+                'account' => 'frozen@example.com',
+                'password' => 'secret123',
+            ], '127.0.0.2');
+
+            $this->fail('Expected frozen user login to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('User account is not active.', $exception->getMessage());
+        } finally {
+            $this->assertDatabaseHas('user_login_log', [
+                'user_id' => $user->id,
+                'account' => 'frozen@example.com',
+                'login_type' => 'email',
+                'result' => 'failed',
+                'error_message' => 'User account is not active.',
+            ]);
+        }
+    }
+
+    public function test_successful_login_updates_raw_last_login_fields(): void
+    {
+        $service = app(UserAuthService::class);
+        Carbon::setTestNow(Carbon::create(2026, 7, 5, 11, 22, 33));
+
+        try {
+            $service->register([
+                'mobile' => '13800000008',
+                'password' => 'secret123',
+            ], '127.0.0.1');
+
+            $result = $service->login([
+                'account' => '13800000008',
+                'password' => 'secret123',
+            ], '127.0.0.9');
+
+            $rawUser = DB::table('user_account')->where('id', $result['user']['id'])->first();
+
+            $this->assertSame('2026-07-05 11:22:33', $rawUser->last_login_at);
+            $this->assertSame('127.0.0.9', $rawUser->last_login_ip);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_session_user_payload_excludes_password(): void
+    {
+        $service = app(UserAuthService::class);
+
+        $service->register([
+            'mobile' => '13800000009',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $service->login([
+            'account' => '13800000009',
+            'password' => 'secret123',
+        ], '127.0.0.2');
+
+        $this->assertArrayNotHasKey('password', session('user'));
+    }
+
+    public function test_login_log_truncates_user_agent_to_500_characters(): void
+    {
+        $service = app(UserAuthService::class);
+        $userAgent = str_repeat('A', 550);
+        request()->headers->set('User-Agent', $userAgent);
+
+        $service->register([
+            'mobile' => '13800000010',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $service->login([
+            'account' => '13800000010',
+            'password' => 'secret123',
+        ], '127.0.0.2');
+
+        $storedUserAgent = UserLoginLog::query()->value('user_agent');
+
+        $this->assertSame(500, strlen($storedUserAgent));
+        $this->assertSame(substr($userAgent, 0, 500), $storedUserAgent);
     }
 
     public function test_register_requires_mobile_or_email(): void
