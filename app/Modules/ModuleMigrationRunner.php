@@ -123,6 +123,11 @@ final class ModuleMigrationRunner
         }
     }
 
+    public function missingMigrationCount(ModuleManifest $current, ModuleManifest $target): int
+    {
+        return count($this->recordedMissingFiles($current, $target));
+    }
+
     public function rollbackMissingFrom(ModuleManifest $current, ModuleManifest $target): void
     {
         $files = array_reverse($this->recordedMissingFiles($current, $target));

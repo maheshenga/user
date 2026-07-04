@@ -52,19 +52,22 @@ final class ModuleRollbacker
             $this->assertManifestName($rollbackCurrent, $name);
 
             $this->migrations->assertMissingReversible($rollbackCurrent, $target);
-            $this->files->replace($currentPath, $restoreSource);
+            if ($this->migrations->missingMigrationCount($rollbackCurrent, $target) > 1) {
+                throw new RuntimeException('Manual rollback required: automatic rollback supports at most one missing migration.');
+            }
+
+            $this->migrations->rollbackMissingFrom($rollbackCurrent, $target);
+
             try {
-                $this->migrations->rollbackMissingFrom($rollbackCurrent, $target);
+                $this->files->replace($currentPath, $restoreSource);
             } catch (Throwable $exception) {
-                try {
-                    $this->files->replace($currentPath, $currentSource);
-                } catch (Throwable $restoreException) {
-                    $keepCurrentSource = true;
+                $keepCurrentSource = true;
 
-                    throw $restoreException;
-                }
-
-                throw $exception;
+                throw new RuntimeException(
+                    "Module file replacement failed after migration rollback; current files kept at [{$currentSource}]: {$exception->getMessage()}",
+                    0,
+                    $exception
+                );
             }
 
             $restored = ModuleManifest::fromFile($currentPath.DIRECTORY_SEPARATOR.'module.json');

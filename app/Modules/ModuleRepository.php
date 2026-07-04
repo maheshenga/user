@@ -4,6 +4,7 @@ namespace App\Modules;
 
 use App\Models\SystemModule;
 use App\Models\SystemModuleLog;
+use App\Models\SystemModuleVersion;
 use Illuminate\Support\Facades\Schema;
 
 final class ModuleRepository
@@ -48,7 +49,32 @@ final class ModuleRepository
 
     public function restoreVersion(ModuleManifest $manifest, string $status): void
     {
-        $this->updateFromManifest($manifest, $status);
+        $version = SystemModuleVersion::query()
+            ->where('module', $manifest->name())
+            ->where('version', $manifest->version())
+            ->first();
+
+        if ($version === null) {
+            $this->updateFromManifest($manifest, $status);
+
+            return;
+        }
+
+        $data = $version->manifest_json;
+        SystemModule::query()->where('name', $manifest->name())->update([
+            'title' => (string) ($data['title'] ?? $manifest->title()),
+            'vendor' => (string) ($data['vendor'] ?? $manifest->vendor()),
+            'version' => (string) ($data['version'] ?? $manifest->version()),
+            'type' => (string) ($data['type'] ?? $manifest->type()),
+            'trust_level' => (string) ($data['type'] ?? $manifest->type()),
+            'status' => $status,
+            'path' => $manifest->path(),
+            'namespace' => (string) ($data['namespace'] ?? $manifest->namespace()),
+            'admin_prefix' => (string) ($data['admin_prefix'] ?? $manifest->adminPrefix()),
+            'config_json' => $data,
+            'last_error' => null,
+            'update_time' => time(),
+        ]);
     }
 
     public function installed(string $name): ?SystemModule

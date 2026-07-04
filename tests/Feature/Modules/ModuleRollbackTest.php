@@ -6,6 +6,7 @@ use App\Modules\ModuleFileStore;
 use App\Modules\ModuleInstaller;
 use App\Modules\ModuleRollbacker;
 use App\Models\SystemModuleMigration;
+use App\Models\SystemModuleVersion;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -83,6 +84,35 @@ class ModuleRollbackTest extends TestCase
             'action' => 'rollback',
             'result' => 'success',
         ]);
+    }
+
+    public function test_rollback_restores_version_history_metadata_before_backup_manifest_metadata(): void
+    {
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        app(ModuleInstaller::class)->install('blog');
+
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
+        app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.1.0');
+        SystemModuleVersion::query()->create([
+            'module' => 'blog',
+            'version' => '1.1.0',
+            'manifest_json' => json_decode($this->manifest('blog', '1.1.0', 'History Title'), true, 512, JSON_THROW_ON_ERROR),
+            'installed_at' => time(),
+            'create_time' => time(),
+        ]);
+
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.2.0'));
+        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+            'version' => '1.2.0',
+            'config_json' => json_decode($this->manifest('blog', '1.2.0'), true, 512, JSON_THROW_ON_ERROR),
+        ]);
+
+        app(ModuleRollbacker::class)->rollback('blog');
+
+        $restored = \App\Models\SystemModule::query()->where('name', 'blog')->firstOrFail();
+        $this->assertSame('History Title', $restored->title);
+        $this->assertSame('1.1.0', $restored->version);
+        $this->assertSame(str_replace('\\', '/', $modulePath), str_replace('\\', '/', (string) $restored->path));
     }
 
     public function test_rollback_rejects_non_installed_statuses_without_changing_files_or_database(): void
@@ -219,7 +249,47 @@ class ModuleRollbackTest extends TestCase
         ]);
     }
 
-    public function test_rollback_keeps_all_missing_migration_records_when_later_down_fails(): void
+    public function test_rollback_rejects_multiple_missing_migrations_before_files_or_database_change(): void
+    {
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
+        app(ModuleInstaller::class)->install('blog');
+        app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
+
+        unlink($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
+        $this->writeMigration($modulePath, '2026_07_04_000002_create_first_added_table.php', 'first_added_manual_rollback');
+        $this->writeMigration($modulePath, '2026_07_04_000003_create_second_added_table.php', 'second_added_manual_rollback');
+        $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000002_create_first_added_table.php', 2);
+        $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000003_create_second_added_table.php', 2);
+        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+            'version' => '1.1.0',
+            'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
+        ]);
+
+        try {
+            app(ModuleRollbacker::class)->rollback('blog');
+            $this->fail('Expected rollback to require manual migration rollback.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('Manual rollback required', $exception->getMessage());
+        }
+
+        $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'current.txt');
+        $this->assertFileDoesNotExist($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        $this->assertTrue(Schema::hasTable('first_added_manual_rollback'));
+        $this->assertTrue(Schema::hasTable('second_added_manual_rollback'));
+        $this->assertDatabaseHas('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000002_create_first_added_table.php',
+        ]);
+        $this->assertDatabaseHas('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000003_create_second_added_table.php',
+        ]);
+    }
+
+    public function test_rollback_keeps_missing_migration_record_when_down_fails(): void
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
@@ -230,14 +300,12 @@ class ModuleRollbackTest extends TestCase
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
         $this->writeThrowingDownMigration($modulePath, '2026_07_04_000002_throwing_down.php');
-        $this->writeMigration($modulePath, '2026_07_04_000003_create_atomic_table.php', 'atomic_rollback_remove');
         SystemModuleMigration::query()->create([
             'module' => 'blog',
             'migration' => '2026_07_04_000002_throwing_down.php',
             'batch' => 2,
             'ran_at' => time(),
         ]);
-        $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000003_create_atomic_table.php', 2);
         \App\Models\SystemModule::query()->where('name', 'blog')->update([
             'version' => '1.1.0',
             'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
@@ -252,14 +320,9 @@ class ModuleRollbackTest extends TestCase
 
         $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'current.txt');
         $this->assertFileDoesNotExist($modulePath.DIRECTORY_SEPARATOR.'old.txt');
-        $this->assertTrue(Schema::hasTable('atomic_rollback_remove'));
         $this->assertDatabaseHas('system_module_migration', [
             'module' => 'blog',
             'migration' => '2026_07_04_000002_throwing_down.php',
-        ]);
-        $this->assertDatabaseHas('system_module_migration', [
-            'module' => 'blog',
-            'migration' => '2026_07_04_000003_create_atomic_table.php',
         ]);
     }
 
@@ -344,7 +407,7 @@ class ModuleRollbackTest extends TestCase
         ]);
     }
 
-    public function test_rollback_restores_current_files_when_migration_down_fails_after_file_replace(): void
+    public function test_rollback_runs_missing_migration_down_before_replacing_files(): void
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
@@ -366,20 +429,15 @@ class ModuleRollbackTest extends TestCase
             'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
         ]);
 
-        try {
-            app(ModuleRollbacker::class)->rollback('blog');
-            $this->fail('Expected rollback migration down to fail after file replace.');
-        } catch (RuntimeException $exception) {
-            $this->assertSame('down saw restored files', $exception->getMessage());
-        }
+        app(ModuleRollbacker::class)->rollback('blog');
 
-        $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'current.txt');
-        $this->assertFileDoesNotExist($modulePath.DIRECTORY_SEPARATOR.'old.txt');
-        $this->assertDatabaseHas('system_module_migration', [
+        $this->assertFileDoesNotExist($modulePath.DIRECTORY_SEPARATOR.'current.txt');
+        $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        $this->assertDatabaseMissing('system_module_migration', [
             'module' => 'blog',
             'migration' => '2026_07_04_000002_restore_order.php',
         ]);
-        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.1.0']);
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
     }
 
     public function test_rollback_copy_preflight_failure_does_not_rollback_migration(): void
@@ -414,12 +472,12 @@ class ModuleRollbackTest extends TestCase
     /**
      * @throws JsonException
      */
-    private function manifest(string $name, string $version): string
+    private function manifest(string $name, string $version, ?string $title = null): string
     {
         return json_encode([
             'schema_version' => '1.0',
             'name' => $name,
-            'title' => ucfirst($name).' Module',
+            'title' => $title ?? ucfirst($name).' Module',
             'vendor' => 'easyadmin8',
             'version' => $version,
             'type' => 'private',
