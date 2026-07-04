@@ -5,10 +5,12 @@ namespace Tests\Feature\User;
 use App\Models\UserAccount;
 use App\Models\UserLoginLog;
 use App\Models\UserProfile;
+use App\User\UserAuthService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 use Tests\TestCase;
 
 class UserAuthTest extends TestCase
@@ -104,6 +106,91 @@ class UserAuthTest extends TestCase
 
         $this->assertIsInt($rawDeleteTime);
         $this->assertGreaterThan(0, $rawDeleteTime);
+    }
+
+    public function test_user_can_register_with_mobile_only(): void
+    {
+        $result = app(UserAuthService::class)->register([
+            'mobile' => '13800000001',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $this->assertSame('13800000001', $result['user']['mobile']);
+        $this->assertNull($result['user']['email']);
+        $this->assertSame('active', $result['user']['status']);
+        $this->assertArrayNotHasKey('password', $result['user']);
+
+        $this->assertDatabaseHas('user_account', [
+            'mobile' => '13800000001',
+            'email' => null,
+            'status' => 'active',
+            'register_ip' => '127.0.0.1',
+        ]);
+    }
+
+    public function test_user_can_register_with_email_only(): void
+    {
+        $result = app(UserAuthService::class)->register([
+            'email' => 'person@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $this->assertNull($result['user']['mobile']);
+        $this->assertSame('person@example.com', $result['user']['email']);
+        $this->assertSame('active', $result['user']['status']);
+        $this->assertArrayNotHasKey('password', $result['user']);
+
+        $this->assertDatabaseHas('user_account', [
+            'mobile' => null,
+            'email' => 'person@example.com',
+            'status' => 'active',
+            'register_ip' => '127.0.0.1',
+        ]);
+    }
+
+    public function test_register_requires_mobile_or_email(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Mobile or email is required.');
+
+        app(UserAuthService::class)->register([
+            'password' => 'secret123',
+        ], '127.0.0.1');
+    }
+
+    public function test_register_rejects_duplicate_mobile_or_email(): void
+    {
+        $service = app(UserAuthService::class);
+
+        $service->register([
+            'mobile' => '13800000002',
+            'email' => 'person2@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        try {
+            $service->register([
+                'mobile' => '13800000002',
+                'email' => 'other@example.com',
+                'password' => 'secret123',
+            ], '127.0.0.1');
+
+            $this->fail('Expected duplicate mobile registration to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Mobile already exists.', $exception->getMessage());
+        }
+
+        try {
+            $service->register([
+                'mobile' => '13800000003',
+                'email' => 'person2@example.com',
+                'password' => 'secret123',
+            ], '127.0.0.1');
+
+            $this->fail('Expected duplicate email registration to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Email already exists.', $exception->getMessage());
+        }
     }
 
     private function createSystemConfigTable(): void
