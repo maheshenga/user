@@ -5,6 +5,7 @@ namespace Tests\Feature\Modules;
 use App\Models\SystemModule;
 use App\Models\SystemModuleLog;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
 use Tests\Concerns\CreatesModuleTestSchema;
@@ -102,6 +103,47 @@ class ModuleCenterControllerTest extends TestCase
             ->assertJsonPath('data.0.result', 'success');
     }
 
+    public function test_get_lifecycle_action_is_rejected_without_changing_database(): void
+    {
+        $this->createBlogModule(['status' => 'enabled']);
+
+        $response = $this->getJson('/admin/system/module/disable?name=blog');
+
+        $response->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', 'Lifecycle actions require POST.');
+
+        $this->assertDatabaseHas('system_module', [
+            'name' => 'blog',
+            'status' => 'enabled',
+        ]);
+        $this->assertDatabaseMissing('system_module_log', [
+            'module' => 'blog',
+            'action' => 'disable',
+        ]);
+    }
+
+    public function test_post_lifecycle_action_still_delegates_to_service(): void
+    {
+        $response = $this->postJson('/admin/system/module/disable', ['name' => 'missing']);
+
+        $response->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', 'Module not installed: missing');
+    }
+
+    public function test_upgrade_zip_rejects_non_zip_upload(): void
+    {
+        $response = $this->postJson('/admin/system/module/upgradeZip', [
+            'file' => UploadedFile::fake()->create('module.txt', 1, 'text/plain'),
+            'name' => 'blog',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonStructure(['code', 'msg', 'data', 'url', 'wait', '__token__']);
+    }
+
     private function createSystemConfigTable(): void
     {
         Schema::create('system_config', function (Blueprint $table) {
@@ -117,5 +159,26 @@ class ModuleCenterControllerTest extends TestCase
             ['group' => 'site', 'name' => 'site_ico', 'value' => ''],
             ['group' => 'site', 'name' => 'editor_type', 'value' => 'wangEditor'],
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     */
+    private function createBlogModule(array $overrides = []): SystemModule
+    {
+        return SystemModule::query()->create(array_merge([
+            'name' => 'blog',
+            'title' => 'Blog Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'installed',
+            'path' => base_path('tests/Fixtures/modules/Blog'),
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'blog',
+            'config_json' => json_decode(file_get_contents(base_path('tests/Fixtures/modules/Blog/module.json')), true),
+            'installed_at' => time(),
+        ], $overrides));
     }
 }

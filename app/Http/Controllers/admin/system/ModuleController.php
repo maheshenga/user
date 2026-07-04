@@ -13,8 +13,8 @@ use App\Modules\ModuleRepository;
 use App\Modules\ModuleRollbacker;
 use App\Modules\ModuleUpgrader;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use Throwable;
 
@@ -94,14 +94,24 @@ class ModuleController extends AdminController
     }
 
     #[NodeAnnotation(title: '发现模块', auth: true)]
-    public function discover(ModuleManager $manager, ModuleRepository $repository): Response|JsonResponse|View
+    public function discover(): Response|JsonResponse|View
     {
+        if ($response = $this->requirePost()) {
+            return $response;
+        }
+
         try {
-            $count = 0;
-            foreach ($manager->discover() as $manifest) {
-                $repository->upsertDiscovered($manifest);
-                $count++;
-            }
+            $count = DB::transaction(function (): int {
+                $count = 0;
+                $manager = app(ModuleManager::class);
+                $repository = app(ModuleRepository::class);
+                foreach ($manager->discover() as $manifest) {
+                    $repository->upsertDiscovered($manifest);
+                    $count++;
+                }
+
+                return $count;
+            });
         } catch (Throwable $exception) {
             return $this->error($exception->getMessage());
         }
@@ -110,40 +120,44 @@ class ModuleController extends AdminController
     }
 
     #[NodeAnnotation(title: '安装模块', auth: true)]
-    public function install(ModuleInstaller $installer): Response|JsonResponse|View
+    public function install(): Response|JsonResponse|View
     {
-        return $this->runLifecycleAction(fn () => $installer->install($this->moduleName(), $this->actorId()));
+        return $this->runLifecycleAction(fn () => app(ModuleInstaller::class)->install($this->moduleName(), $this->actorId()));
     }
 
     #[NodeAnnotation(title: '启用模块', auth: true)]
-    public function enable(ModuleInstaller $installer): Response|JsonResponse|View
+    public function enable(): Response|JsonResponse|View
     {
-        return $this->runLifecycleAction(fn () => $installer->enable($this->moduleName(), $this->actorId()));
+        return $this->runLifecycleAction(fn () => app(ModuleInstaller::class)->enable($this->moduleName(), $this->actorId()));
     }
 
     #[NodeAnnotation(title: '禁用模块', auth: true)]
-    public function disable(ModuleInstaller $installer): Response|JsonResponse|View
+    public function disable(): Response|JsonResponse|View
     {
-        return $this->runLifecycleAction(fn () => $installer->disable($this->moduleName(), $this->actorId()));
+        return $this->runLifecycleAction(fn () => app(ModuleInstaller::class)->disable($this->moduleName(), $this->actorId()));
     }
 
     #[NodeAnnotation(title: '卸载模块', auth: true)]
-    public function uninstall(ModuleInstaller $installer): Response|JsonResponse|View
+    public function uninstall(): Response|JsonResponse|View
     {
-        return $this->runLifecycleAction(fn () => $installer->uninstallPreserve($this->moduleName(), $this->actorId()));
+        return $this->runLifecycleAction(fn () => app(ModuleInstaller::class)->uninstallPreserve($this->moduleName(), $this->actorId()));
     }
 
     #[NodeAnnotation(title: '本地升级', auth: true)]
-    public function upgradeLocal(ModuleUpgrader $upgrader): Response|JsonResponse|View
+    public function upgradeLocal(): Response|JsonResponse|View
     {
-        return $this->runLifecycleAction(fn () => $upgrader->upgradeLocal($this->moduleName(), $this->actorId()));
+        return $this->runLifecycleAction(fn () => app(ModuleUpgrader::class)->upgradeLocal($this->moduleName(), $this->actorId()));
     }
 
     #[NodeAnnotation(title: '上传升级', auth: true)]
-    public function upgradeZip(Request $request, ModuleUpgrader $upgrader): Response|JsonResponse|View
+    public function upgradeZip(): Response|JsonResponse|View
     {
-        $file = $request->file('file');
-        if ($file === null || ! $file->isValid()) {
+        if ($response = $this->requirePost()) {
+            return $response;
+        }
+
+        $file = request()->file('file');
+        if (! $this->isValidZipUpload($file)) {
             return $this->error('请上传模块 zip 文件');
         }
 
@@ -157,7 +171,7 @@ class ModuleController extends AdminController
 
         try {
             $expectedName = request()->input('name');
-            $upgrader->upgradeZip($path, $expectedName === '' ? null : $expectedName, $this->actorId());
+            app(ModuleUpgrader::class)->upgradeZip($path, $expectedName === '' ? null : $expectedName, $this->actorId());
         } catch (Throwable $exception) {
             return $this->error($exception->getMessage());
         } finally {
@@ -170,9 +184,9 @@ class ModuleController extends AdminController
     }
 
     #[NodeAnnotation(title: '回滚模块', auth: true)]
-    public function rollback(ModuleRollbacker $rollbacker): Response|JsonResponse|View
+    public function rollback(): Response|JsonResponse|View
     {
-        return $this->runLifecycleAction(fn () => $rollbacker->rollback($this->moduleName(), $this->actorId()));
+        return $this->runLifecycleAction(fn () => app(ModuleRollbacker::class)->rollback($this->moduleName(), $this->actorId()));
     }
 
     private function findModule(): ?SystemModule
@@ -197,11 +211,62 @@ class ModuleController extends AdminController
         return $id === null ? null : (int) $id;
     }
 
+    private function requirePost(): ?JsonResponse
+    {
+        if (request()->isMethod('post')) {
+            return null;
+        }
+
+        return response()->json([
+            'code' => 0,
+            'msg' => 'Lifecycle actions require POST.',
+            'data' => [],
+            'url' => '',
+            'wait' => 3,
+            '__token__' => csrf_token(),
+        ]);
+    }
+
+    private function isValidZipUpload(mixed $file): bool
+    {
+        if ($file === null || ! $file->isValid()) {
+            return false;
+        }
+
+        $size = $file->getSize();
+        if (! is_int($size) || $size > 20 * 1024 * 1024) {
+            return false;
+        }
+
+        $extension = strtolower($file->getClientOriginalExtension());
+        $mime = strtolower((string) $file->getMimeType());
+        if ($extension !== 'zip' || ! in_array($mime, ['application/zip', 'application/x-zip-compressed', 'application/octet-stream'], true)) {
+            return false;
+        }
+
+        $zip = new \ZipArchive();
+        $path = $file->getRealPath();
+        if ($path === false) {
+            return false;
+        }
+
+        $opened = $zip->open($path);
+        if ($opened === true) {
+            $zip->close();
+        }
+
+        return $opened === true;
+    }
+
     /**
      * @param callable(): void $operation
      */
     private function runLifecycleAction(callable $operation): Response|JsonResponse|View
     {
+        if ($response = $this->requirePost()) {
+            return $response;
+        }
+
         if ($this->moduleName() === '') {
             return $this->error('缺少模块名称');
         }
