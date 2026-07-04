@@ -120,10 +120,116 @@ class ModuleUpgradeTest extends TestCase
         ]);
     }
 
+    public function test_zip_upgrade_restores_files_when_validation_fails_after_replace(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive extension is not available.');
+        }
+
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
+        app(ModuleInstaller::class)->install('blog');
+        Config::set('modules.reserved_admin_prefixes', ['admin']);
+
+        $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog-reserved.zip';
+        $this->createZip($zipPath, [
+            'Blog/module.json' => $this->manifest('blog', '1.1.0', 'admin'),
+            'Blog/new.txt' => 'new',
+        ]);
+
+        try {
+            app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+            $this->fail('Expected zip upgrade to reject reserved admin_prefix.');
+        } catch (\InvalidArgumentException $exception) {
+            $this->assertStringContainsString('reserved admin_prefix [admin]', $exception->getMessage());
+        }
+
+        $restoredManifest = json_decode(file_get_contents($modulePath.DIRECTORY_SEPARATOR.'module.json') ?: '', true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('1.0.0', $restoredManifest['version']);
+        $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        $this->assertFileDoesNotExist($modulePath.DIRECTORY_SEPARATOR.'new.txt');
+        $this->assertDatabaseHas('system_module', [
+            'name' => 'blog',
+            'version' => '1.0.0',
+            'last_error' => 'Module [blog] cannot use reserved admin_prefix [admin] because it is reserved for built-in admin routes.',
+        ]);
+        $this->assertDatabaseHas('system_module_log', [
+            'module' => 'blog',
+            'action' => 'upgrade',
+            'result' => 'failed',
+        ]);
+    }
+
+    public function test_zip_install_failure_removes_copied_target_directory(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive extension is not available.');
+        }
+
+        Config::set('modules.reserved_admin_prefixes', ['admin']);
+        $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog-install-reserved.zip';
+        $this->createZip($zipPath, [
+            'Blog/module.json' => $this->manifest('blog', '1.0.0', 'admin'),
+            'Blog/new.txt' => 'new',
+        ]);
+
+        try {
+            app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+            $this->fail('Expected zip install to reject reserved admin_prefix.');
+        } catch (\InvalidArgumentException $exception) {
+            $this->assertStringContainsString('reserved admin_prefix [admin]', $exception->getMessage());
+        }
+
+        $this->assertFileDoesNotExist($this->root.DIRECTORY_SEPARATOR.'Blog');
+        $this->assertDatabaseMissing('system_module', ['name' => 'blog']);
+    }
+
+    public function test_zip_install_accepts_flat_zip_and_cleans_temp_directory(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive extension is not available.');
+        }
+
+        $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog-flat.zip';
+        $this->createZip($zipPath, [
+            'module.json' => $this->manifest('blog', '1.0.0'),
+            'flat.txt' => 'flat',
+        ]);
+        $before = $this->moduleTmpDirectories();
+
+        app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+
+        $this->assertSame($before, $this->moduleTmpDirectories());
+        $this->assertFileExists($this->root.DIRECTORY_SEPARATOR.'Blog'.DIRECTORY_SEPARATOR.'flat.txt');
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
+    }
+
+    public function test_bad_manifest_zip_cleans_extracted_directory(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive extension is not available.');
+        }
+
+        $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog-bad-manifest.zip';
+        $this->createZip($zipPath, [
+            'Blog/module.json' => '{',
+        ]);
+        $before = $this->moduleTmpDirectories();
+
+        try {
+            app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+            $this->fail('Expected bad manifest zip to fail.');
+        } catch (\InvalidArgumentException $exception) {
+            $this->assertStringContainsString('Syntax error', $exception->getMessage());
+        }
+
+        $this->assertSame($before, $this->moduleTmpDirectories());
+    }
+
     /**
      * @throws JsonException
      */
-    private function manifest(string $name, string $version): string
+    private function manifest(string $name, string $version, ?string $adminPrefix = null): string
     {
         return json_encode([
             'schema_version' => '1.0',
@@ -134,7 +240,7 @@ class ModuleUpgradeTest extends TestCase
             'type' => 'private',
             'core_version' => '^8.0',
             'namespace' => 'Modules\\'.ucfirst($name),
-            'admin_prefix' => $name,
+            'admin_prefix' => $adminPrefix ?? $name,
             'controllers' => 'src/Controllers',
             'views' => 'resources/views',
             'assets' => 'assets',
@@ -167,6 +273,25 @@ class ModuleUpgradeTest extends TestCase
         }
 
         $zip->close();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function moduleTmpDirectories(): array
+    {
+        $root = storage_path('modules/tmp');
+        if (! is_dir($root)) {
+            return [];
+        }
+
+        $dirs = array_values(array_filter(
+            scandir($root) ?: [],
+            static fn (string $entry): bool => $entry !== '.' && $entry !== '..'
+        ));
+        sort($dirs);
+
+        return $dirs;
     }
 
     private function deletePath(string $path): void

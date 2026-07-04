@@ -31,9 +31,10 @@ final class ModuleUpgrader
     public function upgradeZip(string $zipPath, ?string $expectedName = null, ?int $actorId = null): void
     {
         $extracted = $this->zips->extract($zipPath);
-        $manifest = ModuleManifest::fromFile($extracted.DIRECTORY_SEPARATOR.'module.json');
 
         try {
+            $manifest = ModuleManifest::fromFile($extracted.DIRECTORY_SEPARATOR.'module.json');
+
             if ($expectedName !== null && $manifest->name() !== $expectedName) {
                 throw new InvalidArgumentException("Expected module [{$expectedName}], got [{$manifest->name()}].");
             }
@@ -42,17 +43,29 @@ final class ModuleUpgrader
             if ($module === null) {
                 $target = rtrim((string) config('modules.path', base_path('modules')), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.Str::studly($manifest->name());
                 $this->files->replace($target, $extracted);
-                $this->installer->install($manifest->name(), $actorId);
+                try {
+                    $this->installer->install($manifest->name(), $actorId);
+                } catch (Throwable $exception) {
+                    $this->files->deleteDirectory($target);
+
+                    throw $exception;
+                }
 
                 return;
             }
 
             $this->assertUpgradeable((string) $module->status, (string) $module->version, $manifest);
-            $this->files->backup((string) $module->path, $manifest->name(), (string) $module->version);
+            $backup = $this->files->backup((string) $module->path, $manifest->name(), (string) $module->version);
             $this->files->replace((string) $module->path, $extracted);
 
             $fresh = ModuleManifest::fromFile(rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json');
-            $this->upgradeInstalled($fresh, (string) $module->status, (string) $module->version, $actorId);
+            try {
+                $this->upgradeInstalled($fresh, (string) $module->status, (string) $module->version, $actorId);
+            } catch (Throwable $exception) {
+                $this->files->replace((string) $module->path, $backup);
+
+                throw $exception;
+            }
         } finally {
             $this->cleanupExtracted($extracted);
         }
@@ -103,8 +116,27 @@ final class ModuleUpgrader
 
     private function cleanupExtracted(string $path): void
     {
-        $root = is_file(dirname($path).DIRECTORY_SEPARATOR.'module.json') ? $path : dirname($path);
-        $this->files->deleteDirectory($root);
+        $tmp = $this->normalizePath(storage_path('modules/tmp'));
+        $path = rtrim($path, DIRECTORY_SEPARATOR);
+        $normalizedPath = $this->normalizePath($path);
+        $parent = $this->normalizePath(dirname($path));
+
+        if (is_file($path.DIRECTORY_SEPARATOR.'module.json') && dirname($normalizedPath) === $tmp) {
+            $this->files->deleteDirectory($path);
+
+            return;
+        }
+
+        if (is_file($path.DIRECTORY_SEPARATOR.'module.json') && dirname($parent) === $tmp) {
+            $this->files->deleteDirectory(dirname($path));
+        }
+    }
+
+    private function normalizePath(string $path): string
+    {
+        $path = str_replace('\\', '/', rtrim($path, '\\/'));
+
+        return preg_match('/^[A-Za-z]:/', $path) === 1 ? strtolower($path) : $path;
     }
 
     private function clearCaches(): void
