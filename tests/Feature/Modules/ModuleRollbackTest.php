@@ -7,6 +7,7 @@ use App\Modules\ModuleInstaller;
 use App\Modules\ModuleRollbacker;
 use App\Models\SystemModuleMigration;
 use App\Models\SystemModuleVersion;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -467,6 +468,41 @@ class ModuleRollbackTest extends TestCase
             'module' => 'blog',
             'migration' => '2026_07_04_000002_create_added_table.php',
         ]);
+    }
+
+    public function test_rollback_keeps_current_temp_when_post_replace_cache_clear_fails(): void
+    {
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
+        app(ModuleInstaller::class)->install('blog');
+        app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
+
+        unlink($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
+        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+            'version' => '1.1.0',
+            'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
+        ]);
+
+        Cache::shouldReceive('forget')
+            ->once()
+            ->with(config('modules.cache_key'))
+            ->andThrow(new RuntimeException('cache clear failed'));
+
+        try {
+            app(ModuleRollbacker::class)->rollback('blog');
+            $this->fail('Expected rollback cache clear to fail.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('cache clear failed', $exception->getMessage());
+        }
+
+        $currentTemps = glob(storage_path('modules/tmp/rollback_current_*')) ?: [];
+        $this->assertCount(1, $currentTemps);
+        $this->assertFileExists($currentTemps[0].DIRECTORY_SEPARATOR.'current.txt');
+        $this->assertSame('current', file_get_contents($currentTemps[0].DIRECTORY_SEPARATOR.'current.txt'));
+        $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        $this->assertFileDoesNotExist($modulePath.DIRECTORY_SEPARATOR.'current.txt');
     }
 
     /**

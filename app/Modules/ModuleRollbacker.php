@@ -36,6 +36,7 @@ final class ModuleRollbacker
 
         $restoreSource = null;
         $currentSource = null;
+        $currentReplaced = false;
         $keepCurrentSource = false;
 
         try {
@@ -69,10 +70,14 @@ final class ModuleRollbacker
                     $exception
                 );
             }
+            $currentReplaced = true;
+            $keepCurrentSource = true;
 
             $restored = ModuleManifest::fromFile($currentPath.DIRECTORY_SEPARATOR.'module.json');
             $this->repository->restoreVersion($restored, $status);
             $this->repository->log('rollback', $name, $status, $status, 'success', null, $actorId);
+            $this->clearCaches();
+            $keepCurrentSource = false;
         } catch (Throwable $exception) {
             $this->repository->setLastError($name, $exception->getMessage());
             $this->repository->log('rollback', $name, $status, $status, 'failed', $exception->getMessage(), $actorId);
@@ -92,8 +97,6 @@ final class ModuleRollbacker
                 }
             }
         }
-
-        $this->clearCaches();
     }
 
     private function latestBackup(string $name): string
