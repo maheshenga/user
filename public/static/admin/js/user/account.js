@@ -23,6 +23,7 @@ define(["jquery", "easy-admin"], function ($, ea) {
                     {field: 'nickname', minWidth: 140, title: 'Nickname'},
                     {field: 'status', width: 110, title: 'Status', search: 'select', selectList: {
                         active: 'active',
+                        pending: 'pending',
                         disabled: 'disabled',
                         frozen: 'frozen'
                     }},
