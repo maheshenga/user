@@ -125,6 +125,25 @@ class ModuleController extends AdminController
         return $this->runLifecycleAction(fn () => app(ModuleInstaller::class)->install($this->moduleName(), $this->actorId()));
     }
 
+    #[NodeAnnotation(title: 'Approve module', auth: true)]
+    public function approve(): Response|JsonResponse|View
+    {
+        return $this->runLifecycleAction(fn () => app(ModuleRepository::class)->approve($this->moduleName(), $this->actorId()));
+    }
+
+    #[NodeAnnotation(title: 'Reject module', auth: true)]
+    public function reject(): Response|JsonResponse|View
+    {
+        return $this->runLifecycleAction(function (): void {
+            $reason = trim((string) request()->input('reason', 'Rejected by administrator.'));
+            app(ModuleRepository::class)->reject(
+                $this->moduleName(),
+                $reason === '' ? 'Rejected by administrator.' : $reason,
+                $this->actorId()
+            );
+        });
+    }
+
     #[NodeAnnotation(title: '启用模块', auth: true)]
     public function enable(): Response|JsonResponse|View
     {

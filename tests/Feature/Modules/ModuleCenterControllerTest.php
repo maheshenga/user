@@ -132,6 +132,53 @@ class ModuleCenterControllerTest extends TestCase
             ->assertJsonPath('msg', 'Module not installed: missing');
     }
 
+    public function test_admin_can_approve_pending_module(): void
+    {
+        $this->createBlogModule(['status' => 'pending_review']);
+
+        $response = $this->postJson('/admin/system/module/approve', ['name' => 'blog']);
+
+        $response->assertOk()->assertJsonPath('code', 1);
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'approved']);
+        $this->assertDatabaseHas('system_module_log', [
+            'module' => 'blog',
+            'action' => 'approve',
+            'result' => 'success',
+        ]);
+    }
+
+    public function test_admin_can_reject_pending_module_with_reason(): void
+    {
+        $this->createBlogModule(['status' => 'pending_review']);
+
+        $response = $this->postJson('/admin/system/module/reject', [
+            'name' => 'blog',
+            'reason' => 'manual review failed',
+        ]);
+
+        $response->assertOk()->assertJsonPath('code', 1);
+        $this->assertDatabaseHas('system_module', [
+            'name' => 'blog',
+            'status' => 'rejected',
+            'last_error' => 'manual review failed',
+        ]);
+        $this->assertDatabaseHas('system_module_log', [
+            'module' => 'blog',
+            'action' => 'reject',
+            'error_message' => 'manual review failed',
+        ]);
+    }
+
+    public function test_review_actions_reject_get_requests(): void
+    {
+        $this->createBlogModule(['status' => 'pending_review']);
+
+        $response = $this->getJson('/admin/system/module/approve?name=blog');
+
+        $response->assertOk()->assertJsonPath('msg', 'Lifecycle actions require POST.');
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'pending_review']);
+    }
+
     public function test_upgrade_zip_rejects_non_zip_upload(): void
     {
         $response = $this->postJson('/admin/system/module/upgradeZip', [

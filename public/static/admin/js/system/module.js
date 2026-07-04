@@ -9,6 +9,8 @@ define(["jquery", "easy-admin"], function ($, ea) {
         upload_url: 'system/module/upload',
         discover_url: 'system/module/discover',
         install_url: 'system/module/install',
+        approve_url: 'system/module/approve',
+        reject_url: 'system/module/reject',
         enable_url: 'system/module/enable',
         disable_url: 'system/module/disable',
         uninstall_url: 'system/module/uninstall',
@@ -71,6 +73,9 @@ define(["jquery", "easy-admin"], function ($, ea) {
                     {field: 'version', width: 110, title: '版本', search: false},
                     {field: 'status', width: 110, title: '状态', search: 'select', selectList: {
                         discovered: 'discovered',
+                        pending_review: 'pending_review',
+                        approved: 'approved',
+                        rejected: 'rejected',
                         installed: 'installed',
                         enabled: 'enabled',
                         disabled: 'disabled',
@@ -80,7 +85,7 @@ define(["jquery", "easy-admin"], function ($, ea) {
                     {field: 'vendor', minWidth: 120, title: '厂商'},
                     {field: 'update_time', minWidth: 160, title: '更新时间', search: false},
                     {
-                        width: 420,
+                        width: 520,
                         title: '操作',
                         search: false,
                         templet: function (d) {
@@ -96,6 +101,12 @@ define(["jquery", "easy-admin"], function ($, ea) {
                                 '<a class="layui-btn layui-btn-danger layui-btn-xs" data-module-action="' + init.rollback_url + '" data-module-name="' + name + '">回滚</a>',
                                 '<a class="layui-btn layui-btn-danger layui-btn-xs" data-module-action="' + init.uninstall_url + '" data-module-name="' + name + '">卸载</a>'
                             ];
+                            if (d.status === 'pending_review' || d.status === 'rejected') {
+                                buttons.push('<a class="layui-btn layui-btn-xs" data-module-action="' + init.approve_url + '" data-module-name="' + name + '">Approve</a>');
+                            }
+                            if (d.status === 'pending_review' || d.status === 'approved') {
+                                buttons.push('<a class="layui-btn layui-btn-danger layui-btn-xs" data-module-reject="' + init.reject_url + '" data-module-name="' + name + '">Reject</a>');
+                            }
                             return buttons.join(' ');
                         }
                     }
@@ -104,6 +115,20 @@ define(["jquery", "easy-admin"], function ($, ea) {
 
             $('body').on('click', '[data-module-action]', function () {
                 requestAction($(this).data('module-action'), $(this).data('module-name'));
+            });
+
+            $('body').on('click', '[data-module-reject]', function () {
+                var url = $(this).data('module-reject');
+                var name = $(this).data('module-name');
+                layui.layer.prompt({title: 'Reject reason', formType: 2}, function (value, index) {
+                    layui.layer.close(index);
+                    ea.request.post({
+                        url: ea.url(moduleUrl(url, name)),
+                        data: {reason: value}
+                    }, function () {
+                        ea.table.reload(init.table_render_id);
+                    });
+                });
             });
 
             ea.listen();
