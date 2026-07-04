@@ -30,6 +30,7 @@ class AccountController extends AdminController
         'nickname',
         'status',
         'vip_level',
+        'last_login_at',
     ];
 
     private const SORTABLE_COLUMNS = [
@@ -47,6 +48,36 @@ class AccountController extends AdminController
     {
         parent::initialize();
         $this->model = new UserAccount();
+    }
+
+    public function setOrder(): static
+    {
+        $tableOrder = trim((string) request()->get('tableOrder', ''));
+        if ($tableOrder === '') {
+            return $this;
+        }
+
+        $parts = preg_split('/\s+/', $tableOrder) ?: [];
+        if (count($parts) !== 2) {
+            $this->order = 'id';
+            $this->orderDirection = 'desc';
+
+            return $this;
+        }
+
+        [$order, $direction] = $parts;
+        if (! in_array($order, self::SORTABLE_COLUMNS, true)) {
+            $this->order = 'id';
+            $this->orderDirection = 'desc';
+
+            return $this;
+        }
+
+        $direction = strtolower($direction);
+        $this->order = $order;
+        $this->orderDirection = in_array($direction, ['asc', 'desc'], true) ? $direction : 'desc';
+
+        return $this;
     }
 
     #[NodeAnnotation(title: 'List', auth: true)]

@@ -147,6 +147,57 @@ class UserAdminAccountControllerTest extends TestCase
             ->assertJsonPath('data.1.id', $first->id);
     }
 
+    public function test_admin_user_account_index_supports_last_login_datetime_filter(): void
+    {
+        UserAccount::query()->create([
+            'mobile' => '13800138006',
+            'email' => 'early-login@example.com',
+            'password' => 'secret123',
+            'nickname' => 'Early Login',
+            'last_login_at' => Carbon::create(2026, 7, 5, 8, 0, 0),
+        ]);
+        $matched = UserAccount::query()->create([
+            'mobile' => '13800138007',
+            'email' => 'matched-login@example.com',
+            'password' => 'secret123',
+            'nickname' => 'Matched Login',
+            'last_login_at' => Carbon::create(2026, 7, 5, 10, 30, 0),
+        ]);
+
+        $response = $this->getJson('/admin/user/account/index?'.http_build_query([
+            'filter' => json_encode(['last_login_at' => '2026-07-05 10:00:00 - 2026-07-05 11:00:00']),
+            'op' => json_encode(['last_login_at' => 'datetime']),
+        ]));
+
+        $response->assertOk()
+            ->assertJsonPath('count', 1)
+            ->assertJsonPath('data.0.id', $matched->id);
+    }
+
+    public function test_admin_user_account_index_ignores_malformed_table_order(): void
+    {
+        $first = UserAccount::query()->create([
+            'mobile' => '13800138008',
+            'email' => 'first-order@example.com',
+            'password' => 'secret123',
+            'nickname' => 'First Order',
+        ]);
+        $second = UserAccount::query()->create([
+            'mobile' => '13800138009',
+            'email' => 'second-order@example.com',
+            'password' => 'secret123',
+            'nickname' => 'Second Order',
+        ]);
+
+        $response = $this->getJson('/admin/user/account/index?tableOrder=nickname');
+
+        $response->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('count', 2)
+            ->assertJsonPath('data.0.id', $second->id)
+            ->assertJsonPath('data.1.id', $first->id);
+    }
+
     public function test_admin_user_account_index_requires_seeded_permission_for_non_super_admin(): void
     {
         UserAccount::query()->create([
@@ -187,7 +238,8 @@ class UserAdminAccountControllerTest extends TestCase
         $denied = $this->withHeader('X-Requested-With', 'XMLHttpRequest')
             ->getJson('/admin/user/account/index');
 
-        $denied->assertOk();
+        $denied->assertOk()
+            ->assertJsonPath('code', 0);
         $denied->assertJsonMissingPath('count');
         $denied->assertJsonMissingPath('data.0.email');
     }
