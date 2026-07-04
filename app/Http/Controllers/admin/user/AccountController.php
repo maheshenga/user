@@ -121,6 +121,36 @@ class AccountController extends AdminController
         return $this->fetch('', ['user' => $user]);
     }
 
+    public function add(): JsonResponse
+    {
+        return $this->readOnlyError();
+    }
+
+    public function edit(): JsonResponse
+    {
+        return $this->readOnlyError();
+    }
+
+    public function delete(): JsonResponse
+    {
+        return $this->readOnlyError();
+    }
+
+    public function modify(): JsonResponse
+    {
+        return $this->readOnlyError();
+    }
+
+    public function recycle(): JsonResponse
+    {
+        return $this->readOnlyError();
+    }
+
+    public function export(): View|bool
+    {
+        abort(403, 'User account management is read-only in Phase 1.');
+    }
+
     private function sanitizeTableWhere(array $where): array
     {
         return array_values(array_filter($where, static function (array $condition): bool {
@@ -141,5 +171,14 @@ class AccountController extends AdminController
         $direction = in_array($direction, ['asc', 'desc'], true) ? $direction : 'desc';
 
         return [$order, $direction];
+    }
+
+    private function readOnlyError(): JsonResponse
+    {
+        return response()->json([
+            'code' => 0,
+            'msg' => 'User account management is read-only in Phase 1.',
+            'data' => [],
+        ]);
     }
 }

@@ -264,6 +264,41 @@ class UserAdminAccountControllerTest extends TestCase
         $response->assertSee('Detail User');
     }
 
+    public function test_admin_user_account_controller_rejects_inherited_write_actions(): void
+    {
+        $user = UserAccount::query()->create([
+            'mobile' => '13800138010',
+            'email' => 'readonly@example.com',
+            'password' => 'secret123',
+            'nickname' => 'Read Only User',
+        ]);
+
+        foreach ([
+            ['postJson', '/admin/user/account/add', ['mobile' => '13800138011', 'password' => 'secret123']],
+            ['postJson', '/admin/user/account/edit', ['id' => $user->id, 'nickname' => 'Changed']],
+            ['postJson', '/admin/user/account/delete', ['id' => $user->id]],
+            ['postJson', '/admin/user/account/modify', ['id' => $user->id, 'field' => 'status', 'value' => 'disabled']],
+            ['getJson', '/admin/user/account/recycle', []],
+        ] as [$method, $uri, $payload]) {
+            $response = $this->{$method}($uri, $payload);
+
+            $response->assertOk()
+                ->assertJsonPath('code', 0);
+        }
+
+        $this->getJson('/admin/user/account/export')->assertForbidden();
+
+        $this->assertDatabaseHas('user_account', [
+            'id' => $user->id,
+            'nickname' => 'Read Only User',
+            'status' => 'active',
+            'delete_time' => null,
+        ]);
+        $this->assertDatabaseMissing('user_account', [
+            'mobile' => '13800138011',
+        ]);
+    }
+
     private function createSystemConfigTable(): void
     {
         if (! Schema::hasTable('system_config')) {
