@@ -6,6 +6,7 @@ use App\Models\UserAccount;
 use App\Models\UserLoginLog;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
@@ -64,7 +65,10 @@ class UserAuthTest extends TestCase
         $this->assertSame('4.00', $account->frozen_balance);
 
         $rawLastLoginAt = DB::table('user_account')->where('id', $account->id)->value('last_login_at');
+        $rawPassword = DB::table('user_account')->where('id', $account->id)->value('password');
 
+        $this->assertNotSame('secret-password', $rawPassword);
+        $this->assertTrue(Hash::check('secret-password', $rawPassword));
         $this->assertSame('2026-07-05 10:20:30', $rawLastLoginAt);
         $this->assertFalse(ctype_digit((string) $rawLastLoginAt));
 
@@ -93,6 +97,13 @@ class UserAuthTest extends TestCase
         ]);
 
         $this->assertSame(1, UserLoginLog::query()->count());
+
+        $account->delete();
+
+        $rawDeleteTime = DB::table('user_account')->where('id', $account->id)->value('delete_time');
+
+        $this->assertIsInt($rawDeleteTime);
+        $this->assertGreaterThan(0, $rawDeleteTime);
     }
 
     private function createSystemConfigTable(): void

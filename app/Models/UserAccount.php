@@ -15,6 +15,7 @@ class UserAccount extends BaseModel
     ];
 
     protected $casts = [
+        'password' => 'hashed',
         'mobile_verified_at' => 'datetime',
         'email_verified_at' => 'datetime',
         'last_login_at' => 'datetime',
@@ -25,4 +26,18 @@ class UserAccount extends BaseModel
         'update_time' => 'App\Casts\CarbonDate:Y-m-d H:i:s',
         'delete_time' => 'App\Casts\CarbonDate:Y-m-d H:i:s',
     ];
+
+    protected function runSoftDelete()
+    {
+        $column = $this->getDeletedAtColumn();
+        $time = time();
+
+        $this->setKeysForSaveQuery($this->newModelQuery())->update([
+            $column => $time,
+        ]);
+
+        $this->{$column} = $time;
+        $this->syncOriginalAttributes([$column]);
+        $this->fireModelEvent('trashed', false);
+    }
 }
