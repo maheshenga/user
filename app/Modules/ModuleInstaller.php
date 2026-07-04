@@ -25,10 +25,19 @@ final class ModuleInstaller
         }
 
         $current = $this->repository->installed($name);
+        if ($current === null) {
+            $this->repository->upsertDiscovered($manifest);
+            $current = $this->repository->installed($name);
+        }
+
         $oldState = $current?->status;
         $newState = $this->installTargetState($oldState);
 
-        $this->runLifecycleAction('install', $name, $oldState, $newState, $actorId, function () use ($manifest, $name, $newState): void {
+        $this->runLifecycleAction('install', $name, $oldState, $newState, $actorId, function () use ($current, $manifest, $name, $newState): void {
+            if ($current !== null && in_array($current->status, ['pending_review', 'rejected'], true)) {
+                throw new InvalidArgumentException("Module [{$name}] must be approved before install.");
+            }
+
             $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $name);
             $this->repository->upsertDiscovered($manifest);
             $this->versions->record($manifest);

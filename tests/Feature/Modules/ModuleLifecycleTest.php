@@ -90,11 +90,41 @@ class ModuleLifecycleTest extends TestCase
         ]);
     }
 
+    public function test_install_requires_admin_approval_for_first_install(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+        app(\App\Modules\ModuleRepository::class)->upsertDiscovered(
+            app(\App\Modules\ModuleManager::class)->manifest('blog')
+        );
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be approved before install');
+
+        app(\App\Modules\ModuleInstaller::class)->install('blog');
+    }
+
+    public function test_approved_module_can_be_installed(): void
+    {
+        $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+        $repository = app(\App\Modules\ModuleRepository::class);
+        $repository->upsertDiscovered(app(\App\Modules\ModuleManager::class)->manifest('blog'));
+        $repository->approve('blog', 1);
+
+        app(\App\Modules\ModuleInstaller::class)->install('blog', 1);
+
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'installed']);
+    }
+
     public function test_module_can_be_installed_enabled_disabled_and_logged(): void
     {
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
         $this->createEasyAdminHostTables();
         \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+        $this->approveModuleForInstall('blog');
 
         $this->artisan('module:install', ['name' => 'blog'])->assertExitCode(0);
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'installed']);
@@ -158,6 +188,7 @@ class ModuleLifecycleTest extends TestCase
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
         $this->createEasyAdminHostTables();
         \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+        $this->approveModuleForInstall('blog');
 
         $this->artisan('module:install', ['name' => 'blog'])->assertExitCode(0);
         $this->artisan('module:enable', ['name' => 'blog'])->assertExitCode(0);
@@ -186,6 +217,7 @@ class ModuleLifecycleTest extends TestCase
         \Illuminate\Support\Facades\Config::set('modules.path', $root);
 
         try {
+            $this->approveModuleForInstall('plain_menu');
             $this->artisan('module:install', ['name' => 'plain_menu'])->assertExitCode(0);
 
             $this->assertSame('', DB::table('system_menu')->where('href', 'plainmenu/post/index')->value('icon'));
@@ -199,6 +231,7 @@ class ModuleLifecycleTest extends TestCase
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
         $this->createEasyAdminHostTables();
         \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+        $this->approveModuleForInstall('blog');
 
         $this->artisan('module:install', ['name' => 'blog'])->assertExitCode(0);
         $this->artisan('module:enable', ['name' => 'blog'])->assertExitCode(0);
@@ -214,13 +247,15 @@ class ModuleLifecycleTest extends TestCase
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
         $this->createEasyAdminHostTables();
         \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
+        $this->approveModuleForInstall('blog');
         Schema::drop('system_menu');
 
         $this->artisan('module:install', ['name' => 'blog'])
             ->expectsOutputToContain('no such table: system_menu')
             ->assertExitCode(1);
 
-        $this->assertDatabaseMissing('system_module', ['name' => 'blog']);
+        $this->assertDatabaseMissing('system_module', ['name' => 'blog', 'status' => 'installed']);
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'approved']);
         $this->assertDatabaseHas('system_module_log', [
             'module' => 'blog',
             'action' => 'install',
@@ -242,6 +277,8 @@ class ModuleLifecycleTest extends TestCase
                 ['mall_collision', 'mall'],
                 ['system_collision', 'system'],
             ] as [$name, $prefix]) {
+                $this->approveModuleForInstall($name);
+
                 $this->artisan('module:install', ['name' => $name])
                     ->expectsOutputToContain("reserved admin_prefix [{$prefix}]")
                     ->assertExitCode(1);
@@ -391,6 +428,13 @@ class ModuleLifecycleTest extends TestCase
         }
 
         file_put_contents($path.DIRECTORY_SEPARATOR.'module.json', $manifest);
+    }
+
+    private function approveModuleForInstall(string $name): void
+    {
+        $repository = app(\App\Modules\ModuleRepository::class);
+        $repository->upsertDiscovered(app(\App\Modules\ModuleManager::class)->manifest($name));
+        $repository->approve($name, 1);
     }
 
     private function deleteDirectory(string $path): void
