@@ -126,6 +126,11 @@ class UserAuthTest extends TestCase
             'status' => 'active',
             'register_ip' => '127.0.0.1',
         ]);
+
+        $rawPassword = DB::table('user_account')->where('mobile', '13800000001')->value('password');
+
+        $this->assertNotSame('secret123', $rawPassword);
+        $this->assertTrue(Hash::check('secret123', $rawPassword));
     }
 
     public function test_user_can_register_with_email_only(): void
@@ -154,6 +159,64 @@ class UserAuthTest extends TestCase
         $this->expectExceptionMessage('Mobile or email is required.');
 
         app(UserAuthService::class)->register([
+            'password' => 'secret123',
+        ], '127.0.0.1');
+    }
+
+    public function test_register_rejects_blank_contact_strings_as_missing(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Mobile or email is required.');
+
+        app(UserAuthService::class)->register([
+            'mobile' => '   ',
+            'email' => '   ',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+    }
+
+    public function test_register_rejects_short_password(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Password must be at least 6 characters.');
+
+        app(UserAuthService::class)->register([
+            'mobile' => '13800000004',
+            'password' => '12345',
+        ], '127.0.0.1');
+    }
+
+    public function test_register_normalizes_mobile_and_email_before_persisting(): void
+    {
+        $result = app(UserAuthService::class)->register([
+            'mobile' => ' 13800000005 ',
+            'email' => ' PERSON3@EXAMPLE.COM ',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $this->assertSame('13800000005', $result['user']['mobile']);
+        $this->assertSame('person3@example.com', $result['user']['email']);
+
+        $this->assertDatabaseHas('user_account', [
+            'mobile' => '13800000005',
+            'email' => 'person3@example.com',
+        ]);
+    }
+
+    public function test_register_checks_duplicates_after_normalization(): void
+    {
+        $service = app(UserAuthService::class);
+
+        $service->register([
+            'email' => 'person4@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Email already exists.');
+
+        $service->register([
+            'email' => ' PERSON4@EXAMPLE.COM ',
             'password' => 'secret123',
         ], '127.0.0.1');
     }
@@ -190,6 +253,82 @@ class UserAuthTest extends TestCase
             $this->fail('Expected duplicate email registration to fail.');
         } catch (InvalidArgumentException $exception) {
             $this->assertSame('Email already exists.', $exception->getMessage());
+        }
+    }
+
+    public function test_register_translates_racing_mobile_unique_constraint(): void
+    {
+        $service = app(UserAuthService::class);
+        $inserted = false;
+
+        UserAccount::creating(function (UserAccount $account) use (&$inserted): void {
+            if ($inserted || $account->mobile !== '13800000006') {
+                return;
+            }
+
+            $inserted = true;
+
+            DB::table('user_account')->insert([
+                'mobile' => '13800000006',
+                'email' => null,
+                'password' => 'race-password',
+                'nickname' => '13800000006',
+                'status' => 'active',
+                'register_ip' => '127.0.0.2',
+                'create_time' => time(),
+                'update_time' => time(),
+            ]);
+        });
+
+        try {
+            $service->register([
+                'mobile' => '13800000006',
+                'password' => 'secret123',
+            ], '127.0.0.1');
+
+            $this->fail('Expected racing duplicate mobile registration to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Mobile already exists.', $exception->getMessage());
+        } finally {
+            UserAccount::flushEventListeners();
+        }
+    }
+
+    public function test_register_translates_racing_email_unique_constraint(): void
+    {
+        $service = app(UserAuthService::class);
+        $inserted = false;
+
+        UserAccount::creating(function (UserAccount $account) use (&$inserted): void {
+            if ($inserted || $account->email !== 'race@example.com') {
+                return;
+            }
+
+            $inserted = true;
+
+            DB::table('user_account')->insert([
+                'mobile' => null,
+                'email' => 'race@example.com',
+                'password' => 'race-password',
+                'nickname' => 'race@example.com',
+                'status' => 'active',
+                'register_ip' => '127.0.0.2',
+                'create_time' => time(),
+                'update_time' => time(),
+            ]);
+        });
+
+        try {
+            $service->register([
+                'email' => 'race@example.com',
+                'password' => 'secret123',
+            ], '127.0.0.1');
+
+            $this->fail('Expected racing duplicate email registration to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Email already exists.', $exception->getMessage());
+        } finally {
+            UserAccount::flushEventListeners();
         }
     }
 
