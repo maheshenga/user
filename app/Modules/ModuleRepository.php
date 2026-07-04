@@ -46,6 +46,11 @@ final class ModuleRepository
         ]);
     }
 
+    public function restoreVersion(ModuleManifest $manifest, string $status): void
+    {
+        $this->updateFromManifest($manifest, $status);
+    }
+
     public function installed(string $name): ?SystemModule
     {
         return SystemModule::query()->where('name', $name)->first();
