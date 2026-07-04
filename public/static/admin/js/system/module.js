@@ -131,6 +131,7 @@ define(["jquery", "easy-admin"], function ($, ea) {
             layui.upload.render({
                 elem: '#moduleZip',
                 url: ea.url(init.upgradeZip_url),
+                headers: {'X-CSRF-TOKEN': CONFIG.CSRF_TOKEN},
                 accept: 'file',
                 exts: 'zip',
                 auto: false,
