@@ -219,6 +219,50 @@ class ModuleRollbackTest extends TestCase
         ]);
     }
 
+    public function test_rollback_keeps_all_missing_migration_records_when_later_down_fails(): void
+    {
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
+        app(ModuleInstaller::class)->install('blog');
+        app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
+
+        unlink($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
+        file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
+        $this->writeThrowingDownMigration($modulePath, '2026_07_04_000002_throwing_down.php');
+        $this->writeMigration($modulePath, '2026_07_04_000003_create_atomic_table.php', 'atomic_rollback_remove');
+        SystemModuleMigration::query()->create([
+            'module' => 'blog',
+            'migration' => '2026_07_04_000002_throwing_down.php',
+            'batch' => 2,
+            'ran_at' => time(),
+        ]);
+        $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000003_create_atomic_table.php', 2);
+        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+            'version' => '1.1.0',
+            'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
+        ]);
+
+        try {
+            app(ModuleRollbacker::class)->rollback('blog');
+            $this->fail('Expected rollback migration down to fail.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('intentional down failure', $exception->getMessage());
+        }
+
+        $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'current.txt');
+        $this->assertFileDoesNotExist($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        $this->assertTrue(Schema::hasTable('atomic_rollback_remove'));
+        $this->assertDatabaseHas('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000002_throwing_down.php',
+        ]);
+        $this->assertDatabaseHas('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_04_000003_create_atomic_table.php',
+        ]);
+    }
+
     public function test_rollback_blocks_when_recorded_migration_missing_from_backup_has_no_current_file(): void
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
@@ -271,6 +315,33 @@ class ModuleRollbackTest extends TestCase
 
         $this->assertSame('current', file_get_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt'));
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
+    }
+
+    public function test_rollback_chooses_newest_backup_timestamp_before_directory_mtime(): void
+    {
+        $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.11.0'));
+        app(ModuleInstaller::class)->install('blog');
+
+        $root = storage_path('modules/backups/blog');
+        mkdir($root, 0777, true);
+        $older = $root.DIRECTORY_SEPARATOR.'20260704000000-1.9.0-zzz';
+        $newer = $root.DIRECTORY_SEPARATOR.'20260704000001-1.10.0-aaa';
+        mkdir($older, 0777, true);
+        mkdir($newer, 0777, true);
+        file_put_contents($older.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.9.0'));
+        file_put_contents($older.DIRECTORY_SEPARATOR.'chosen.txt', 'older');
+        file_put_contents($newer.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.10.0'));
+        file_put_contents($newer.DIRECTORY_SEPARATOR.'chosen.txt', 'newer');
+        touch($older, time() + 10);
+        touch($newer, time());
+
+        app(ModuleRollbacker::class)->rollback('blog');
+
+        $this->assertSame('newer', file_get_contents($modulePath.DIRECTORY_SEPARATOR.'chosen.txt'));
+        $this->assertDatabaseHas('system_module', [
+            'name' => 'blog',
+            'version' => '1.10.0',
+        ]);
     }
 
     public function test_rollback_restores_current_files_when_migration_down_fails_after_file_replace(): void
@@ -408,6 +479,24 @@ return new class {
         if (file_exists('{$probe}')) {
             throw new RuntimeException('down saw restored files');
         }
+    }
+};
+PHP);
+    }
+
+    private function writeThrowingDownMigration(string $modulePath, string $filename): void
+    {
+        $path = $modulePath.DIRECTORY_SEPARATOR.'database'.DIRECTORY_SEPARATOR.'migrations';
+        if (! is_dir($path)) {
+            mkdir($path, 0777, true);
+        }
+
+        file_put_contents($path.DIRECTORY_SEPARATOR.$filename, <<<'PHP'
+<?php
+return new class {
+    public function down(): void
+    {
+        throw new RuntimeException('intentional down failure');
     }
 };
 PHP);

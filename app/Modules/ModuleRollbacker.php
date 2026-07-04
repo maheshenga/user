@@ -36,6 +36,7 @@ final class ModuleRollbacker
 
         $restoreSource = null;
         $currentSource = null;
+        $keepCurrentSource = false;
 
         try {
             $backup = $this->latestBackup($name);
@@ -55,7 +56,13 @@ final class ModuleRollbacker
             try {
                 $this->migrations->rollbackMissingFrom($rollbackCurrent, $target);
             } catch (Throwable $exception) {
-                $this->files->replace($currentPath, $currentSource);
+                try {
+                    $this->files->replace($currentPath, $currentSource);
+                } catch (Throwable $restoreException) {
+                    $keepCurrentSource = true;
+
+                    throw $restoreException;
+                }
 
                 throw $exception;
             }
@@ -75,7 +82,7 @@ final class ModuleRollbacker
                 } catch (Throwable) {
                 }
             }
-            if ($currentSource !== null && is_dir($currentSource)) {
+            if (! $keepCurrentSource && $currentSource !== null && is_dir($currentSource)) {
                 try {
                     $this->files->deleteDirectory($currentSource);
                 } catch (Throwable) {
@@ -97,10 +104,16 @@ final class ModuleRollbacker
             }))
             : [];
         usort($entries, static function (string $left, string $right) use ($root): int {
+            preg_match('/^(\d{14})-/', $left, $leftMatches);
+            preg_match('/^(\d{14})-/', $right, $rightMatches);
+            $leftTimestamp = (int) ($leftMatches[1] ?? 0);
+            $rightTimestamp = (int) ($rightMatches[1] ?? 0);
             $leftTime = filemtime($root.DIRECTORY_SEPARATOR.$left) ?: 0;
             $rightTime = filemtime($root.DIRECTORY_SEPARATOR.$right) ?: 0;
 
-            return ($rightTime <=> $leftTime) ?: strcmp($right, $left);
+            return ($rightTimestamp <=> $leftTimestamp)
+                ?: ($rightTime <=> $leftTime)
+                ?: strcmp($right, $left);
         });
 
         foreach ($entries as $entry) {

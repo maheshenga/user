@@ -125,11 +125,14 @@ final class ModuleMigrationRunner
 
     public function rollbackMissingFrom(ModuleManifest $current, ModuleManifest $target): void
     {
-        foreach (array_reverse($this->recordedMissingFiles($current, $target)) as $file) {
-            $migration = basename($file);
-            DB::transaction(function () use ($current, $migration, $file): void {
+        $files = array_reverse($this->recordedMissingFiles($current, $target));
+
+        DB::transaction(function () use ($current, $files): void {
+            foreach ($files as $file) {
+                $migration = basename($file);
+
                 if (! SystemModuleMigration::query()->where('module', $current->name())->where('migration', $migration)->exists()) {
-                    return;
+                    continue;
                 }
 
                 $instance = require $file;
@@ -144,8 +147,8 @@ final class ModuleMigrationRunner
                     ->where('module', $current->name())
                     ->where('migration', $migration)
                     ->delete();
-            });
-        }
+            }
+        });
     }
 
     private function nextBatch(string $module): int
