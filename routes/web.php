@@ -30,6 +30,12 @@ Route::controller(\App\Http\Controllers\common\InstallController::class)->group(
     Route::match(['get', 'post'], '/install', 'index');
 });
 
+Route::prefix('user')->group(function (): void {
+    Route::post('/register', [\App\Http\Controllers\user\AuthController::class, 'register']);
+    Route::post('/login', [\App\Http\Controllers\user\AuthController::class, 'login']);
+    Route::post('/logout', [\App\Http\Controllers\user\AuthController::class, 'logout']);
+});
+
 Route::get('/module-assets/{module}/{path}', [\App\Http\Controllers\common\ModuleAssetController::class, 'show'])
     ->where('path', '.*')
     ->middleware([CheckInstall::class, CheckLogin::class]);

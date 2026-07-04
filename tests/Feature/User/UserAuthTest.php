@@ -204,6 +204,57 @@ class UserAuthTest extends TestCase
         ]);
     }
 
+    public function test_register_endpoint_returns_user_payload(): void
+    {
+        $response = $this->postJson('/user/register', [
+            'mobile' => '13800000005',
+            'password' => 'secret123',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.user.mobile', '13800000005');
+    }
+
+    public function test_login_endpoint_sets_user_session(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'endpoint@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $response = $this->postJson('/user/login', [
+            'account' => 'endpoint@example.com',
+            'password' => 'secret123',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.user.email', 'endpoint@example.com')
+            ->assertSessionHas('user.email', 'endpoint@example.com');
+    }
+
+    public function test_logout_endpoint_clears_user_session(): void
+    {
+        $response = $this
+            ->withSession(['user' => ['id' => 10, 'email' => 'old@example.com']])
+            ->postJson('/user/logout');
+
+        $response->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertSessionMissing('user');
+    }
+
+    public function test_register_endpoint_returns_error_for_invalid_payload(): void
+    {
+        $response = $this->postJson('/user/register', [
+            'password' => '12345',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('code', 0);
+    }
+
     public function test_login_requires_account_and_password_without_logging(): void
     {
         $service = app(UserAuthService::class);
