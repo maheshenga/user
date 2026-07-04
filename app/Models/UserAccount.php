@@ -6,6 +6,10 @@ class UserAccount extends BaseModel
 {
     protected $table = 'user_account';
 
+    protected $guarded = [];
+
+    protected $dateFormat = 'Y-m-d H:i:s';
+
     protected $hidden = [
         'password',
     ];

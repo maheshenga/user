@@ -6,6 +6,8 @@ class UserProfile extends BaseModel
 {
     protected $table = 'user_profile';
 
+    protected $guarded = [];
+
     protected $casts = [
         'metadata_json' => 'array',
         'create_time' => 'App\Casts\CarbonDate:Y-m-d H:i:s',

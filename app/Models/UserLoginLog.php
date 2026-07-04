@@ -8,6 +8,8 @@ class UserLoginLog extends BaseModel
 
     protected $table = 'user_login_log';
 
+    protected $guarded = [];
+
     protected $casts = [
         'create_time' => 'App\Casts\CarbonDate:Y-m-d H:i:s',
     ];

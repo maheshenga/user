@@ -7,6 +7,7 @@ use App\Models\UserLoginLog;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 class UserAuthTest extends TestCase
@@ -40,6 +41,58 @@ class UserAuthTest extends TestCase
         $this->assertSame(0, UserAccount::query()->count());
         $this->assertSame(0, UserProfile::query()->count());
         $this->assertSame(0, UserLoginLog::query()->count());
+    }
+
+    public function test_user_account_phase_1_models_persist_with_expected_casts(): void
+    {
+        $lastLoginAt = Carbon::create(2026, 7, 5, 10, 20, 30);
+
+        $account = UserAccount::query()->create([
+            'mobile' => '13800138000',
+            'email' => 'user@example.com',
+            'password' => 'secret-password',
+            'last_login_at' => $lastLoginAt,
+            'available_balance' => 12.3,
+            'frozen_balance' => 4,
+        ]);
+
+        $account->refresh();
+
+        $this->assertSame(1, UserAccount::query()->count());
+        $this->assertArrayNotHasKey('password', $account->toArray());
+        $this->assertSame('12.30', $account->available_balance);
+        $this->assertSame('4.00', $account->frozen_balance);
+
+        $rawLastLoginAt = DB::table('user_account')->where('id', $account->id)->value('last_login_at');
+
+        $this->assertSame('2026-07-05 10:20:30', $rawLastLoginAt);
+        $this->assertFalse(ctype_digit((string) $rawLastLoginAt));
+
+        $profile = UserProfile::query()->create([
+            'user_id' => $account->id,
+            'metadata_json' => [
+                'source' => 'feature-test',
+                'flags' => ['phase_1'],
+            ],
+        ]);
+
+        $profile->refresh();
+
+        $this->assertSame([
+            'source' => 'feature-test',
+            'flags' => ['phase_1'],
+        ], $profile->metadata_json);
+
+        UserLoginLog::query()->create([
+            'user_id' => $account->id,
+            'account' => 'user@example.com',
+            'login_type' => 'password',
+            'ip' => '127.0.0.1',
+            'user_agent' => 'Feature Test',
+            'result' => 'success',
+        ]);
+
+        $this->assertSame(1, UserLoginLog::query()->count());
     }
 
     private function createSystemConfigTable(): void
