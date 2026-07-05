@@ -4,9 +4,11 @@ namespace Tests\Feature\User;
 
 use App\Models\UserNotificationOutbox;
 use App\Models\UserPasswordReset;
+use App\User\NotificationOutboxDispatcher;
 use App\User\PasswordResetService;
 use App\User\UserAuthService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -116,5 +118,63 @@ class UserPasswordResetNotificationTest extends TestCase
             'recipient_mask' => '139****9999',
             'status' => 'pending',
         ]);
+    }
+
+    public function test_dispatcher_sends_pending_email_and_marks_it_sent(): void
+    {
+        Mail::fake();
+        app(UserAuthService::class)->register([
+            'email' => 'dispatch-reset@example.com',
+            'password' => 'old-password',
+        ], '127.0.0.1');
+
+        app(PasswordResetService::class)->requestReset([
+            'account' => 'dispatch-reset@example.com',
+        ], '127.0.0.2');
+
+        $result = app(NotificationOutboxDispatcher::class)->sendPending(10);
+
+        $this->assertSame(1, $result['sent']);
+        $this->assertSame(0, $result['failed']);
+        $outbox = UserNotificationOutbox::query()->firstOrFail();
+        $this->assertSame('sent', $outbox->status);
+        $this->assertNotNull($outbox->sent_at);
+        Mail::assertSentCount(1);
+    }
+
+    public function test_dispatcher_marks_sms_log_driver_sent_without_external_provider(): void
+    {
+        app(UserAuthService::class)->register([
+            'mobile' => '13920008888',
+            'password' => 'old-password',
+        ], '127.0.0.1');
+
+        app(PasswordResetService::class)->requestReset([
+            'account' => '13920008888',
+        ], '127.0.0.2');
+
+        $result = app(NotificationOutboxDispatcher::class)->sendPending(10);
+
+        $this->assertSame(1, $result['sent']);
+        $this->assertDatabaseHas('user_notification_outbox', [
+            'channel' => 'sms',
+            'status' => 'sent',
+        ]);
+    }
+
+    public function test_notification_send_command_dispatches_pending_rows(): void
+    {
+        Mail::fake();
+        app(UserAuthService::class)->register([
+            'email' => 'command-reset@example.com',
+            'password' => 'old-password',
+        ], '127.0.0.1');
+        app(PasswordResetService::class)->requestReset(['account' => 'command-reset@example.com'], '127.0.0.2');
+
+        $this->artisan('user:notifications:send', ['--limit' => 10])
+            ->expectsOutputToContain('sent=1')
+            ->assertExitCode(0);
+
+        Mail::assertSentCount(1);
     }
 }

@@ -97,3 +97,10 @@ Artisan::command('module:list', function () use ($ensureModulePersistence) {
 
     return Command::SUCCESS;
 })->purpose('List EasyAdmin8 modules');
+
+Artisan::command('user:notifications:send {--limit=50}', function (): int {
+    $result = app(\App\User\NotificationOutboxDispatcher::class)->sendPending((int) $this->option('limit'));
+    $this->info('sent='.$result['sent'].' failed='.$result['failed']);
+
+    return Command::SUCCESS;
+})->purpose('Send pending user notification outbox rows');
