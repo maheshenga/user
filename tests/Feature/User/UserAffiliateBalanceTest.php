@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\User;
 
+use App\Http\Middleware\CheckInstall;
 use App\Models\AffiliateCommission;
 use App\Models\ActivationCodeBatch;
 use App\Models\ActivationCodeRedemption;
@@ -12,8 +13,10 @@ use App\Models\VipPlan;
 use App\User\ActivationCodeService;
 use App\User\AffiliateService;
 use App\User\BalanceLedgerService;
+use Illuminate\Http\Request;
 use InvalidArgumentException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -432,6 +435,56 @@ class UserAffiliateBalanceTest extends TestCase
 
         $this->assertSame(0, AffiliateCommission::query()->count());
         $this->assertNull(ActivationCodeRedemption::query()->where('result', 'failed')->value('commission_source_id'));
+    }
+
+    public function test_user_balance_endpoints_return_summary_and_ledger_for_logged_in_user(): void
+    {
+        $user = $this->createAccount('balance-endpoint@example.com');
+        app(BalanceLedgerService::class)->credit($user->id, '12.00', 'admin_adjust', null, null, 'Seed', 1);
+
+        $this->withSession(['user' => ['id' => $user->id, 'email' => $user->email]]);
+
+        $summary = $this->getJson('/user/balance');
+        $summary->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.user_id', $user->id)
+            ->assertJsonPath('data.available_balance', '12.00')
+            ->assertJsonPath('data.frozen_balance', '0.00');
+
+        $ledger = $this->getJson('/user/balance/ledger?limit=5');
+        $ledger->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.0.user_id', $user->id)
+            ->assertJsonPath('data.0.type', 'admin_adjust')
+            ->assertJsonPath('data.0.amount', '12.00');
+    }
+
+    public function test_user_balance_endpoints_require_login(): void
+    {
+        $this->getJson('/user/balance')
+            ->assertOk()
+            ->assertJsonPath('code', 0);
+
+        $this->getJson('/user/balance/ledger')
+            ->assertOk()
+            ->assertJsonPath('code', 0);
+    }
+
+    public function test_user_balance_routes_use_install_guard_and_throttle(): void
+    {
+        foreach ([
+            ['GET', '/user/balance'],
+            ['GET', '/user/balance/ledger'],
+        ] as [$method, $path]) {
+            $route = Route::getRoutes()->match(Request::create($path, $method));
+            $middleware = $route->gatherMiddleware();
+
+            $this->assertContains(CheckInstall::class, $middleware);
+            $this->assertTrue(
+                collect($middleware)->contains(fn (string $name): bool => str_starts_with($name, 'throttle:')),
+                "{$path} route must be rate limited.",
+            );
+        }
     }
 
     private function createAccount(

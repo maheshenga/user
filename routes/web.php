@@ -38,6 +38,8 @@ Route::middleware([CheckInstall::class, 'throttle:20,1'])->prefix('user')->group
     Route::post('/password/reset', [\App\Http\Controllers\user\AuthController::class, 'resetPassword']);
     Route::get('/vip', [\App\Http\Controllers\user\VipController::class, 'summary']);
     Route::post('/activation-code/redeem', [\App\Http\Controllers\user\ActivationCodeController::class, 'redeem']);
+    Route::get('/balance', [\App\Http\Controllers\user\BalanceController::class, 'summary']);
+    Route::get('/balance/ledger', [\App\Http\Controllers\user\BalanceController::class, 'ledger']);
     Route::get('/invite', [\App\Http\Controllers\user\InviteController::class, 'summary']);
     Route::get('/invite/records', [\App\Http\Controllers\user\InviteController::class, 'records']);
 });
