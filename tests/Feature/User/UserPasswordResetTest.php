@@ -2,10 +2,16 @@
 
 namespace Tests\Feature\User;
 
+use App\Models\UserAccount;
 use App\Models\UserPasswordReset;
 use App\Models\UserSecurityLog;
+use App\User\PasswordResetService;
+use App\User\UserAuthService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use InvalidArgumentException;
 use Tests\TestCase;
 
 class UserPasswordResetTest extends TestCase
@@ -45,6 +51,155 @@ class UserPasswordResetTest extends TestCase
 
         $this->assertSame(0, UserPasswordReset::query()->count());
         $this->assertSame(0, UserSecurityLog::query()->count());
+    }
+
+    public function test_request_reset_by_email_creates_hashes_without_plaintext(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'reset@example.com',
+            'password' => 'old-password',
+        ], '127.0.0.1');
+
+        $result = app(PasswordResetService::class)->requestReset([
+            'account' => ' RESET@example.com ',
+        ], '127.0.0.2');
+
+        $this->assertTrue($result['accepted']);
+        $this->assertSame('email', $result['account_type']);
+        $this->assertSame('reset@example.com', $result['account']);
+        $this->assertNotEmpty($result['token']);
+        $this->assertMatchesRegularExpression('/^\d{6}$/', $result['code']);
+
+        $row = UserPasswordReset::query()->firstOrFail();
+
+        $this->assertSame('email', $row->account_type);
+        $this->assertSame('reset@example.com', $row->account);
+        $this->assertSame(hash('sha256', $result['token']), $row->token_hash);
+        $this->assertSame(hash('sha256', $result['code']), $row->code_hash);
+        $this->assertNotSame($result['token'], $row->token_hash);
+        $this->assertNotSame($result['code'], $row->code_hash);
+        $this->assertSame('127.0.0.2', $row->request_ip);
+        $this->assertSame(0, $row->attempt_count);
+    }
+
+    public function test_unknown_account_reset_request_is_generic_without_reset_row(): void
+    {
+        $result = app(PasswordResetService::class)->requestReset([
+            'account' => 'missing@example.com',
+        ], '127.0.0.2');
+
+        $this->assertSame(['accepted' => true], $result);
+        $this->assertSame(0, UserPasswordReset::query()->count());
+    }
+
+    public function test_valid_token_resets_password_marks_used_and_writes_security_log(): void
+    {
+        $registered = app(UserAuthService::class)->register([
+            'mobile' => '13920000001',
+            'password' => 'old-password',
+        ], '127.0.0.1');
+        $this->withSession(['user' => ['id' => $registered['user']['id']]]);
+
+        $reset = app(PasswordResetService::class)->requestReset([
+            'account' => '13920000001',
+        ], '127.0.0.2');
+
+        $result = app(PasswordResetService::class)->resetPassword([
+            'account' => '13920000001',
+            'token' => $reset['token'],
+            'password' => 'new-password',
+        ], '127.0.0.3');
+
+        $this->assertTrue($result['reset']);
+        $this->assertNull(session('user'));
+
+        $user = UserAccount::query()->findOrFail($registered['user']['id']);
+        $this->assertTrue(Hash::check('new-password', $user->password));
+        $this->assertNotNull(UserPasswordReset::query()->firstOrFail()->used_at);
+        $this->assertDatabaseHas('user_security_log', [
+            'user_id' => $registered['user']['id'],
+            'event' => 'password_reset_completed',
+            'ip' => '127.0.0.3',
+        ]);
+    }
+
+    public function test_valid_code_resets_password(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'code-reset@example.com',
+            'password' => 'old-password',
+        ], '127.0.0.1');
+
+        $reset = app(PasswordResetService::class)->requestReset([
+            'account' => 'code-reset@example.com',
+        ], '127.0.0.2');
+
+        app(PasswordResetService::class)->resetPassword([
+            'account' => 'code-reset@example.com',
+            'code' => $reset['code'],
+            'password' => 'new-password',
+        ], '127.0.0.3');
+
+        $user = UserAccount::query()->where('email', 'code-reset@example.com')->firstOrFail();
+        $this->assertTrue(Hash::check('new-password', $user->password));
+    }
+
+    public function test_expired_used_and_wrong_reset_credentials_are_rejected(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'edge-reset@example.com',
+            'password' => 'old-password',
+        ], '127.0.0.1');
+
+        $service = app(PasswordResetService::class);
+        $reset = $service->requestReset([
+            'account' => 'edge-reset@example.com',
+        ], '127.0.0.2');
+
+        try {
+            $service->resetPassword([
+                'account' => 'edge-reset@example.com',
+                'token' => 'wrong-token',
+                'password' => 'new-password',
+            ], '127.0.0.3');
+
+            $this->fail('Expected wrong token to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Invalid reset token or code.', $exception->getMessage());
+        }
+
+        $this->assertSame(1, UserPasswordReset::query()->firstOrFail()->attempt_count);
+
+        UserPasswordReset::query()->update(['expires_at' => Carbon::now()->subMinute()]);
+
+        try {
+            $service->resetPassword([
+                'account' => 'edge-reset@example.com',
+                'token' => $reset['token'],
+                'password' => 'new-password',
+            ], '127.0.0.3');
+
+            $this->fail('Expected expired token to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Reset token is expired.', $exception->getMessage());
+        }
+
+        UserPasswordReset::query()->update([
+            'expires_at' => Carbon::now()->addMinutes(10),
+            'used_at' => Carbon::now(),
+        ]);
+
+        try {
+            $service->resetPassword([
+                'account' => 'edge-reset@example.com',
+                'token' => $reset['token'],
+                'password' => 'new-password',
+            ], '127.0.0.3');
+
+            $this->fail('Expected used token to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Reset token has already been used.', $exception->getMessage());
+        }
     }
 
     private function createSystemConfigTable(): void
