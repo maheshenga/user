@@ -114,3 +114,17 @@ Artisan::command('user:notifications:purge {--days=30} {--limit=500}', function 
 
     return Command::SUCCESS;
 })->purpose('Purge old sent user notification outbox rows');
+
+Artisan::command('user:ops-menu:sync', function (): int {
+    try {
+        $result = app(\App\User\UserOpsMenuService::class)->sync();
+    } catch (\RuntimeException $exception) {
+        $this->error($exception->getMessage());
+
+        return Command::FAILURE;
+    }
+
+    $this->info('parent_id='.$result['parent_id'].' synced='.$result['synced']);
+
+    return Command::SUCCESS;
+})->purpose('Synchronize EasyAdmin menu entries for user operations');
