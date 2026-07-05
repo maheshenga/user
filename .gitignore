@@ -22,5 +22,6 @@ yarn-error.log
 /.vscode
 /.zed
 /.worktrees
+/.codegraph
 config/install/lock/install.lock
 composer.lock
