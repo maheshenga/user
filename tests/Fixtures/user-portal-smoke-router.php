@@ -22,7 +22,7 @@ if (! is_array($state)) {
 
 $state += [
     'logged_in' => false,
-    'email' => 'smoke-success@example.com',
+    'email' => null,
 ];
 
 $saveState = static function (array $state) use ($stateFile): void {
@@ -82,7 +82,18 @@ if ($method === 'GET' && in_array($path, [
 
 if ($method === 'POST' && $path === '/user/register') {
     $payload = $input();
-    $state['email'] = (string) ($payload['email'] ?? $payload['account'] ?? $state['email']);
+    $email = trim((string) ($payload['email'] ?? ''));
+    $password = (string) ($payload['password'] ?? '');
+
+    if ($email === '' || $password === '') {
+        $json([
+            'code' => 0,
+            'msg' => 'Email and password are required.',
+        ]);
+        return;
+    }
+
+    $state['email'] = $email;
     $saveState($state);
     $json([
         'code' => 1,
@@ -100,8 +111,19 @@ if ($method === 'POST' && $path === '/user/register') {
 
 if ($method === 'POST' && $path === '/user/login') {
     $payload = $input();
+    $account = trim((string) ($payload['account'] ?? ''));
+    $password = (string) ($payload['password'] ?? '');
+
+    if ($account === '' || $password === '') {
+        $json([
+            'code' => 0,
+            'msg' => 'Account and password are required.',
+        ]);
+        return;
+    }
+
     $state['logged_in'] = true;
-    $state['email'] = (string) ($payload['email'] ?? $payload['account'] ?? $state['email']);
+    $state['email'] = $account;
     $saveState($state);
     $json([
         'code' => 1,
