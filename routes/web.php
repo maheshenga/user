@@ -34,6 +34,8 @@ Route::middleware([CheckInstall::class, 'throttle:20,1'])->prefix('user')->group
     Route::post('/register', [\App\Http\Controllers\user\AuthController::class, 'register']);
     Route::post('/login', [\App\Http\Controllers\user\AuthController::class, 'login']);
     Route::post('/logout', [\App\Http\Controllers\user\AuthController::class, 'logout']);
+    Route::post('/password/forgot', [\App\Http\Controllers\user\AuthController::class, 'forgotPassword']);
+    Route::post('/password/reset', [\App\Http\Controllers\user\AuthController::class, 'resetPassword']);
     Route::get('/invite', [\App\Http\Controllers\user\InviteController::class, 'summary']);
     Route::get('/invite/records', [\App\Http\Controllers\user\InviteController::class, 'records']);
 });

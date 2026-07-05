@@ -4,6 +4,7 @@ namespace App\Http\Controllers\user;
 
 use App\Http\Controllers\Controller;
 use App\Http\JumpTrait;
+use App\User\PasswordResetService;
 use App\User\UserAuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -48,6 +49,45 @@ class AuthController extends Controller
 
         try {
             return $this->success('登录成功', $auth->login($payload, request()->ip()));
+        } catch (InvalidArgumentException $exception) {
+            return $this->error($exception->getMessage());
+        }
+    }
+
+    public function forgotPassword(PasswordResetService $passwords): JsonResponse
+    {
+        $payload = request()->only(['account']);
+        $validator = Validator::make($payload, [
+            'account' => 'required|string|max:180',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error($validator->errors()->first());
+        }
+
+        try {
+            return $this->success('Password reset accepted.', $passwords->requestReset($payload, request()->ip()));
+        } catch (InvalidArgumentException $exception) {
+            return $this->error($exception->getMessage());
+        }
+    }
+
+    public function resetPassword(PasswordResetService $passwords): JsonResponse
+    {
+        $payload = request()->only(['account', 'password', 'token', 'code']);
+        $validator = Validator::make($payload, [
+            'account' => 'required|string|max:180',
+            'password' => 'required|string|min:6|max:72',
+            'token' => 'nullable|string',
+            'code' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error($validator->errors()->first());
+        }
+
+        try {
+            return $this->success('Password reset completed.', $passwords->resetPassword($payload, request()->ip()));
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }

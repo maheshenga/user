@@ -7,9 +7,12 @@ use App\Models\UserPasswordReset;
 use App\Models\UserSecurityLog;
 use App\User\PasswordResetService;
 use App\User\UserAuthService;
+use App\Http\Middleware\CheckInstall;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 use Tests\TestCase;
@@ -199,6 +202,68 @@ class UserPasswordResetTest extends TestCase
             $this->fail('Expected used token to fail.');
         } catch (InvalidArgumentException $exception) {
             $this->assertSame('Reset token has already been used.', $exception->getMessage());
+        }
+    }
+
+    public function test_password_reset_endpoints_complete_flow(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'endpoint-reset@example.com',
+            'password' => 'old-password',
+        ], '127.0.0.1');
+
+        $forgot = $this->postJson('/user/password/forgot', [
+            'account' => 'endpoint-reset@example.com',
+        ]);
+
+        $forgot->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.accepted', true)
+            ->assertJsonPath('data.account_type', 'email');
+        $this->assertNotEmpty($forgot->json('data.token'));
+        $this->assertNotEmpty($forgot->json('data.code'));
+
+        $reset = $this->postJson('/user/password/reset', [
+            'account' => 'endpoint-reset@example.com',
+            'token' => $forgot->json('data.token'),
+            'password' => 'new-password',
+        ]);
+
+        $reset->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.reset', true);
+
+        $login = app(UserAuthService::class)->login([
+            'account' => 'endpoint-reset@example.com',
+            'password' => 'new-password',
+        ], '127.0.0.4');
+
+        $this->assertSame('endpoint-reset@example.com', $login['user']['email']);
+    }
+
+    public function test_password_reset_endpoints_return_error_for_bad_payload(): void
+    {
+        $forgot = $this->postJson('/user/password/forgot', []);
+        $forgot->assertOk()->assertJsonPath('code', 0);
+
+        $reset = $this->postJson('/user/password/reset', [
+            'account' => 'missing@example.com',
+            'password' => '12345',
+        ]);
+        $reset->assertOk()->assertJsonPath('code', 0);
+    }
+
+    public function test_password_reset_routes_use_install_guard_and_throttle(): void
+    {
+        foreach (['/user/password/forgot', '/user/password/reset'] as $path) {
+            $route = Route::getRoutes()->match(Request::create($path, 'POST'));
+            $middleware = $route->gatherMiddleware();
+
+            $this->assertContains(CheckInstall::class, $middleware);
+            $this->assertTrue(
+                collect($middleware)->contains(fn (string $name): bool => str_starts_with($name, 'throttle:')),
+                "{$path} route must be rate limited.",
+            );
         }
     }
 
