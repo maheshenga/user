@@ -180,6 +180,25 @@ class UserOpsVisibilityTest extends TestCase
         }
     }
 
+    public function test_admin_user_ops_dashboard_json_returns_metrics(): void
+    {
+        $response = $this->getJson('/admin/user/dashboard/index');
+
+        $response->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.total_users', 0)
+            ->assertJsonPath('data.today_commission_amount', '0.00');
+    }
+
+    public function test_admin_user_ops_dashboard_page_renders(): void
+    {
+        $response = $this->get('/admin/user/dashboard/index');
+
+        $response->assertOk();
+        $response->assertSee('User Operations');
+        $response->assertSee('Total Users');
+    }
+
     public function test_user_ops_menu_sync_creates_visible_menu_entries(): void
     {
         $this->artisan('user:ops-menu:sync')
