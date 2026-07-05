@@ -95,6 +95,38 @@ class UserRiskOpsTest extends TestCase
         $this->assertSame('12.50', $withdrawal->amount);
     }
 
+    public function test_withdrawal_payout_ops_fields_exist_and_cast_json(): void
+    {
+        $this->assertTrue(Schema::hasColumns('user_withdrawal_request', [
+            'approved_admin_id',
+            'approved_at',
+            'payout_admin_id',
+            'payout_method',
+            'payout_transaction_id',
+            'payout_proof_json',
+            'payout_error',
+            'payout_attempt_count',
+            'payout_last_attempt_at',
+            'paid_at',
+        ]));
+
+        $withdrawal = UserWithdrawalRequest::query()->create([
+            'withdrawal_no' => 'WD202607050002',
+            'user_id' => 1,
+            'amount' => '18.50',
+            'status' => 'approved',
+            'request_ip' => '127.0.0.1',
+            'account_snapshot_json' => ['account_no' => 'masked-002'],
+            'payout_proof_json' => ['receipt_url' => 'https://example.test/receipt/1'],
+            'payout_attempt_count' => 1,
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+
+        $this->assertSame(['receipt_url' => 'https://example.test/receipt/1'], $withdrawal->refresh()->payout_proof_json);
+        $this->assertSame(1, (int) $withdrawal->payout_attempt_count);
+    }
+
     public function test_invite_burst_risk_event_is_created_once_after_threshold(): void
     {
         $auth = app(UserAuthService::class);

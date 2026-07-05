@@ -13,7 +13,11 @@ class UserWithdrawalRequest extends BaseModel
     protected $casts = [
         'amount' => 'decimal:2',
         'account_snapshot_json' => 'array',
+        'payout_proof_json' => 'array',
         'audited_at' => 'datetime',
+        'approved_at' => 'datetime',
+        'payout_last_attempt_at' => 'datetime',
+        'paid_at' => 'datetime',
         'create_time' => 'App\Casts\CarbonDate:Y-m-d H:i:s',
         'update_time' => 'App\Casts\CarbonDate:Y-m-d H:i:s',
     ];
