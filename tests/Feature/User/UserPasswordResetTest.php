@@ -3,6 +3,7 @@
 namespace Tests\Feature\User;
 
 use App\Models\UserAccount;
+use App\Models\UserNotificationOutbox;
 use App\Models\UserPasswordReset;
 use App\Models\UserSecurityLog;
 use App\User\PasswordResetService;
@@ -70,17 +71,21 @@ class UserPasswordResetTest extends TestCase
         $this->assertTrue($result['accepted']);
         $this->assertSame('email', $result['account_type']);
         $this->assertSame('reset@example.com', $result['account']);
-        $this->assertNotEmpty($result['token']);
-        $this->assertMatchesRegularExpression('/^\d{6}$/', $result['code']);
+        $this->assertSame('email', $result['delivery']['channel']);
+        $this->assertArrayNotHasKey('token', $result);
+        $this->assertArrayNotHasKey('code', $result);
 
         $row = UserPasswordReset::query()->firstOrFail();
+        $outbox = UserNotificationOutbox::query()->firstOrFail();
+        $token = $outbox->payload_json['token'];
+        $code = $outbox->payload_json['code'];
 
         $this->assertSame('email', $row->account_type);
         $this->assertSame('reset@example.com', $row->account);
-        $this->assertSame(hash('sha256', $result['token']), $row->token_hash);
-        $this->assertSame(hash('sha256', $result['code']), $row->code_hash);
-        $this->assertNotSame($result['token'], $row->token_hash);
-        $this->assertNotSame($result['code'], $row->code_hash);
+        $this->assertSame(hash('sha256', $token), $row->token_hash);
+        $this->assertSame(hash('sha256', $code), $row->code_hash);
+        $this->assertNotSame($token, $row->token_hash);
+        $this->assertNotSame($code, $row->code_hash);
         $this->assertSame('127.0.0.2', $row->request_ip);
         $this->assertSame(0, $row->attempt_count);
     }
@@ -93,6 +98,7 @@ class UserPasswordResetTest extends TestCase
 
         $this->assertSame(['accepted' => true], $result);
         $this->assertSame(0, UserPasswordReset::query()->count());
+        $this->assertSame(0, UserNotificationOutbox::query()->count());
     }
 
     public function test_valid_token_resets_password_marks_used_and_writes_security_log(): void
@@ -106,10 +112,11 @@ class UserPasswordResetTest extends TestCase
         $reset = app(PasswordResetService::class)->requestReset([
             'account' => '13920000001',
         ], '127.0.0.2');
+        $outbox = UserNotificationOutbox::query()->firstOrFail();
 
         $result = app(PasswordResetService::class)->resetPassword([
             'account' => '13920000001',
-            'token' => $reset['token'],
+            'token' => $outbox->payload_json['token'],
             'password' => 'new-password',
         ], '127.0.0.3');
 
@@ -136,10 +143,11 @@ class UserPasswordResetTest extends TestCase
         $reset = app(PasswordResetService::class)->requestReset([
             'account' => 'code-reset@example.com',
         ], '127.0.0.2');
+        $outbox = UserNotificationOutbox::query()->firstOrFail();
 
         app(PasswordResetService::class)->resetPassword([
             'account' => 'code-reset@example.com',
-            'code' => $reset['code'],
+            'code' => $outbox->payload_json['code'],
             'password' => 'new-password',
         ], '127.0.0.3');
 
@@ -158,6 +166,7 @@ class UserPasswordResetTest extends TestCase
         $reset = $service->requestReset([
             'account' => 'edge-reset@example.com',
         ], '127.0.0.2');
+        $outbox = UserNotificationOutbox::query()->firstOrFail();
 
         try {
             $service->resetPassword([
@@ -178,7 +187,7 @@ class UserPasswordResetTest extends TestCase
         try {
             $service->resetPassword([
                 'account' => 'edge-reset@example.com',
-                'token' => $reset['token'],
+                'token' => $outbox->payload_json['token'],
                 'password' => 'new-password',
             ], '127.0.0.3');
 
@@ -195,7 +204,7 @@ class UserPasswordResetTest extends TestCase
         try {
             $service->resetPassword([
                 'account' => 'edge-reset@example.com',
-                'token' => $reset['token'],
+                'token' => $outbox->payload_json['token'],
                 'password' => 'new-password',
             ], '127.0.0.3');
 
@@ -219,13 +228,15 @@ class UserPasswordResetTest extends TestCase
         $forgot->assertOk()
             ->assertJsonPath('code', 1)
             ->assertJsonPath('data.accepted', true)
-            ->assertJsonPath('data.account_type', 'email');
-        $this->assertNotEmpty($forgot->json('data.token'));
-        $this->assertNotEmpty($forgot->json('data.code'));
+            ->assertJsonPath('data.account_type', 'email')
+            ->assertJsonPath('data.delivery.channel', 'email');
+        $this->assertArrayNotHasKey('token', $forgot->json('data'));
+        $this->assertArrayNotHasKey('code', $forgot->json('data'));
+        $outbox = UserNotificationOutbox::query()->firstOrFail();
 
         $reset = $this->postJson('/user/password/reset', [
             'account' => 'endpoint-reset@example.com',
-            'token' => $forgot->json('data.token'),
+            'token' => $outbox->payload_json['token'],
             'password' => 'new-password',
         ]);
 

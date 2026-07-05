@@ -11,8 +11,10 @@ use InvalidArgumentException;
 
 final class PasswordResetService
 {
-    public function __construct(private readonly UserSecurityLogService $securityLogs)
-    {
+    public function __construct(
+        private readonly UserSecurityLogService $securityLogs,
+        private readonly PasswordResetNotificationService $notifications
+    ) {
     }
 
     public function requestReset(array $payload, string $ip): array
@@ -31,7 +33,7 @@ final class PasswordResetService
         $code = (string) random_int(100000, 999999);
         $now = time();
 
-        UserPasswordReset::query()->create([
+        $reset = UserPasswordReset::query()->create([
             'user_id' => $user->id,
             'account_type' => $accountType,
             'account' => $account,
@@ -48,13 +50,13 @@ final class PasswordResetService
             'account_type' => $accountType,
             'account' => $account,
         ]);
+        $delivery = $this->notifications->queue($user, $reset, $token, $code);
 
         return [
             'accepted' => true,
             'account_type' => $accountType,
             'account' => $account,
-            'token' => $token,
-            'code' => $code,
+            'delivery' => $delivery,
             'expires_in' => 1800,
         ];
     }
