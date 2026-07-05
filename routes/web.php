@@ -30,6 +30,15 @@ Route::controller(\App\Http\Controllers\common\InstallController::class)->group(
     Route::match(['get', 'post'], '/install', 'index');
 });
 
+Route::middleware([CheckInstall::class])->prefix('u')->group(function (): void {
+    Route::get('/', [\App\Http\Controllers\user\PortalController::class, 'index']);
+    Route::get('/login', [\App\Http\Controllers\user\PortalController::class, 'login']);
+    Route::get('/register', [\App\Http\Controllers\user\PortalController::class, 'register']);
+    Route::get('/forgot-password', [\App\Http\Controllers\user\PortalController::class, 'forgotPassword']);
+    Route::get('/reset-password', [\App\Http\Controllers\user\PortalController::class, 'resetPassword']);
+    Route::get('/dashboard', [\App\Http\Controllers\user\PortalController::class, 'dashboard']);
+});
+
 Route::middleware([CheckInstall::class, 'throttle:20,1'])->prefix('user')->group(function (): void {
     Route::post('/register', [\App\Http\Controllers\user\AuthController::class, 'register']);
     Route::post('/login', [\App\Http\Controllers\user\AuthController::class, 'login']);
