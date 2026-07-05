@@ -266,13 +266,14 @@ class UserRiskOpsTest extends TestCase
         $approve = $service->request($approvedUser->id, '12.00', ['account_no' => 'approve'], '127.0.0.6');
         $reject = $service->request($rejectedUser->id, '9.00', ['account_no' => 'reject'], '127.0.0.6');
 
-        $paid = $service->approve($approve['id'], 7);
-        $this->assertSame('paid', $paid['status']);
-        $this->assertNotNull($paid['ledger_success_id']);
+        $approved = $service->approve($approve['id'], 7);
+        $this->assertSame('approved', $approved['status']);
+        $this->assertNull($approved['ledger_success_id']);
+        $this->assertSame(7, $approved['approved_admin_id']);
         $this->assertDatabaseHas('user_account', [
             'id' => $approvedUser->id,
             'available_balance' => '38.00',
-            'frozen_balance' => '0.00',
+            'frozen_balance' => '12.00',
         ]);
 
         try {
@@ -288,6 +289,71 @@ class UserRiskOpsTest extends TestCase
         $this->assertDatabaseHas('user_account', [
             'id' => $rejectedUser->id,
             'available_balance' => '50.00',
+            'frozen_balance' => '0.00',
+        ]);
+    }
+
+    public function test_withdrawal_service_mark_paid_settles_frozen_balance_and_records_proof(): void
+    {
+        $user = $this->createAccount('withdraw-paid@example.com', '50.00');
+        $service = app(WithdrawalService::class);
+        $request = $service->request($user->id, '12.00', ['account_no' => 'paid'], '127.0.0.6');
+        $service->approve($request['id'], 7);
+
+        $paid = $service->markPaid($request['id'], [
+            'method' => 'manual_bank',
+            'transaction_id' => 'BANK-20260705-001',
+            'proof' => ['receipt_no' => 'R001', 'operator_note' => 'Bank portal confirmed'],
+        ], 8);
+
+        $this->assertSame('paid', $paid['status']);
+        $this->assertNotNull($paid['ledger_success_id']);
+        $this->assertSame(8, $paid['payout_admin_id']);
+        $this->assertSame('manual_bank', $paid['payout_method']);
+        $this->assertSame('BANK-20260705-001', $paid['payout_transaction_id']);
+        $this->assertSame(['receipt_no' => 'R001', 'operator_note' => 'Bank portal confirmed'], $paid['payout_proof_json']);
+        $this->assertSame(1, $paid['payout_attempt_count']);
+        $this->assertDatabaseHas('user_account', [
+            'id' => $user->id,
+            'available_balance' => '38.00',
+            'frozen_balance' => '0.00',
+        ]);
+        $this->assertDatabaseHas('user_balance_ledger', [
+            'id' => $paid['ledger_success_id'],
+            'user_id' => $user->id,
+            'direction' => 'settle_frozen',
+            'amount' => '12.00',
+            'type' => 'withdraw_success',
+            'source_type' => 'user_withdrawal_request',
+        ]);
+    }
+
+    public function test_withdrawal_service_records_payout_failure_and_allows_reject_to_unfreeze(): void
+    {
+        $user = $this->createAccount('withdraw-failed@example.com', '40.00');
+        $service = app(WithdrawalService::class);
+        $request = $service->request($user->id, '15.00', ['account_no' => 'failed'], '127.0.0.6');
+        $service->approve($request['id'], 7);
+
+        $failed = $service->markPayoutFailed($request['id'], 'Bank account name mismatch', 8);
+
+        $this->assertSame('payout_failed', $failed['status']);
+        $this->assertSame('Bank account name mismatch', $failed['payout_error']);
+        $this->assertSame(1, $failed['payout_attempt_count']);
+        $this->assertNull($failed['ledger_success_id']);
+        $this->assertDatabaseHas('user_account', [
+            'id' => $user->id,
+            'available_balance' => '25.00',
+            'frozen_balance' => '15.00',
+        ]);
+
+        $rejected = $service->reject($request['id'], 'Manual payout exception reject', 9);
+
+        $this->assertSame('rejected', $rejected['status']);
+        $this->assertSame('Manual payout exception reject', $rejected['reason']);
+        $this->assertDatabaseHas('user_account', [
+            'id' => $user->id,
+            'available_balance' => '40.00',
             'frozen_balance' => '0.00',
         ]);
     }

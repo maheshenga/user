@@ -57,13 +57,53 @@ final class WithdrawalService
         }
 
         return DB::transaction(function () use ($withdrawalId, $adminId): array {
-            $withdrawal = UserWithdrawalRequest::query()->lockForUpdate()->find($withdrawalId);
-            if ($withdrawal === null) {
-                throw new InvalidArgumentException('Withdrawal request not found.');
-            }
-
+            $withdrawal = $this->lockedWithdrawal($withdrawalId);
             if ($withdrawal->status !== 'pending') {
                 throw new InvalidArgumentException('Only pending withdrawal can be approved.');
+            }
+
+            $withdrawal->forceFill([
+                'status' => 'approved',
+                'audit_admin_id' => $adminId,
+                'audited_at' => now(),
+                'approved_admin_id' => $adminId,
+                'approved_at' => now(),
+                'update_time' => time(),
+            ])->save();
+
+            return $this->publicWithdrawal($withdrawal->refresh());
+        });
+    }
+
+    public function markPaid(int $withdrawalId, array $payload, int $adminId): array
+    {
+        if ($adminId <= 0) {
+            throw new InvalidArgumentException('Admin id is required.');
+        }
+
+        $method = trim((string) ($payload['method'] ?? ''));
+        $transactionId = trim((string) ($payload['transaction_id'] ?? ''));
+        $proof = $payload['proof'] ?? [];
+        if (! is_array($proof)) {
+            $proof = [];
+        }
+
+        if ($method === '') {
+            throw new InvalidArgumentException('Payout method is required.');
+        }
+
+        if ($transactionId === '') {
+            throw new InvalidArgumentException('Payout transaction id is required.');
+        }
+
+        return DB::transaction(function () use ($withdrawalId, $method, $transactionId, $proof, $adminId): array {
+            $withdrawal = $this->lockedWithdrawal($withdrawalId);
+            if (! in_array($withdrawal->status, ['approved', 'payout_failed'], true)) {
+                throw new InvalidArgumentException('Only approved or failed payout withdrawal can be marked paid.');
+            }
+
+            if ($withdrawal->ledger_success_id !== null) {
+                throw new InvalidArgumentException('Withdrawal payout has already been settled.');
             }
 
             $ledger = $this->balanceLedger->settleFrozen(
@@ -72,15 +112,55 @@ final class WithdrawalService
                 'withdraw_success',
                 'user_withdrawal_request',
                 (int) $withdrawal->id,
-                'Withdrawal paid',
+                'Withdrawal payout paid',
                 $adminId
             );
 
             $withdrawal->forceFill([
                 'status' => 'paid',
                 'ledger_success_id' => $ledger['id'],
-                'audit_admin_id' => $adminId,
-                'audited_at' => now(),
+                'payout_admin_id' => $adminId,
+                'payout_method' => $method,
+                'payout_transaction_id' => $transactionId,
+                'payout_proof_json' => $proof,
+                'payout_error' => '',
+                'payout_attempt_count' => ((int) $withdrawal->payout_attempt_count) + 1,
+                'payout_last_attempt_at' => now(),
+                'paid_at' => now(),
+                'update_time' => time(),
+            ])->save();
+
+            return $this->publicWithdrawal($withdrawal->refresh());
+        });
+    }
+
+    public function markPayoutFailed(int $withdrawalId, string $error, int $adminId): array
+    {
+        if ($adminId <= 0) {
+            throw new InvalidArgumentException('Admin id is required.');
+        }
+
+        $error = trim($error);
+        if ($error === '') {
+            throw new InvalidArgumentException('Payout error is required.');
+        }
+
+        return DB::transaction(function () use ($withdrawalId, $error, $adminId): array {
+            $withdrawal = $this->lockedWithdrawal($withdrawalId);
+            if (! in_array($withdrawal->status, ['approved', 'payout_failed'], true)) {
+                throw new InvalidArgumentException('Only approved or failed payout withdrawal can be marked failed.');
+            }
+
+            if ($withdrawal->ledger_success_id !== null) {
+                throw new InvalidArgumentException('Paid withdrawal cannot be marked failed.');
+            }
+
+            $withdrawal->forceFill([
+                'status' => 'payout_failed',
+                'payout_admin_id' => $adminId,
+                'payout_error' => substr($error, 0, 1000),
+                'payout_attempt_count' => ((int) $withdrawal->payout_attempt_count) + 1,
+                'payout_last_attempt_at' => now(),
                 'update_time' => time(),
             ])->save();
 
@@ -100,13 +180,9 @@ final class WithdrawalService
         }
 
         return DB::transaction(function () use ($withdrawalId, $reason, $adminId): array {
-            $withdrawal = UserWithdrawalRequest::query()->lockForUpdate()->find($withdrawalId);
-            if ($withdrawal === null) {
-                throw new InvalidArgumentException('Withdrawal request not found.');
-            }
-
-            if ($withdrawal->status !== 'pending') {
-                throw new InvalidArgumentException('Only pending withdrawal can be rejected.');
+            $withdrawal = $this->lockedWithdrawal($withdrawalId);
+            if (! in_array($withdrawal->status, ['pending', 'approved', 'payout_failed'], true)) {
+                throw new InvalidArgumentException('Only pending, approved, or failed payout withdrawal can be rejected.');
             }
 
             $this->balanceLedger->unfreeze(
@@ -144,6 +220,16 @@ final class WithdrawalService
             ->all();
     }
 
+    private function lockedWithdrawal(int $withdrawalId): UserWithdrawalRequest
+    {
+        $withdrawal = UserWithdrawalRequest::query()->lockForUpdate()->find($withdrawalId);
+        if ($withdrawal === null) {
+            throw new InvalidArgumentException('Withdrawal request not found.');
+        }
+
+        return $withdrawal;
+    }
+
     private function positiveMoney(string|float $amount): string
     {
         $money = number_format(round((float) $amount, 2), 2, '.', '');
@@ -174,6 +260,16 @@ final class WithdrawalService
             'reason' => $withdrawal->reason,
             'audit_admin_id' => $withdrawal->audit_admin_id === null ? null : (int) $withdrawal->audit_admin_id,
             'audited_at' => $withdrawal->audited_at,
+            'approved_admin_id' => $withdrawal->approved_admin_id === null ? null : (int) $withdrawal->approved_admin_id,
+            'approved_at' => $withdrawal->approved_at,
+            'payout_admin_id' => $withdrawal->payout_admin_id === null ? null : (int) $withdrawal->payout_admin_id,
+            'payout_method' => $withdrawal->payout_method,
+            'payout_transaction_id' => $withdrawal->payout_transaction_id,
+            'payout_proof_json' => $withdrawal->payout_proof_json ?: [],
+            'payout_error' => $withdrawal->payout_error,
+            'payout_attempt_count' => (int) $withdrawal->payout_attempt_count,
+            'payout_last_attempt_at' => $withdrawal->payout_last_attempt_at,
+            'paid_at' => $withdrawal->paid_at,
         ];
     }
 }
