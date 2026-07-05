@@ -177,4 +177,33 @@ class UserPasswordResetNotificationTest extends TestCase
 
         Mail::assertSentCount(1);
     }
+
+    public function test_dispatch_failure_keeps_row_pending_for_retry_with_bounded_error(): void
+    {
+        UserNotificationOutbox::query()->create([
+            'user_id' => 10,
+            'type' => 'password_reset',
+            'channel' => 'unsupported',
+            'recipient' => 'retry@example.com',
+            'recipient_mask' => 'r***@example.com',
+            'subject' => 'Retry me',
+            'payload_json' => ['token' => 'retry-token', 'code' => '654321'],
+            'status' => 'pending',
+            'attempt_count' => 0,
+            'available_at' => now(),
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+
+        $result = app(NotificationOutboxDispatcher::class)->sendPending(10);
+
+        $this->assertSame(0, $result['sent']);
+        $this->assertSame(1, $result['failed']);
+        $outbox = UserNotificationOutbox::query()->firstOrFail();
+        $this->assertSame('pending', $outbox->status);
+        $this->assertSame(1, (int) $outbox->attempt_count);
+        $this->assertNotEmpty($outbox->last_error);
+        $this->assertLessThanOrEqual(1000, strlen((string) $outbox->last_error));
+        $this->assertTrue($outbox->available_at->isFuture());
+    }
 }

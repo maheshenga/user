@@ -39,7 +39,7 @@ final class NotificationOutboxDispatcher
                 $sent++;
             } catch (Throwable $exception) {
                 $row->forceFill([
-                    'status' => 'failed',
+                    'status' => 'pending',
                     'last_error' => substr($exception->getMessage(), 0, 1000),
                     'attempt_count' => ((int) $row->attempt_count) + 1,
                     'available_at' => now()->addMinutes(5),
