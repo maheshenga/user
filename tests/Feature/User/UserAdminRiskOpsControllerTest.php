@@ -202,6 +202,20 @@ class UserAdminRiskOpsControllerTest extends TestCase
             ->assertJsonPath('data.payout_error', 'Bank rejected receipt')
             ->assertJsonPath('data.payout_attempt_count', 1);
 
+        $approvedOnlyUser = $this->createAccount('withdraw-admin-approved-stats@example.com', '30.00');
+        $approvedOnly = $service->request($approvedOnlyUser->id, '8.00', ['account_no' => 'approved-only'], '127.0.0.1');
+        $service->approve($approvedOnly['id'], 77);
+
+        $stats = $this->getJson('/admin/user/withdrawal/stats');
+        $stats->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.by_status.pending.count', 1)
+            ->assertJsonPath('data.by_status.paid.count', 1)
+            ->assertJsonPath('data.by_status.payout_failed.count', 1)
+            ->assertJsonPath('data.by_status.payout_failed.amount', '6.00')
+            ->assertJsonPath('data.pending_payout_count', 2)
+            ->assertJsonPath('data.pending_payout_amount', '14.00');
+
         $rejected = $this->postJson('/admin/user/withdrawal/reject', [
             'id' => $reject['id'],
             'reason' => 'Risk rejected',

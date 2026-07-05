@@ -176,6 +176,18 @@ class WithdrawalController extends AdminController
         }
     }
 
+    public function stats(): JsonResponse
+    {
+        return response()->json([
+            'code' => 1,
+            'msg' => 'Withdrawal stats.',
+            'data' => app(WithdrawalService::class)->stats(),
+            'url' => '',
+            'wait' => 3,
+            '__token__' => csrf_token(),
+        ]);
+    }
+
     public function add(): JsonResponse { return $this->readOnlyError(); }
     public function edit(): JsonResponse { return $this->readOnlyError(); }
     public function delete(): JsonResponse { return $this->readOnlyError(); }

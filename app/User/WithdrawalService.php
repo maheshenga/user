@@ -220,6 +220,33 @@ final class WithdrawalService
             ->all();
     }
 
+    public function stats(): array
+    {
+        $rows = UserWithdrawalRequest::query()
+            ->selectRaw('status, COUNT(*) as total, COALESCE(SUM(amount), 0) as amount')
+            ->groupBy('status')
+            ->get();
+
+        $byStatus = [];
+        foreach ($rows as $row) {
+            $byStatus[(string) $row->status] = [
+                'count' => (int) $row->total,
+                'amount' => $this->money($row->amount ?? 0),
+            ];
+        }
+
+        $pendingPayout = UserWithdrawalRequest::query()
+            ->whereIn('status', ['approved', 'payout_failed'])
+            ->selectRaw('COUNT(*) as total, COALESCE(SUM(amount), 0) as amount')
+            ->first();
+
+        return [
+            'by_status' => $byStatus,
+            'pending_payout_count' => (int) ($pendingPayout->total ?? 0),
+            'pending_payout_amount' => $this->money($pendingPayout->amount ?? 0),
+        ];
+    }
+
     private function lockedWithdrawal(int $withdrawalId): UserWithdrawalRequest
     {
         $withdrawal = UserWithdrawalRequest::query()->lockForUpdate()->find($withdrawalId);
@@ -232,12 +259,17 @@ final class WithdrawalService
 
     private function positiveMoney(string|float $amount): string
     {
-        $money = number_format(round((float) $amount, 2), 2, '.', '');
+        $money = $this->money($amount);
         if ((float) $money <= 0) {
             throw new InvalidArgumentException('Amount must be greater than zero.');
         }
 
         return $money;
+    }
+
+    private function money(mixed $amount): string
+    {
+        return number_format(round((float) $amount, 2), 2, '.', '');
     }
 
     private function withdrawalNo(): string
@@ -251,7 +283,7 @@ final class WithdrawalService
             'id' => (int) $withdrawal->id,
             'withdrawal_no' => $withdrawal->withdrawal_no,
             'user_id' => (int) $withdrawal->user_id,
-            'amount' => number_format((float) $withdrawal->amount, 2, '.', ''),
+            'amount' => $this->money($withdrawal->amount),
             'status' => $withdrawal->status,
             'request_ip' => $withdrawal->request_ip,
             'account_snapshot_json' => $withdrawal->account_snapshot_json,

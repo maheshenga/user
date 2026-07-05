@@ -6,7 +6,8 @@ define(["jquery", "easy-admin"], function ($, ea) {
         approve_url: 'user/withdrawal/approve',
         reject_url: 'user/withdrawal/reject',
         payout_url: 'user/withdrawal/payout',
-        payout_fail_url: 'user/withdrawal/payoutFail'
+        payout_fail_url: 'user/withdrawal/payoutFail',
+        stats_url: 'user/withdrawal/stats'
     };
 
     function postAction(url, data) {
