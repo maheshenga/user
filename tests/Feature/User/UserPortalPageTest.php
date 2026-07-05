@@ -62,6 +62,7 @@ class UserPortalPageTest extends TestCase
             ->assertOk()
             ->assertSee('data-user-session', false)
             ->assertSee('data-dashboard-endpoints', false)
+            ->assertSee('data-session="/user/session"', false)
             ->assertSee('data-vip="/user/vip"', false)
             ->assertSee('data-balance="/user/balance"', false)
             ->assertSee('data-ledger="/user/balance/ledger"', false)

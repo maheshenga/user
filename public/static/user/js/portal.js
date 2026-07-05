@@ -91,6 +91,7 @@
             return {};
         }
         return {
+            session: element.dataset.session,
             vip: element.dataset.vip,
             balance: element.dataset.balance,
             ledger: element.dataset.ledger,
@@ -117,15 +118,62 @@
         }
     }
 
+    function setDashboardControlsEnabled(enabled) {
+        document.querySelectorAll('[data-dashboard-protected]').forEach((element) => {
+            element.disabled = !enabled;
+        });
+    }
+
+    async function ensureDashboardSession(endpoints) {
+        const status = document.querySelector('[data-dashboard-status]');
+
+        if (!endpoints.session) {
+            setDashboardControlsEnabled(true);
+            return true;
+        }
+
+        try {
+            const result = await request(endpoints.session);
+            const ok = Number(result.code) === 1;
+
+            if (!ok) {
+                setStatus(status, result.msg || 'User login required.', false);
+                setDashboardControlsEnabled(false);
+                return false;
+            }
+
+            const user = result.data?.user || {};
+            const label = document.querySelector('[data-current-user-label]');
+            if (label) {
+                label.textContent = user.nickname || user.email || user.mobile || `User #${user.id}`;
+            }
+            setStatus(status, '', null);
+            setDashboardControlsEnabled(true);
+
+            return true;
+        } catch (error) {
+            setStatus(status, error.message, false);
+            setDashboardControlsEnabled(false);
+            return false;
+        }
+    }
+
     function wireDashboard() {
         const endpointElement = document.querySelector('[data-dashboard-endpoints]');
         if (!endpointElement) {
             return;
         }
         const endpoints = endpointMap(endpointElement);
+        setDashboardControlsEnabled(false);
 
-        ['vip', 'balance', 'ledger', 'withdrawals', 'invite', 'inviteRecords'].forEach((name) => {
-            loadBox(name, endpoints[name]);
+        ensureDashboardSession(endpoints).then((loggedIn) => {
+            if (!loggedIn) {
+                return;
+            }
+
+            ['vip', 'balance', 'ledger', 'withdrawals', 'invite', 'inviteRecords'].forEach((name) => {
+                loadBox(name, endpoints[name]);
+            });
         });
 
         document.querySelectorAll('[data-refresh]').forEach((button) => {

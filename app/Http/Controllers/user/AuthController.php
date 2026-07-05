@@ -93,6 +93,35 @@ class AuthController extends Controller
         }
     }
 
+    public function session(): JsonResponse
+    {
+        $user = session('user');
+
+        if (empty($user) || ! is_array($user)) {
+            return response()->json([
+                'code' => 0,
+                'msg' => 'User login required.',
+                'data' => [],
+                'url' => '',
+                'wait' => 3,
+                '__token__' => csrf_token(),
+            ]);
+        }
+
+        unset($user['password']);
+
+        return response()->json([
+            'code' => 1,
+            'msg' => 'User session',
+            'data' => [
+                'user' => $user,
+            ],
+            'url' => '',
+            'wait' => 3,
+            '__token__' => csrf_token(),
+        ]);
+    }
+
     public function logout(UserAuthService $auth): JsonResponse
     {
         $auth->logout();
