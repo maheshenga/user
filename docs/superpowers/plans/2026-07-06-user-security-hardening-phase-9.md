@@ -19,7 +19,9 @@
 - Modify `app/User/PasswordResetService.php`
   - Inject `UserPasswordHasher`; use it for reset password hashing.
 - Modify `app/User/WithdrawalService.php`
-  - Reject duplicate settled payout references before settling frozen funds.
+  - Reserve a database-unique payout reference before settling frozen funds.
+- Create `database/migrations/2026_07_06_000001_create_user_withdrawal_payout_reference_table.php`
+  - Stores one unique payout reference per external payout transaction.
 - Create `tests/Unit/User/UserPasswordHasherTest.php`
   - Covers password hash shape and verification.
 - Modify `tests/Feature/User/UserAuthTest.php`
@@ -286,6 +288,7 @@ git commit -m "feat: harden user password hashing"
 **Files:**
 
 - Modify: `app/User/WithdrawalService.php`
+- Create: `database/migrations/2026_07_06_000001_create_user_withdrawal_payout_reference_table.php`
 - Modify: `tests/Feature/User/UserRiskOpsTest.php`
 
 - [ ] **Step 1: Add failing duplicate payout transaction test**
@@ -348,22 +351,17 @@ E:\code\user\.tools\php-8.3.32\php.exe -d extension=pdo_sqlite -d extension=sqli
 
 Expected: FAIL because the second withdrawal can currently be marked paid with a duplicate transaction id.
 
-- [ ] **Step 3: Implement duplicate payout guard**
+- [ ] **Step 3: Implement database-backed duplicate payout guard**
+
+Create `database/migrations/2026_07_06_000001_create_user_withdrawal_payout_reference_table.php` with a unique `reference_key` and unique `withdrawal_id`. This prevents concurrent transactions from settling two withdrawals with the same external payout reference.
 
 In `app/User/WithdrawalService.php`, inside the `markPaid()` transaction, after loading `$withdrawal` and before calling `settleFrozen()`, add:
 
 ```php
-$duplicate = UserWithdrawalRequest::query()
-    ->where('status', 'paid')
-    ->where('payout_method', $method)
-    ->where('payout_transaction_id', $transactionId)
-    ->whereKeyNot((int) $withdrawal->id)
-    ->exists();
-
-if ($duplicate) {
-    throw new InvalidArgumentException('Payout transaction id has already been used.');
-}
+$this->reservePayoutReference((int) $withdrawal->id, $method, $transactionId, $adminId);
 ```
+
+Add a private `reservePayoutReference()` helper that inserts into `user_withdrawal_payout_reference` and converts unique-constraint failures to `InvalidArgumentException('Payout transaction id has already been used.')`.
 
 - [ ] **Step 4: Verify GREEN and commit**
 
@@ -379,7 +377,7 @@ Expected: all pass.
 Commit:
 
 ```powershell
-git add app/User/WithdrawalService.php tests/Feature/User/UserRiskOpsTest.php
+git add app/User/WithdrawalService.php database/migrations/2026_07_06_000001_create_user_withdrawal_payout_reference_table.php tests/Feature/User/UserRiskOpsTest.php
 git commit -m "feat: prevent duplicate withdrawal payout settlement"
 ```
 

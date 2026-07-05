@@ -45,7 +45,7 @@ P9 keeps the existing service boundaries. Password hardening stays inside the se
 - `App\User\UserAuthService::register()`
 - `App\User\PasswordResetService::resetPassword()`
 
-Money state-machine hardening stays in tests unless a failing regression proves service logic needs a change. The existing `WithdrawalService` remains the authority for:
+Money state-machine hardening stays in `WithdrawalService` and adds a database-unique payout reference table. The service must reserve a unique payout reference before frozen funds are settled so concurrent requests cannot pay two withdrawals with the same external transaction id. The existing `WithdrawalService` remains the authority for:
 
 - request: available balance to frozen balance
 - approve: pending to approved
@@ -88,6 +88,7 @@ reject -> rejected + unfreeze ledger
 ```
 
 Terminal states `paid` and `rejected` must not be able to generate another settlement, unfreeze, or payout failure effect.
+The external payout tuple `payout_method + payout_transaction_id` is represented by a unique hash in `user_withdrawal_payout_reference`.
 
 ## Error Handling
 

@@ -11,8 +11,10 @@ use App\User\BalanceLedgerService;
 use App\User\RiskService;
 use App\User\UserAuthService;
 use App\User\WithdrawalService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use InvalidArgumentException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -125,6 +127,85 @@ class UserRiskOpsTest extends TestCase
 
         $this->assertSame(['receipt_url' => 'https://example.test/receipt/1'], $withdrawal->refresh()->payout_proof_json);
         $this->assertSame(1, (int) $withdrawal->payout_attempt_count);
+    }
+
+    public function test_withdrawal_payout_reference_table_enforces_unique_reference_keys(): void
+    {
+        $this->assertTrue(Schema::hasTable('user_withdrawal_payout_reference'));
+        $this->assertTrue(Schema::hasColumns('user_withdrawal_payout_reference', [
+            'withdrawal_id',
+            'payout_method',
+            'payout_transaction_id',
+            'reference_key',
+            'admin_id',
+            'create_time',
+        ]));
+
+        DB::table('user_withdrawal_payout_reference')->insert([
+            'withdrawal_id' => 1,
+            'payout_method' => 'manual_bank',
+            'payout_transaction_id' => 'BANK-UNIQUE-001',
+            'reference_key' => 'manual-bank-reference',
+            'admin_id' => 8,
+            'create_time' => time(),
+        ]);
+
+        try {
+            DB::table('user_withdrawal_payout_reference')->insert([
+                'withdrawal_id' => 2,
+                'payout_method' => 'manual_bank',
+                'payout_transaction_id' => 'BANK-UNIQUE-001',
+                'reference_key' => 'manual-bank-reference',
+                'admin_id' => 9,
+                'create_time' => time(),
+            ]);
+
+            $this->fail('Expected duplicate payout reference key to fail.');
+        } catch (QueryException) {
+            $this->assertSame(1, DB::table('user_withdrawal_payout_reference')->count());
+        }
+    }
+
+    public function test_withdrawal_payout_reference_migration_backfills_existing_paid_withdrawals(): void
+    {
+        DB::table('user_withdrawal_payout_reference')->truncate();
+
+        $paidWithdrawalId = DB::table('user_withdrawal_request')->insertGetId([
+            'withdrawal_no' => 'WD202607060001',
+            'user_id' => 100,
+            'amount' => '11.00',
+            'status' => 'paid',
+            'request_ip' => '127.0.0.1',
+            'payout_method' => 'manual_bank',
+            'payout_transaction_id' => 'BANK-BACKFILL-001',
+            'payout_admin_id' => 8,
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+        DB::table('user_withdrawal_request')->insert([
+            'withdrawal_no' => 'WD202607060002',
+            'user_id' => 101,
+            'amount' => '12.00',
+            'status' => 'paid',
+            'request_ip' => '127.0.0.1',
+            'payout_method' => '',
+            'payout_transaction_id' => '',
+            'payout_admin_id' => 9,
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+
+        $migration = include database_path('migrations/2026_07_06_000001_create_user_withdrawal_payout_reference_table.php');
+        $migration->backfillExistingPaidWithdrawals();
+
+        $this->assertDatabaseHas('user_withdrawal_payout_reference', [
+            'withdrawal_id' => $paidWithdrawalId,
+            'payout_method' => 'manual_bank',
+            'payout_transaction_id' => 'BANK-BACKFILL-001',
+            'reference_key' => hash('sha256', "manual_bank\0BANK-BACKFILL-001"),
+            'admin_id' => 8,
+        ]);
+        $this->assertSame(1, DB::table('user_withdrawal_payout_reference')->count());
     }
 
     public function test_invite_burst_risk_event_is_created_once_after_threshold(): void
@@ -325,6 +406,50 @@ class UserRiskOpsTest extends TestCase
             'amount' => '12.00',
             'type' => 'withdraw_success',
             'source_type' => 'user_withdrawal_request',
+        ]);
+    }
+
+    public function test_withdrawal_service_rejects_duplicate_paid_payout_transaction_without_second_settlement(): void
+    {
+        $firstUser = $this->createAccount('withdraw-idempotent-1@example.com', '50.00');
+        $secondUser = $this->createAccount('withdraw-idempotent-2@example.com', '50.00');
+        $service = app(WithdrawalService::class);
+
+        $first = $service->request($firstUser->id, '12.00', ['account_no' => 'first'], '127.0.0.6');
+        $second = $service->request($secondUser->id, '8.00', ['account_no' => 'second'], '127.0.0.6');
+        $service->approve($first['id'], 7);
+        $service->approve($second['id'], 7);
+
+        $service->markPaid($first['id'], [
+            'method' => 'manual_bank',
+            'transaction_id' => 'BANK-DUPLICATE-001',
+            'proof' => ['receipt_no' => 'R001'],
+        ], 8);
+
+        try {
+            $service->markPaid($second['id'], [
+                'method' => 'manual_bank',
+                'transaction_id' => 'BANK-DUPLICATE-001',
+                'proof' => ['receipt_no' => 'R002'],
+            ], 8);
+
+            $this->fail('Expected duplicate payout transaction id to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Payout transaction id has already been used.', $exception->getMessage());
+        }
+
+        $this->assertSame(1, DB::table('user_balance_ledger')->where('type', 'withdraw_success')->count());
+        $this->assertSame(1, DB::table('user_withdrawal_payout_reference')->count());
+        $this->assertDatabaseHas('user_withdrawal_request', [
+            'id' => $second['id'],
+            'status' => 'approved',
+            'ledger_success_id' => null,
+            'payout_transaction_id' => '',
+        ]);
+        $this->assertDatabaseHas('user_account', [
+            'id' => $secondUser->id,
+            'available_balance' => '42.00',
+            'frozen_balance' => '8.00',
         ]);
     }
 

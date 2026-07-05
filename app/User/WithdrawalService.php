@@ -3,6 +3,7 @@
 namespace App\User;
 
 use App\Models\UserWithdrawalRequest;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -105,6 +106,8 @@ final class WithdrawalService
             if ($withdrawal->ledger_success_id !== null) {
                 throw new InvalidArgumentException('Withdrawal payout has already been settled.');
             }
+
+            $this->reservePayoutReference((int) $withdrawal->id, $method, $transactionId, $adminId);
 
             $ledger = $this->balanceLedger->settleFrozen(
                 (int) $withdrawal->user_id,
@@ -303,5 +306,35 @@ final class WithdrawalService
             'payout_last_attempt_at' => $withdrawal->payout_last_attempt_at,
             'paid_at' => $withdrawal->paid_at,
         ];
+    }
+
+    private function reservePayoutReference(int $withdrawalId, string $method, string $transactionId, int $adminId): void
+    {
+        try {
+            DB::table('user_withdrawal_payout_reference')->insert([
+                'withdrawal_id' => $withdrawalId,
+                'payout_method' => $method,
+                'payout_transaction_id' => $transactionId,
+                'reference_key' => hash('sha256', $method."\0".$transactionId),
+                'admin_id' => $adminId,
+                'create_time' => time(),
+            ]);
+        } catch (QueryException $exception) {
+            if ($this->isUniqueConstraintViolation($exception)) {
+                throw new InvalidArgumentException('Payout transaction id has already been used.', 0, $exception);
+            }
+
+            throw $exception;
+        }
+    }
+
+    private function isUniqueConstraintViolation(QueryException $exception): bool
+    {
+        $message = strtolower($exception->getMessage() . ' ' . implode(' ', $exception->errorInfo ?? []));
+
+        return str_contains($message, 'unique constraint')
+            || str_contains($message, 'duplicate entry')
+            || str_contains($message, 'duplicate key')
+            || str_contains($message, 'integrity constraint violation: 1062');
     }
 }
