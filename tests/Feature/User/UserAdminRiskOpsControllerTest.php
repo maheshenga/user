@@ -160,12 +160,47 @@ class UserAdminRiskOpsControllerTest extends TestCase
         $index->assertOk()
             ->assertJsonPath('code', 0)
             ->assertJsonPath('count', 2);
+        $row = $index->json('data.0');
+        $this->assertArrayHasKey('payout_method', $row);
+        $this->assertArrayHasKey('payout_transaction_id', $row);
+        $this->assertArrayHasKey('payout_attempt_count', $row);
+        $this->assertArrayHasKey('paid_at', $row);
+        $this->assertArrayNotHasKey('account_snapshot_json', $row);
+        $this->assertArrayNotHasKey('payout_proof_json', $row);
 
-        $paid = $this->postJson('/admin/user/withdrawal/approve', ['id' => $approve['id']]);
+        $approved = $this->postJson('/admin/user/withdrawal/approve', ['id' => $approve['id']]);
+        $approved->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.status', 'approved')
+            ->assertJsonPath('data.audit_admin_id', 77)
+            ->assertJsonPath('data.approved_admin_id', 77);
+
+        $paid = $this->postJson('/admin/user/withdrawal/payout', [
+            'id' => $approve['id'],
+            'method' => 'manual_bank',
+            'transaction_id' => 'BANK-ADMIN-001',
+            'proof' => ['receipt_no' => 'ADMIN-R001'],
+        ]);
         $paid->assertOk()
             ->assertJsonPath('code', 1)
             ->assertJsonPath('data.status', 'paid')
-            ->assertJsonPath('data.audit_admin_id', 77);
+            ->assertJsonPath('data.payout_admin_id', 77)
+            ->assertJsonPath('data.payout_method', 'manual_bank')
+            ->assertJsonPath('data.payout_transaction_id', 'BANK-ADMIN-001');
+
+        $failedUser = $this->createAccount('withdraw-admin-failed@example.com', '30.00');
+        $failedRequest = $service->request($failedUser->id, '6.00', ['account_no' => 'failed'], '127.0.0.1');
+        $service->approve($failedRequest['id'], 77);
+
+        $failed = $this->postJson('/admin/user/withdrawal/payoutFail', [
+            'id' => $failedRequest['id'],
+            'error' => 'Bank rejected receipt',
+        ]);
+        $failed->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.status', 'payout_failed')
+            ->assertJsonPath('data.payout_error', 'Bank rejected receipt')
+            ->assertJsonPath('data.payout_attempt_count', 1);
 
         $rejected = $this->postJson('/admin/user/withdrawal/reject', [
             'id' => $reject['id'],

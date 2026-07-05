@@ -26,6 +26,14 @@ class WithdrawalController extends AdminController
         'reason',
         'audit_admin_id',
         'audited_at',
+        'approved_admin_id',
+        'approved_at',
+        'payout_admin_id',
+        'payout_method',
+        'payout_transaction_id',
+        'payout_attempt_count',
+        'payout_last_attempt_at',
+        'paid_at',
         'create_time',
     ];
 
@@ -36,6 +44,11 @@ class WithdrawalController extends AdminController
         'status',
         'request_ip',
         'audit_admin_id',
+        'approved_admin_id',
+        'payout_admin_id',
+        'payout_method',
+        'payout_transaction_id',
+        'paid_at',
         'create_time',
     ];
 
@@ -121,6 +134,41 @@ class WithdrawalController extends AdminController
             return $this->success('Withdrawal rejected.', app(WithdrawalService::class)->reject(
                 (int) request()->input('id', 0),
                 (string) request()->input('reason', ''),
+                (int) session('admin.id', 0)
+            ));
+        } catch (InvalidArgumentException $exception) {
+            return $this->error($exception->getMessage());
+        }
+    }
+
+    public function payout(): JsonResponse
+    {
+        try {
+            $proof = request()->input('proof', []);
+            if (! is_array($proof)) {
+                $proof = [];
+            }
+
+            return $this->success('Withdrawal payout recorded.', app(WithdrawalService::class)->markPaid(
+                (int) request()->input('id', 0),
+                [
+                    'method' => request()->input('method', ''),
+                    'transaction_id' => request()->input('transaction_id', ''),
+                    'proof' => $proof,
+                ],
+                (int) session('admin.id', 0)
+            ));
+        } catch (InvalidArgumentException $exception) {
+            return $this->error($exception->getMessage());
+        }
+    }
+
+    public function payoutFail(): JsonResponse
+    {
+        try {
+            return $this->success('Withdrawal payout failure recorded.', app(WithdrawalService::class)->markPayoutFailed(
+                (int) request()->input('id', 0),
+                (string) request()->input('error', ''),
                 (int) session('admin.id', 0)
             ));
         } catch (InvalidArgumentException $exception) {
