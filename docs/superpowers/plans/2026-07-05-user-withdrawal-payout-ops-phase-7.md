@@ -257,7 +257,7 @@ public function test_withdrawal_service_mark_paid_settles_frozen_balance_and_rec
     $this->assertDatabaseHas('user_balance_ledger', [
         'id' => $paid['ledger_success_id'],
         'user_id' => $user->id,
-        'direction' => 'out',
+        'direction' => 'settle_frozen',
         'amount' => '12.00',
         'type' => 'withdraw_success',
         'source_type' => 'user_withdrawal_request',
