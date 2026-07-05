@@ -5,6 +5,7 @@ namespace Tests\Feature\User;
 use App\Models\UserNotificationOutbox;
 use App\Models\UserPasswordReset;
 use App\User\NotificationOutboxDispatcher;
+use App\User\NotificationOutboxMaintenanceService;
 use App\User\PasswordResetService;
 use App\User\UserAuthService;
 use Illuminate\Support\Facades\DB;
@@ -205,5 +206,67 @@ class UserPasswordResetNotificationTest extends TestCase
         $this->assertNotEmpty($outbox->last_error);
         $this->assertLessThanOrEqual(1000, strlen((string) $outbox->last_error));
         $this->assertTrue($outbox->available_at->isFuture());
+    }
+
+    public function test_notification_maintenance_summary_counts_statuses_and_retryable_rows(): void
+    {
+        $this->createOutboxRow('sent', -60, 1);
+        $this->createOutboxRow('sent', -10, 1);
+        $this->createOutboxRow('pending', -1, 3);
+        $this->createOutboxRow('pending', 10, 4);
+
+        $summary = app(NotificationOutboxMaintenanceService::class)->summary();
+
+        $this->assertSame(4, $summary['total']);
+        $this->assertSame(2, $summary['by_status']['sent']);
+        $this->assertSame(2, $summary['by_status']['pending']);
+        $this->assertSame(1, $summary['retryable_pending']);
+        $this->assertSame(1, $summary['delayed_pending']);
+    }
+
+    public function test_notification_maintenance_purges_only_old_sent_rows_with_limit(): void
+    {
+        $oldSent = $this->createOutboxRow('sent', -60 * 24 * 31, 1);
+        $oldSentSecond = $this->createOutboxRow('sent', -60 * 24 * 31, 1);
+        $recentSent = $this->createOutboxRow('sent', -5, 1);
+        $oldPending = $this->createOutboxRow('pending', -60 * 24 * 31, 1);
+
+        $result = app(NotificationOutboxMaintenanceService::class)->purgeSentOlderThan(30, 1);
+
+        $this->assertSame(1, $result['deleted']);
+        $this->assertDatabaseMissing('user_notification_outbox', ['id' => $oldSent->id]);
+        $this->assertDatabaseHas('user_notification_outbox', ['id' => $oldSentSecond->id]);
+        $this->assertDatabaseHas('user_notification_outbox', ['id' => $recentSent->id]);
+        $this->assertDatabaseHas('user_notification_outbox', ['id' => $oldPending->id]);
+    }
+
+    public function test_notification_purge_command_reports_deleted_count(): void
+    {
+        $this->createOutboxRow('sent', -60 * 24 * 31, 1);
+
+        $this->artisan('user:notifications:purge', ['--days' => 30, '--limit' => 50])
+            ->expectsOutputToContain('deleted=1')
+            ->assertExitCode(0);
+    }
+
+    private function createOutboxRow(string $status, int $availableOffsetMinutes, int $attempts): UserNotificationOutbox
+    {
+        $time = now()->addMinutes($availableOffsetMinutes);
+
+        return UserNotificationOutbox::query()->create([
+            'user_id' => 10,
+            'type' => 'password_reset',
+            'channel' => 'email',
+            'recipient' => 'ops@example.com',
+            'recipient_mask' => 'o***@example.com',
+            'subject' => 'Ops row',
+            'payload_json' => ['token' => 'ops-token', 'code' => '123456'],
+            'status' => $status,
+            'attempt_count' => $attempts,
+            'available_at' => $time,
+            'sent_at' => $status === 'sent' ? $time : null,
+            'create_time' => $time->timestamp,
+            'update_time' => $time->timestamp,
+        ]);
     }
 }

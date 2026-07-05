@@ -104,3 +104,13 @@ Artisan::command('user:notifications:send {--limit=50}', function (): int {
 
     return Command::SUCCESS;
 })->purpose('Send pending user notification outbox rows');
+
+Artisan::command('user:notifications:purge {--days=30} {--limit=500}', function (): int {
+    $result = app(\App\User\NotificationOutboxMaintenanceService::class)->purgeSentOlderThan(
+        (int) $this->option('days'),
+        (int) $this->option('limit')
+    );
+    $this->info('deleted='.$result['deleted'].' days='.$result['days'].' limit='.$result['limit']);
+
+    return Command::SUCCESS;
+})->purpose('Purge old sent user notification outbox rows');
