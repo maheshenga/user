@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\User;
 
+use App\Http\Middleware\CheckInstall;
 use App\Models\ActivationCode;
 use App\Models\ActivationCodeBatch;
 use App\Models\ActivationCodeRedemption;
@@ -11,7 +12,9 @@ use App\Models\VipPlan;
 use App\User\ActivationCodeService;
 use App\User\UserAuthService;
 use App\User\VipService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 use Tests\TestCase;
@@ -319,6 +322,71 @@ class UserVipActivationTest extends TestCase
 
         $this->assertSame(4, ActivationCodeRedemption::query()->where('result', 'failed')->count());
         $this->assertSame(0, UserVipRecord::query()->where('user_id', $user['user']['id'])->count());
+    }
+
+    public function test_user_vip_and_activation_endpoints_complete_flow(): void
+    {
+        $user = $this->registerUser('activation-endpoint@example.com');
+        $plan = $this->createVipPlan('Endpoint VIP', 2, 30);
+        $code = $this->generateOneActivationCode($plan);
+
+        $this->withSession(['user' => $user['user']]);
+
+        $summaryBefore = $this->getJson('/user/vip');
+        $summaryBefore->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.active', false)
+            ->assertJsonPath('data.vip_level', 0);
+
+        $redeem = $this->postJson('/user/activation-code/redeem', [
+            'code' => $code,
+        ]);
+        $redeem->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.redeemed', true)
+            ->assertJsonPath('data.vip.vip_level', 2);
+
+        $summaryAfter = $this->getJson('/user/vip');
+        $summaryAfter->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.active', true)
+            ->assertJsonPath('data.vip_level', 2);
+    }
+
+    public function test_user_vip_activation_endpoints_require_login_and_validate_payload(): void
+    {
+        $this->getJson('/user/vip')
+            ->assertOk()
+            ->assertJsonPath('code', 0);
+
+        $this->postJson('/user/activation-code/redeem', [
+            'code' => 'EA8-ANY',
+        ])->assertOk()
+            ->assertJsonPath('code', 0);
+
+        $user = $this->registerUser('activation-bad-payload@example.com');
+        $this->withSession(['user' => $user['user']]);
+
+        $this->postJson('/user/activation-code/redeem', [])
+            ->assertOk()
+            ->assertJsonPath('code', 0);
+    }
+
+    public function test_user_vip_activation_routes_use_install_guard_and_throttle(): void
+    {
+        foreach ([
+            ['GET', '/user/vip'],
+            ['POST', '/user/activation-code/redeem'],
+        ] as [$method, $path]) {
+            $route = Route::getRoutes()->match(Request::create($path, $method));
+            $middleware = $route->gatherMiddleware();
+
+            $this->assertContains(CheckInstall::class, $middleware);
+            $this->assertTrue(
+                collect($middleware)->contains(fn (string $name): bool => str_starts_with($name, 'throttle:')),
+                "{$path} route must be rate limited.",
+            );
+        }
     }
 
     private function registerUser(string $email): array
