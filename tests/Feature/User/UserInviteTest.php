@@ -181,6 +181,53 @@ class UserInviteTest extends TestCase
         $this->assertSame('child@example.com', $records[0]['email']);
     }
 
+    public function test_register_endpoint_accepts_invite_code_and_user_can_query_invites(): void
+    {
+        $auth = app(UserAuthService::class);
+        $parent = $auth->register([
+            'mobile' => '13900000020',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $registerResponse = $this->postJson('/user/register', [
+            'mobile' => '13900000021',
+            'password' => 'secret123',
+            'invite_code' => $parent['invite_code']['code'],
+        ]);
+
+        $registerResponse->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.invite_relation.parent_user_id', $parent['user']['id']);
+
+        $summaryResponse = $this
+            ->withSession(['user' => ['id' => $parent['user']['id']]])
+            ->getJson('/user/invite');
+
+        $summaryResponse->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.invite_code.code', $parent['invite_code']['code'])
+            ->assertJsonPath('data.direct_count', 1);
+
+        $recordsResponse = $this
+            ->withSession(['user' => ['id' => $parent['user']['id']]])
+            ->getJson('/user/invite/records');
+
+        $recordsResponse->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.0.mobile', '13900000021');
+    }
+
+    public function test_invite_endpoints_require_user_session(): void
+    {
+        foreach (['/user/invite', '/user/invite/records'] as $uri) {
+            $response = $this->getJson($uri);
+
+            $response->assertOk()
+                ->assertJsonPath('code', 0)
+                ->assertJsonPath('msg', 'User login required.');
+        }
+    }
+
     private function mutatedCode(int $id, array $attributes): string
     {
         UserInviteCode::query()->whereKey($id)->update(array_merge([

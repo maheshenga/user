@@ -15,11 +15,12 @@ class AuthController extends Controller
 
     public function register(UserAuthService $auth): JsonResponse
     {
-        $payload = request()->only(['mobile', 'email', 'password']);
+        $payload = request()->only(['mobile', 'email', 'password', 'invite_code']);
         $validator = Validator::make($payload, [
             'mobile' => 'nullable|string|max:32',
             'email' => 'nullable|email|max:180',
             'password' => 'required|string|min:6|max:72',
+            'invite_code' => 'nullable|string|max:40',
         ]);
 
         if ($validator->fails()) {
