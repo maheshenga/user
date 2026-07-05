@@ -247,7 +247,12 @@ class UserAdminVipActivationControllerTest extends TestCase
                 ->assertOk()
                 ->assertJsonPath('code', 0);
         }
-        $this->getJson('/admin/user/activation-code/export')->assertForbidden();
+        $export = $this->getJson('/admin/user/activation-code/export');
+        $export->assertOk()
+            ->assertJsonPath('code', 1);
+        $exportRow = $export->json('data.rows.0');
+        $this->assertArrayNotHasKey('code_hash', $exportRow);
+        $this->assertArrayNotHasKey('code', $exportRow);
 
         $this->assertSame(1, ActivationCodeRedemption::query()->where('result', 'success')->count());
     }

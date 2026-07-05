@@ -5,38 +5,36 @@ namespace App\Http\Controllers\admin\user;
 use App\Http\Controllers\common\AdminController;
 use App\Http\Services\annotation\ControllerAnnotation;
 use App\Http\Services\annotation\NodeAnnotation;
-use App\Models\AffiliateCommission;
-use App\User\AffiliateService;
+use App\Models\UserWithdrawalRequest;
+use App\User\WithdrawalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
-#[ControllerAnnotation(title: 'Affiliate Commission Management')]
-class CommissionController extends AdminController
+#[ControllerAnnotation(title: 'User Withdrawal Management')]
+class WithdrawalController extends AdminController
 {
     private const LIST_COLUMNS = [
         'id',
-        'source_type',
-        'source_id',
-        'buyer_user_id',
-        'beneficiary_user_id',
-        'level',
+        'withdrawal_no',
+        'user_id',
         'amount',
         'status',
+        'request_ip',
+        'ledger_freeze_id',
+        'ledger_success_id',
+        'reason',
         'audit_admin_id',
         'audited_at',
-        'settled_ledger_id',
         'create_time',
     ];
 
     private const SEARCHABLE_COLUMNS = [
         'id',
-        'source_type',
-        'source_id',
-        'buyer_user_id',
-        'beneficiary_user_id',
-        'level',
+        'withdrawal_no',
+        'user_id',
         'status',
+        'request_ip',
         'audit_admin_id',
         'create_time',
     ];
@@ -44,7 +42,7 @@ class CommissionController extends AdminController
     public function initialize()
     {
         parent::initialize();
-        $this->model = new AffiliateCommission();
+        $this->model = new UserWithdrawalRequest();
     }
 
     public function setOrder(): static
@@ -77,7 +75,7 @@ class CommissionController extends AdminController
         return $this;
     }
 
-    #[NodeAnnotation(title: 'Affiliate Commissions', auth: true)]
+    #[NodeAnnotation(title: 'Withdrawals', auth: true)]
     public function index(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -90,7 +88,7 @@ class CommissionController extends AdminController
         $where = $this->sanitizeTableWhere($where);
         [$order, $direction] = $this->sanitizeTableOrder();
 
-        $query = AffiliateCommission::query()->where($where);
+        $query = UserWithdrawalRequest::query()->where($where);
         $list = (clone $query)
             ->select(self::LIST_COLUMNS)
             ->orderBy($order, $direction)
@@ -108,12 +106,10 @@ class CommissionController extends AdminController
     public function approve(): JsonResponse
     {
         try {
-            $result = app(AffiliateService::class)->approve(
+            return $this->success('Withdrawal approved.', app(WithdrawalService::class)->approve(
                 (int) request()->input('id', 0),
                 (int) session('admin.id', 0)
-            );
-
-            return $this->success('Commission approved.', $result);
+            ));
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }
@@ -122,87 +118,25 @@ class CommissionController extends AdminController
     public function reject(): JsonResponse
     {
         try {
-            $result = app(AffiliateService::class)->reject(
+            return $this->success('Withdrawal rejected.', app(WithdrawalService::class)->reject(
                 (int) request()->input('id', 0),
                 (string) request()->input('reason', ''),
                 (int) session('admin.id', 0)
-            );
-
-            return $this->success('Commission rejected.', $result);
+            ));
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }
     }
 
-    public function batchApprove(): JsonResponse
-    {
-        try {
-            $result = app(AffiliateService::class)->batchApprove(
-                $this->requestIds(),
-                (int) session('admin.id', 0)
-            );
-
-            return $this->success('Commissions approved.', $result);
-        } catch (InvalidArgumentException $exception) {
-            return $this->error($exception->getMessage());
-        }
-    }
-
-    public function batchReject(): JsonResponse
-    {
-        try {
-            $result = app(AffiliateService::class)->batchReject(
-                $this->requestIds(),
-                (string) request()->input('reason', ''),
-                (int) session('admin.id', 0)
-            );
-
-            return $this->success('Commissions rejected.', $result);
-        } catch (InvalidArgumentException $exception) {
-            return $this->error($exception->getMessage());
-        }
-    }
-
-    public function stats(): JsonResponse
-    {
-        return response()->json([
-            'code' => 1,
-            'msg' => 'Commission stats.',
-            'data' => app(AffiliateService::class)->stats(),
-            'url' => '',
-            'wait' => 3,
-            '__token__' => csrf_token(),
-        ]);
-    }
-
-    public function add(): JsonResponse
-    {
-        return $this->readOnlyError();
-    }
-
-    public function edit(): JsonResponse
-    {
-        return $this->readOnlyError();
-    }
-
-    public function delete(): JsonResponse
-    {
-        return $this->readOnlyError();
-    }
-
-    public function modify(): JsonResponse
-    {
-        return $this->readOnlyError();
-    }
-
-    public function recycle(): JsonResponse
-    {
-        return $this->readOnlyError();
-    }
+    public function add(): JsonResponse { return $this->readOnlyError(); }
+    public function edit(): JsonResponse { return $this->readOnlyError(); }
+    public function delete(): JsonResponse { return $this->readOnlyError(); }
+    public function modify(): JsonResponse { return $this->readOnlyError(); }
+    public function recycle(): JsonResponse { return $this->readOnlyError(); }
 
     public function export(): View|bool
     {
-        abort(403, 'Commission export is disabled in Phase 5.');
+        abort(403, 'Withdrawal export is disabled in Phase 6.');
     }
 
     private function sanitizeTableWhere(array $where): array
@@ -229,15 +163,8 @@ class CommissionController extends AdminController
     {
         return response()->json([
             'code' => 0,
-            'msg' => 'Commission action is not allowed.',
+            'msg' => 'Withdrawal action is not allowed.',
             'data' => [],
         ]);
-    }
-
-    private function requestIds(): array
-    {
-        $ids = request()->input('ids', request()->input('id', []));
-
-        return is_array($ids) ? $ids : [$ids];
     }
 }

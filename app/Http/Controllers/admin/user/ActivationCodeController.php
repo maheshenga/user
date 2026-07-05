@@ -9,6 +9,7 @@ use App\Models\ActivationCode;
 use App\Models\ActivationCodeRedemption;
 use App\User\ActivationCodeService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
@@ -32,6 +33,18 @@ class ActivationCodeController extends AdminController
         'batch_id',
         'display_code_tail',
         'status',
+        'bound_user_id',
+        'expires_at',
+        'create_time',
+    ];
+
+    private const EXPORT_COLUMNS = [
+        'id',
+        'batch_id',
+        'display_code_tail',
+        'status',
+        'max_uses',
+        'used_count',
         'bound_user_id',
         'expires_at',
         'create_time',
@@ -217,9 +230,26 @@ class ActivationCodeController extends AdminController
         return $this->readOnlyError();
     }
 
-    public function export(): View|bool
+    public function export(): JsonResponse
     {
-        abort(403, 'Activation code export is disabled in Phase 4.');
+        $rows = DB::table('activation_code')
+            ->select(self::EXPORT_COLUMNS)
+            ->orderByDesc('id')
+            ->limit(10000)
+            ->get()
+            ->map(fn (object $row): array => (array) $row)
+            ->all();
+
+        return response()->json([
+            'code' => 1,
+            'msg' => 'Activation code export generated.',
+            'data' => [
+                'rows' => $rows,
+            ],
+            'url' => '',
+            'wait' => 3,
+            '__token__' => csrf_token(),
+        ]);
     }
 
     private function setStatus(string $status): JsonResponse

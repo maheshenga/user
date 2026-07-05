@@ -87,7 +87,7 @@ trait Curd
     }
 
     #[NodeAnnotation(title: '导出', auth: true)]
-    public function export(): View|bool
+    public function export(): View|bool|JsonResponse
     {
         if (config('easyadmin.IS_DEMO', false)) {
             return $this->error('演示环境下不允许操作');

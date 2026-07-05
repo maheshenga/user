@@ -123,6 +123,62 @@ final class AffiliateService
         });
     }
 
+    public function batchApprove(array $commissionIds, int $adminId): array
+    {
+        return $this->batchReview($commissionIds, fn (int $id): array => $this->approve($id, $adminId));
+    }
+
+    public function batchReject(array $commissionIds, string $reason, int $adminId): array
+    {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new InvalidArgumentException('Reject reason is required.');
+        }
+
+        return $this->batchReview($commissionIds, fn (int $id): array => $this->reject($id, $reason, $adminId));
+    }
+
+    public function stats(): array
+    {
+        $statuses = ['pending', 'settled', 'rejected', 'frozen', 'reversed'];
+        $byStatus = array_fill_keys($statuses, ['count' => 0, 'amount' => '0.00']);
+
+        $rows = AffiliateCommission::query()
+            ->selectRaw('status, COUNT(*) as count, COALESCE(SUM(amount), 0) as amount')
+            ->groupBy('status')
+            ->get();
+
+        foreach ($rows as $row) {
+            if (! array_key_exists($row->status, $byStatus)) {
+                continue;
+            }
+
+            $byStatus[$row->status] = [
+                'count' => (int) $row->count,
+                'amount' => $this->money($row->amount),
+            ];
+        }
+
+        $topBeneficiaries = AffiliateCommission::query()
+            ->selectRaw('beneficiary_user_id, COUNT(*) as count, COALESCE(SUM(amount), 0) as amount')
+            ->where('status', 'settled')
+            ->groupBy('beneficiary_user_id')
+            ->orderByRaw('COALESCE(SUM(amount), 0) DESC')
+            ->limit(10)
+            ->get()
+            ->map(fn ($row): array => [
+                'beneficiary_user_id' => (int) $row->beneficiary_user_id,
+                'count' => (int) $row->count,
+                'amount' => $this->money($row->amount),
+            ])
+            ->all();
+
+        return [
+            'by_status' => $byStatus,
+            'top_beneficiaries' => $topBeneficiaries,
+        ];
+    }
+
     public function reverse(int $commissionId, string $reason, int $adminId): array
     {
         if ($adminId <= 0) {
@@ -224,6 +280,32 @@ final class AffiliateService
 
             return $commissions;
         });
+    }
+
+    private function batchReview(array $commissionIds, callable $review): array
+    {
+        $processed = [];
+        $errors = [];
+
+        foreach (array_values(array_unique(array_map('intval', $commissionIds))) as $id) {
+            if ($id <= 0) {
+                continue;
+            }
+
+            try {
+                $processed[] = $review($id);
+            } catch (InvalidArgumentException $exception) {
+                $errors[] = [
+                    'id' => $id,
+                    'error' => $exception->getMessage(),
+                ];
+            }
+        }
+
+        return [
+            'processed' => $processed,
+            'errors' => $errors,
+        ];
     }
 
     private function publicCommission(AffiliateCommission $commission): array
