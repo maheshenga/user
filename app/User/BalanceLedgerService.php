@@ -57,6 +57,18 @@ final class BalanceLedgerService
         return $this->mutate($userId, $amount, 'unfreeze', $type, $sourceType, $sourceId, $remark, $adminId);
     }
 
+    public function settleFrozen(
+        int $userId,
+        string|float $amount,
+        string $type,
+        ?string $sourceType,
+        ?int $sourceId,
+        string $remark,
+        ?int $adminId = null
+    ): array {
+        return $this->mutate($userId, $amount, 'settle_frozen', $type, $sourceType, $sourceId, $remark, $adminId);
+    }
+
     public function adminAdjust(int $userId, string|float $amount, string $reason, int $adminId): array
     {
         $reason = trim($reason);
@@ -165,6 +177,7 @@ final class BalanceLedgerService
             'out' => [$this->subAvailable($balanceBefore, $amount), $frozenBefore],
             'freeze' => [$this->subAvailable($balanceBefore, $amount), $this->add($frozenBefore, $amount)],
             'unfreeze' => [$this->add($balanceBefore, $amount), $this->subFrozen($frozenBefore, $amount)],
+            'settle_frozen' => [$balanceBefore, $this->subFrozen($frozenBefore, $amount)],
             default => throw new InvalidArgumentException('Unsupported balance direction.'),
         };
     }
@@ -227,7 +240,7 @@ final class BalanceLedgerService
         return [
             'id' => (int) $ledger->id,
             'user_id' => (int) $ledger->user_id,
-            'direction' => $ledger->direction,
+            'direction' => $ledger->direction === 'settle_frozen' ? 'out' : $ledger->direction,
             'amount' => $this->money($ledger->amount),
             'balance_before' => $this->money($ledger->balance_before),
             'balance_after' => $this->money($ledger->balance_after),
