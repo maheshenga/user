@@ -8,10 +8,12 @@ use App\Models\ActivationCodeRedemption;
 use App\Models\UserAccount;
 use App\Models\UserVipRecord;
 use App\Models\VipPlan;
+use App\User\ActivationCodeService;
 use App\User\UserAuthService;
 use App\User\VipService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
+use InvalidArgumentException;
 use Tests\TestCase;
 
 class UserVipActivationTest extends TestCase
@@ -174,6 +176,151 @@ class UserVipActivationTest extends TestCase
         $this->assertSame(1, $summary['record_count']);
     }
 
+    public function test_activation_service_creates_batch_and_generates_hashed_codes(): void
+    {
+        $plan = $this->createVipPlan('Activation VIP', 2, 60);
+
+        $batch = app(ActivationCodeService::class)->createBatch([
+            'name' => 'July Campaign',
+            'vip_plan_id' => $plan->id,
+            'duration_days' => 60,
+            'total_count' => 3,
+            'status' => 'active',
+            'is_commissionable' => true,
+            'first_level_reward' => 12.50,
+            'second_level_reward' => 3.25,
+            'expires_at' => '2026-08-01 00:00:00',
+        ], 9);
+
+        $this->assertSame('July Campaign', $batch['name']);
+        $this->assertSame(3, $batch['total_count']);
+        $this->assertSame(0, $batch['generated_count']);
+        $this->assertTrue($batch['is_commissionable']);
+
+        $generated = app(ActivationCodeService::class)->generateCodes($batch['id'], 2, 9);
+
+        $this->assertCount(2, $generated['codes']);
+        foreach ($generated['codes'] as $plainCode) {
+            $this->assertMatchesRegularExpression('/^EA8-[A-Z0-9]{4}(?:-[A-Z0-9]{4}){5}$/', $plainCode);
+        }
+
+        $storedCodes = ActivationCode::query()->orderBy('id')->get();
+        $this->assertCount(2, $storedCodes);
+        foreach ($storedCodes as $index => $storedCode) {
+            $normalized = $this->normalizeActivationCode($generated['codes'][$index]);
+
+            $this->assertSame(hash('sha256', $normalized), $storedCode->code_hash);
+            $this->assertSame(substr($normalized, -6), $storedCode->display_code_tail);
+            $this->assertNotSame($generated['codes'][$index], $storedCode->code_hash);
+        }
+
+        $this->assertSame(2, (int) ActivationCodeBatch::query()->findOrFail($batch['id'])->generated_count);
+    }
+
+    public function test_activation_service_redeems_valid_code_and_writes_success_audit(): void
+    {
+        $user = $this->registerUser('activation-redeem@example.com');
+        $plan = $this->createVipPlan('Activation VIP', 2, 30);
+        $code = $this->generateOneActivationCode($plan);
+
+        $result = app(ActivationCodeService::class)->redeem([
+            'code' => strtolower(' '.$code.' '),
+        ], $user['user']['id'], '127.0.0.5');
+
+        $this->assertTrue($result['redeemed']);
+        $this->assertSame(2, $result['vip']['vip_level']);
+
+        $storedCode = ActivationCode::query()->firstOrFail();
+        $this->assertSame('used', $storedCode->status);
+        $this->assertSame(1, (int) $storedCode->used_count);
+
+        $this->assertDatabaseHas('activation_code_redemption', [
+            'activation_code_id' => $storedCode->id,
+            'batch_id' => $storedCode->batch_id,
+            'user_id' => $user['user']['id'],
+            'result' => 'success',
+            'redeem_ip' => '127.0.0.5',
+        ]);
+        $this->assertSame(1, UserVipRecord::query()->where('user_id', $user['user']['id'])->count());
+    }
+
+    public function test_activation_service_rejects_reused_single_use_code_and_writes_failed_audit(): void
+    {
+        $firstUser = $this->registerUser('activation-first@example.com');
+        $secondUser = $this->registerUser('activation-second@example.com');
+        $plan = $this->createVipPlan('Activation VIP', 1, 30);
+        $code = $this->generateOneActivationCode($plan);
+
+        app(ActivationCodeService::class)->redeem([
+            'code' => $code,
+        ], $firstUser['user']['id'], '127.0.0.6');
+
+        try {
+            app(ActivationCodeService::class)->redeem([
+                'code' => $code,
+            ], $secondUser['user']['id'], '127.0.0.7');
+
+            $this->fail('Expected reused activation code to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Activation code is not usable.', $exception->getMessage());
+        }
+
+        $this->assertSame(1, UserVipRecord::query()->where('user_id', $firstUser['user']['id'])->count());
+        $this->assertSame(0, UserVipRecord::query()->where('user_id', $secondUser['user']['id'])->count());
+        $this->assertSame(2, ActivationCodeRedemption::query()->count());
+        $this->assertDatabaseHas('activation_code_redemption', [
+            'user_id' => $secondUser['user']['id'],
+            'result' => 'failed',
+            'error_message' => 'Activation code is not usable.',
+        ]);
+    }
+
+    public function test_activation_service_rejects_unusable_codes_without_leaking_secrets(): void
+    {
+        $user = $this->registerUser('activation-edge@example.com');
+        $otherUser = $this->registerUser('activation-bound-other@example.com');
+        $plan = $this->createVipPlan('Activation VIP', 1, 30);
+
+        $cases = [
+            ['status' => 'disabled', 'message' => 'Activation code is not usable.'],
+            ['status' => 'unused', 'expires_at' => Carbon::now()->subMinute(), 'message' => 'Activation code is expired.'],
+            ['status' => 'unused', 'used_count' => 2, 'max_uses' => 2, 'message' => 'Activation code usage limit reached.'],
+            ['status' => 'unused', 'bound_user_id' => $otherUser['user']['id'], 'message' => 'Activation code is not bound to this user.'],
+        ];
+
+        foreach ($cases as $index => $case) {
+            $plainCode = "EA8-EDGE-CASE-{$index}";
+            $batch = $this->createActivationBatch($plan);
+            ActivationCode::query()->create([
+                'batch_id' => $batch->id,
+                'code_hash' => hash('sha256', $this->normalizeActivationCode($plainCode)),
+                'display_code_tail' => substr($this->normalizeActivationCode($plainCode), -6),
+                'status' => $case['status'],
+                'max_uses' => $case['max_uses'] ?? 1,
+                'used_count' => $case['used_count'] ?? 0,
+                'bound_user_id' => $case['bound_user_id'] ?? null,
+                'expires_at' => $case['expires_at'] ?? Carbon::now()->addDay(),
+                'create_time' => time(),
+                'update_time' => time(),
+            ]);
+
+            try {
+                app(ActivationCodeService::class)->redeem([
+                    'code' => $plainCode,
+                ], $user['user']['id'], '127.0.0.8');
+
+                $this->fail("Expected activation code case {$index} to fail.");
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame($case['message'], $exception->getMessage());
+                $this->assertStringNotContainsString('EDGE', $exception->getMessage());
+                $this->assertStringNotContainsString('hash', strtolower($exception->getMessage()));
+            }
+        }
+
+        $this->assertSame(4, ActivationCodeRedemption::query()->where('result', 'failed')->count());
+        $this->assertSame(0, UserVipRecord::query()->where('user_id', $user['user']['id'])->count());
+    }
+
     private function registerUser(string $email): array
     {
         return app(UserAuthService::class)->register([
@@ -193,5 +340,34 @@ class UserVipActivationTest extends TestCase
             'create_time' => time(),
             'update_time' => time(),
         ]);
+    }
+
+    private function createActivationBatch(VipPlan $plan): ActivationCodeBatch
+    {
+        return ActivationCodeBatch::query()->create([
+            'name' => 'Test Batch',
+            'vip_plan_id' => $plan->id,
+            'duration_days' => (int) $plan->duration_days,
+            'total_count' => 10,
+            'generated_count' => 0,
+            'status' => 'active',
+            'expires_at' => Carbon::now()->addMonth(),
+            'create_admin_id' => 1,
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+    }
+
+    private function generateOneActivationCode(VipPlan $plan): string
+    {
+        $batch = $this->createActivationBatch($plan);
+        $generated = app(ActivationCodeService::class)->generateCodes($batch->id, 1, 1);
+
+        return $generated['codes'][0];
+    }
+
+    private function normalizeActivationCode(string $code): string
+    {
+        return strtoupper(str_replace([' ', '-'], '', trim($code)));
     }
 }
