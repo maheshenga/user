@@ -12,8 +12,10 @@ use InvalidArgumentException;
 
 final class ActivationCodeService
 {
-    public function __construct(private readonly VipService $vip)
-    {
+    public function __construct(
+        private readonly VipService $vip,
+        private readonly AffiliateService $affiliate
+    ) {
     }
 
     public function createBatch(array $payload, ?int $adminId): array
@@ -121,7 +123,7 @@ final class ActivationCodeService
                 ->first();
 
             if ($code === null) {
-                $this->writeRedemption(null, null, $userId, null, $ip, 'failed', 'Activation code is invalid.');
+                $this->writeRedemption(null, null, $userId, null, null, $ip, 'failed', 'Activation code is invalid.');
 
                 return ['error' => 'Activation code is invalid.'];
             }
@@ -129,7 +131,7 @@ final class ActivationCodeService
             $batch = ActivationCodeBatch::query()->lockForUpdate()->find($code->batch_id);
             $error = $this->redemptionError($code, $batch, $userId);
             if ($error !== null) {
-                $this->writeRedemption($code, $batch, $userId, null, $ip, 'failed', $error);
+                $this->writeRedemption($code, $batch, $userId, null, null, $ip, 'failed', $error);
 
                 return ['error' => $error];
             }
@@ -142,7 +144,15 @@ final class ActivationCodeService
             ])->save();
 
             $vip = $this->vip->grant($userId, (int) $batch->vip_plan_id, 'activation_code', (int) $code->id);
-            $this->writeRedemption($code, $batch, $userId, (int) $vip['vip_record_id'], $ip, 'success', '');
+            $commissions = $this->affiliate->createForActivationCode(
+                buyerUserId: $userId,
+                activationCodeId: (int) $code->id,
+                firstLevelReward: $batch->first_level_reward,
+                secondLevelReward: $batch->second_level_reward,
+                isCommissionable: (bool) $batch->is_commissionable
+            );
+            $commissionSourceId = $commissions[0]['id'] ?? null;
+            $this->writeRedemption($code, $batch, $userId, (int) $vip['vip_record_id'], $commissionSourceId, $ip, 'success', '');
 
             return [
                 'redeemed' => true,
@@ -193,6 +203,7 @@ final class ActivationCodeService
         ?ActivationCodeBatch $batch,
         int $userId,
         ?int $vipRecordId,
+        ?int $commissionSourceId,
         string $ip,
         string $result,
         string $errorMessage
@@ -202,7 +213,7 @@ final class ActivationCodeService
             'batch_id' => $batch?->id,
             'user_id' => $userId,
             'vip_record_id' => $vipRecordId,
-            'commission_source_id' => null,
+            'commission_source_id' => $commissionSourceId,
             'redeem_ip' => $ip,
             'result' => $result,
             'error_message' => $errorMessage,

@@ -3,9 +3,13 @@
 namespace Tests\Feature\User;
 
 use App\Models\AffiliateCommission;
+use App\Models\ActivationCodeBatch;
+use App\Models\ActivationCodeRedemption;
 use App\Models\UserAccount;
 use App\Models\UserBalanceLedger;
 use App\Models\UserInviteRelation;
+use App\Models\VipPlan;
+use App\User\ActivationCodeService;
 use App\User\AffiliateService;
 use App\User\BalanceLedgerService;
 use InvalidArgumentException;
@@ -370,6 +374,66 @@ class UserAffiliateBalanceTest extends TestCase
         app(AffiliateService::class)->approve($commission->id, 77);
     }
 
+    public function test_activation_redemption_creates_two_level_pending_commissions_for_commissionable_batch(): void
+    {
+        [$grandparent, $parent, $buyer] = $this->createInviteChain('redeem-commission');
+        $plainCode = $this->generateActivationCodeForBatch(isCommissionable: true, firstReward: '6.50', secondReward: '2.25');
+
+        app(ActivationCodeService::class)->redeem([
+            'code' => $plainCode,
+        ], $buyer->id, '127.0.0.9');
+
+        $this->assertDatabaseHas('affiliate_commission', [
+            'source_type' => 'activation_code',
+            'buyer_user_id' => $buyer->id,
+            'beneficiary_user_id' => $parent->id,
+            'level' => 1,
+            'amount' => '6.50',
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseHas('affiliate_commission', [
+            'source_type' => 'activation_code',
+            'buyer_user_id' => $buyer->id,
+            'beneficiary_user_id' => $grandparent->id,
+            'level' => 2,
+            'amount' => '2.25',
+            'status' => 'pending',
+        ]);
+
+        $firstCommissionId = AffiliateCommission::query()->where('level', 1)->value('id');
+        $this->assertSame($firstCommissionId, ActivationCodeRedemption::query()->where('result', 'success')->value('commission_source_id'));
+    }
+
+    public function test_activation_redemption_does_not_create_commissions_for_non_commissionable_batch(): void
+    {
+        [, , $buyer] = $this->createInviteChain('redeem-no-commission');
+        $plainCode = $this->generateActivationCodeForBatch(isCommissionable: false, firstReward: '6.50', secondReward: '2.25');
+
+        app(ActivationCodeService::class)->redeem([
+            'code' => $plainCode,
+        ], $buyer->id, '127.0.0.9');
+
+        $this->assertSame(0, AffiliateCommission::query()->count());
+        $this->assertNull(ActivationCodeRedemption::query()->where('result', 'success')->value('commission_source_id'));
+    }
+
+    public function test_failed_activation_redemption_does_not_create_commission(): void
+    {
+        [, , $buyer] = $this->createInviteChain('redeem-failed');
+
+        try {
+            app(ActivationCodeService::class)->redeem([
+                'code' => 'EA8-MISSING-CODE',
+            ], $buyer->id, '127.0.0.9');
+            $this->fail('Expected invalid activation code to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Activation code is invalid.', $exception->getMessage());
+        }
+
+        $this->assertSame(0, AffiliateCommission::query()->count());
+        $this->assertNull(ActivationCodeRedemption::query()->where('result', 'failed')->value('commission_source_id'));
+    }
+
     private function createAccount(
         string $email,
         string $availableBalance = '0.00',
@@ -423,5 +487,42 @@ class UserAffiliateBalanceTest extends TestCase
         ]);
 
         return [$grandparent, $parent, $buyer];
+    }
+
+    private function createVipPlan(string $name = 'Affiliate VIP'): VipPlan
+    {
+        return VipPlan::query()->create([
+            'name' => $name,
+            'level' => 1,
+            'duration_days' => 30,
+            'price' => 99,
+            'status' => 'active',
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+    }
+
+    private function generateActivationCodeForBatch(
+        bool $isCommissionable,
+        string $firstReward,
+        string $secondReward
+    ): string {
+        $plan = $this->createVipPlan();
+        $batch = ActivationCodeBatch::query()->create([
+            'name' => 'Affiliate Batch',
+            'vip_plan_id' => $plan->id,
+            'duration_days' => 30,
+            'total_count' => 5,
+            'generated_count' => 0,
+            'status' => 'active',
+            'is_commissionable' => $isCommissionable,
+            'first_level_reward' => $firstReward,
+            'second_level_reward' => $secondReward,
+            'create_admin_id' => 1,
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+
+        return app(ActivationCodeService::class)->generateCodes($batch->id, 1, 1)['codes'][0];
     }
 }
