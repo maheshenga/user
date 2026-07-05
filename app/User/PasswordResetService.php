@@ -13,7 +13,8 @@ final class PasswordResetService
 {
     public function __construct(
         private readonly UserSecurityLogService $securityLogs,
-        private readonly PasswordResetNotificationService $notifications
+        private readonly PasswordResetNotificationService $notifications,
+        private readonly UserPasswordHasher $passwords
     ) {
     }
 
@@ -116,7 +117,7 @@ final class PasswordResetService
 
             $now = time();
             $user->forceFill([
-                'password' => $password,
+                'password' => $this->passwords->hash($password),
                 'update_time' => $now,
             ])->save();
 

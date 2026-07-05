@@ -136,6 +136,40 @@ class UserAuthTest extends TestCase
         $this->assertTrue(Hash::check('secret123', $rawPassword));
     }
 
+    public function test_registered_password_hash_supports_login_and_rejects_wrong_password(): void
+    {
+        $service = app(UserAuthService::class);
+
+        $service->register([
+            'email' => 'p9-hash@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $rawPassword = DB::table('user_account')->where('email', 'p9-hash@example.com')->value('password');
+
+        $this->assertIsString($rawPassword);
+        $this->assertNotSame('secret123', $rawPassword);
+        $this->assertTrue(Hash::check('secret123', $rawPassword));
+
+        $login = $service->login([
+            'account' => 'p9-hash@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.2');
+
+        $this->assertSame('p9-hash@example.com', $login['user']['email']);
+
+        try {
+            $service->login([
+                'account' => 'p9-hash@example.com',
+                'password' => 'wrong-password',
+            ], '127.0.0.2');
+
+            $this->fail('Expected wrong password to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Invalid account or password.', $exception->getMessage());
+        }
+    }
+
     public function test_user_can_register_with_email_only(): void
     {
         $result = app(UserAuthService::class)->register([

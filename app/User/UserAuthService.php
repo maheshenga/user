@@ -7,14 +7,14 @@ use App\Models\UserLoginLog;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use InvalidArgumentException;
 
 final class UserAuthService
 {
     public function __construct(
         private readonly InviteService $invites,
-        private readonly RiskService $risk
+        private readonly RiskService $risk,
+        private readonly UserPasswordHasher $passwords
     ) {
     }
 
@@ -48,7 +48,7 @@ final class UserAuthService
                 $user = UserAccount::query()->create([
                     'mobile' => $mobile,
                     'email' => $email,
-                    'password' => $password,
+                    'password' => $this->passwords->hash($password),
                     'nickname' => $mobile ?? $email,
                     'status' => UserAccountStatus::ACTIVE,
                     'register_ip' => $ip,
@@ -95,7 +95,7 @@ final class UserAuthService
             ->where($loginType, $account)
             ->first();
 
-        if ($user === null || ! Hash::check($password, $user->password)) {
+        if ($user === null || ! $this->passwords->verify($password, $user->password)) {
             $message = 'Invalid account or password.';
 
             $this->writeLoginLog(null, $account, $loginType, $ip, 'failed', $message);

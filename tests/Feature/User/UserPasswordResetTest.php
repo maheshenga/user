@@ -133,6 +133,50 @@ class UserPasswordResetTest extends TestCase
         ]);
     }
 
+    public function test_reset_password_hash_supports_new_login_and_rejects_old_password(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'p9-reset@example.com',
+            'password' => 'old-password',
+        ], '127.0.0.1');
+
+        app(PasswordResetService::class)->requestReset([
+            'account' => 'p9-reset@example.com',
+        ], '127.0.0.2');
+        $outbox = UserNotificationOutbox::query()->firstOrFail();
+
+        app(PasswordResetService::class)->resetPassword([
+            'account' => 'p9-reset@example.com',
+            'token' => $outbox->payload_json['token'],
+            'password' => 'new-password',
+        ], '127.0.0.3');
+
+        $rawPassword = DB::table('user_account')->where('email', 'p9-reset@example.com')->value('password');
+
+        $this->assertIsString($rawPassword);
+        $this->assertNotSame('new-password', $rawPassword);
+        $this->assertTrue(Hash::check('new-password', $rawPassword));
+        $this->assertFalse(Hash::check('old-password', $rawPassword));
+
+        $login = app(UserAuthService::class)->login([
+            'account' => 'p9-reset@example.com',
+            'password' => 'new-password',
+        ], '127.0.0.4');
+
+        $this->assertSame('p9-reset@example.com', $login['user']['email']);
+
+        try {
+            app(UserAuthService::class)->login([
+                'account' => 'p9-reset@example.com',
+                'password' => 'old-password',
+            ], '127.0.0.4');
+
+            $this->fail('Expected old password to fail after reset.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Invalid account or password.', $exception->getMessage());
+        }
+    }
+
     public function test_valid_code_resets_password(): void
     {
         app(UserAuthService::class)->register([
