@@ -14,7 +14,8 @@ final class ActivationCodeService
 {
     public function __construct(
         private readonly VipService $vip,
-        private readonly AffiliateService $affiliate
+        private readonly AffiliateService $affiliate,
+        private readonly RiskService $risk
     ) {
     }
 
@@ -163,6 +164,8 @@ final class ActivationCodeService
         });
 
         if (isset($result['error'])) {
+            $this->risk->recordActivationFailure($userId, $ip, $result['error']);
+
             throw new InvalidArgumentException($result['error']);
         }
 

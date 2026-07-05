@@ -12,8 +12,10 @@ use InvalidArgumentException;
 
 final class UserAuthService
 {
-    public function __construct(private readonly InviteService $invites)
-    {
+    public function __construct(
+        private readonly InviteService $invites,
+        private readonly RiskService $risk
+    ) {
     }
 
     public function register(array $payload, string $ip): array
@@ -67,6 +69,10 @@ final class UserAuthService
             }
 
             throw $exception;
+        }
+
+        if ($inviteRelation !== null) {
+            $this->risk->evaluateInviteRegistration((int) $user->id);
         }
 
         return [
