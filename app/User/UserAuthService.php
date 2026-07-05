@@ -12,11 +12,16 @@ use InvalidArgumentException;
 
 final class UserAuthService
 {
+    public function __construct(private readonly InviteService $invites)
+    {
+    }
+
     public function register(array $payload, string $ip): array
     {
         $mobile = $this->normalizeNullableString($payload['mobile'] ?? null);
         $email = $this->normalizeEmail($payload['email'] ?? null);
         $password = (string) ($payload['password'] ?? '');
+        $inviteCode = $this->normalizeNullableString($payload['invite_code'] ?? null);
 
         if ($mobile === null && $email === null) {
             throw new InvalidArgumentException('Mobile or email is required.');
@@ -35,10 +40,10 @@ final class UserAuthService
         }
 
         try {
-            $user = DB::transaction(function () use ($mobile, $email, $password, $ip): UserAccount {
+            [$user, $defaultInviteCode, $inviteRelation] = DB::transaction(function () use ($mobile, $email, $password, $ip, $inviteCode): array {
                 $now = time();
 
-                return UserAccount::query()->create([
+                $user = UserAccount::query()->create([
                     'mobile' => $mobile,
                     'email' => $email,
                     'password' => $password,
@@ -48,6 +53,11 @@ final class UserAuthService
                     'create_time' => $now,
                     'update_time' => $now,
                 ]);
+
+                $defaultInviteCode = $this->invites->createDefaultCode($user);
+                $inviteRelation = $this->invites->bindRegistration($user, $inviteCode);
+
+                return [$user, $defaultInviteCode, $inviteRelation];
             });
         } catch (QueryException $exception) {
             $duplicateException = $this->duplicateRegistrationException($exception, $mobile, $email);
@@ -61,6 +71,8 @@ final class UserAuthService
 
         return [
             'user' => $this->publicUser($user),
+            'invite_code' => $this->invites->publicCode($defaultInviteCode),
+            'invite_relation' => $this->invites->publicRelation($inviteRelation),
         ];
     }
 
