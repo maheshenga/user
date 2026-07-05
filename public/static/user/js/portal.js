@@ -137,15 +137,19 @@
             activationForm.addEventListener('submit', async (event) => {
                 event.preventDefault();
                 const status = activationForm.querySelector('[data-form-status]');
-                const result = await request(endpoints.activation, {
-                    method: 'POST',
-                    body: new FormData(activationForm),
-                });
-                const ok = Number(result.code) === 1;
-                setStatus(status, result.msg || (ok ? 'Redeemed' : 'Failed'), ok);
-                if (ok) {
-                    loadBox('vip', endpoints.vip);
-                    loadBox('balance', endpoints.balance);
+                try {
+                    const result = await request(endpoints.activation, {
+                        method: 'POST',
+                        body: new FormData(activationForm),
+                    });
+                    const ok = Number(result.code) === 1;
+                    setStatus(status, result.msg || (ok ? 'Redeemed' : 'Failed'), ok);
+                    if (ok) {
+                        loadBox('vip', endpoints.vip);
+                        loadBox('balance', endpoints.balance);
+                    }
+                } catch (error) {
+                    setStatus(status, error.message, false);
                 }
             });
         }
@@ -155,26 +159,34 @@
             withdrawalForm.addEventListener('submit', async (event) => {
                 event.preventDefault();
                 const status = withdrawalForm.querySelector('[data-form-status]');
-                const result = await request(endpoints.withdrawalRequest, {
-                    method: 'POST',
-                    body: new FormData(withdrawalForm),
-                });
-                const ok = Number(result.code) === 1;
-                setStatus(status, result.msg || (ok ? 'Requested' : 'Failed'), ok);
-                if (ok) {
-                    loadBox('withdrawals', endpoints.withdrawals);
-                    loadBox('balance', endpoints.balance);
+                try {
+                    const result = await request(endpoints.withdrawalRequest, {
+                        method: 'POST',
+                        body: new FormData(withdrawalForm),
+                    });
+                    const ok = Number(result.code) === 1;
+                    setStatus(status, result.msg || (ok ? 'Requested' : 'Failed'), ok);
+                    if (ok) {
+                        loadBox('withdrawals', endpoints.withdrawals);
+                        loadBox('balance', endpoints.balance);
+                    }
+                } catch (error) {
+                    setStatus(status, error.message, false);
                 }
             });
         }
 
         document.querySelector('[data-portal-logout]')?.addEventListener('click', async () => {
             const status = document.querySelector('[data-dashboard-status]');
-            const result = await request(endpoints.logout, { method: 'POST', body: new FormData() });
-            const ok = Number(result.code) === 1;
-            setStatus(status, result.msg || (ok ? 'Logged out' : 'Logout failed'), ok);
-            if (ok) {
-                window.location.href = '/u/login';
+            try {
+                const result = await request(endpoints.logout, { method: 'POST', body: new FormData() });
+                const ok = Number(result.code) === 1;
+                setStatus(status, result.msg || (ok ? 'Logged out' : 'Logout failed'), ok);
+                if (ok) {
+                    window.location.href = '/u/login';
+                }
+            } catch (error) {
+                setStatus(status, error.message, false);
             }
         });
     }
