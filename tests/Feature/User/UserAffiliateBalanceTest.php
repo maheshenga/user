@@ -5,6 +5,8 @@ namespace Tests\Feature\User;
 use App\Models\AffiliateCommission;
 use App\Models\UserAccount;
 use App\Models\UserBalanceLedger;
+use App\Models\UserInviteRelation;
+use App\User\AffiliateService;
 use App\User\BalanceLedgerService;
 use InvalidArgumentException;
 use Illuminate\Support\Facades\DB;
@@ -211,6 +213,163 @@ class UserAffiliateBalanceTest extends TestCase
         $this->assertSame('admin_adjust', $ledger[0]['type']);
     }
 
+    public function test_affiliate_service_creates_two_level_pending_commissions_for_activation_code(): void
+    {
+        [$grandparent, $parent, $buyer] = $this->createInviteChain();
+
+        $commissions = app(AffiliateService::class)->createForActivationCode(
+            buyerUserId: $buyer->id,
+            activationCodeId: 501,
+            firstLevelReward: '8.00',
+            secondLevelReward: '3.00',
+            isCommissionable: true
+        );
+
+        $this->assertCount(2, $commissions);
+        $this->assertDatabaseHas('affiliate_commission', [
+            'source_type' => 'activation_code',
+            'source_id' => 501,
+            'buyer_user_id' => $buyer->id,
+            'beneficiary_user_id' => $parent->id,
+            'level' => 1,
+            'amount' => '8.00',
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseHas('affiliate_commission', [
+            'source_type' => 'activation_code',
+            'source_id' => 501,
+            'buyer_user_id' => $buyer->id,
+            'beneficiary_user_id' => $grandparent->id,
+            'level' => 2,
+            'amount' => '3.00',
+            'status' => 'pending',
+        ]);
+    }
+
+    public function test_affiliate_service_is_idempotent_and_skips_non_commissionable_sources(): void
+    {
+        [, , $buyer] = $this->createInviteChain('idempotent');
+        $service = app(AffiliateService::class);
+
+        $this->assertSame([], $service->createForActivationCode($buyer->id, 601, '8.00', '3.00', false));
+        $first = $service->createForActivationCode($buyer->id, 602, '8.00', '3.00', true);
+        $second = $service->createForActivationCode($buyer->id, 602, '8.00', '3.00', true);
+
+        $this->assertCount(2, $first);
+        $this->assertCount(2, $second);
+        $this->assertSame(
+            AffiliateCommission::query()->where('source_type', 'activation_code')->where('source_id', 602)->pluck('id')->sort()->values()->all(),
+            collect($second)->pluck('id')->sort()->values()->all()
+        );
+        $this->assertSame(2, AffiliateCommission::query()->where('source_type', 'activation_code')->where('source_id', 602)->count());
+        $this->assertSame(0, AffiliateCommission::query()->where('source_id', 601)->count());
+    }
+
+    public function test_affiliate_service_skips_disabled_or_frozen_beneficiaries(): void
+    {
+        [$grandparent, $parent, $buyer] = $this->createInviteChain('inactive', parentStatus: 'disabled', grandparentStatus: 'frozen');
+
+        $commissions = app(AffiliateService::class)->createForActivationCode($buyer->id, 701, '8.00', '3.00', true);
+
+        $this->assertSame([], $commissions);
+        $this->assertSame(0, AffiliateCommission::query()->count());
+        $this->assertSame('disabled', UserAccount::query()->findOrFail($parent->id)->status);
+        $this->assertSame('frozen', UserAccount::query()->findOrFail($grandparent->id)->status);
+    }
+
+    public function test_affiliate_service_can_create_vip_order_commissions_from_rates(): void
+    {
+        [$grandparent, $parent, $buyer] = $this->createInviteChain('vip-order');
+
+        $commissions = app(AffiliateService::class)->createForVipOrder(
+            buyerUserId: $buyer->id,
+            vipOrderId: 801,
+            amount: '100.00',
+            firstLevelRate: '0.1200',
+            secondLevelRate: '0.0300',
+            isCommissionable: true
+        );
+
+        $this->assertCount(2, $commissions);
+        $this->assertDatabaseHas('affiliate_commission', [
+            'source_type' => 'vip_order',
+            'source_id' => 801,
+            'beneficiary_user_id' => $parent->id,
+            'level' => 1,
+            'amount' => '12.00',
+        ]);
+        $this->assertDatabaseHas('affiliate_commission', [
+            'source_type' => 'vip_order',
+            'source_id' => 801,
+            'beneficiary_user_id' => $grandparent->id,
+            'level' => 2,
+            'amount' => '3.00',
+        ]);
+    }
+
+    public function test_affiliate_service_approves_pending_commission_into_balance_ledger(): void
+    {
+        [, $parent, $buyer] = $this->createInviteChain('approve');
+        app(AffiliateService::class)->createForActivationCode($buyer->id, 901, '8.00', '0.00', true);
+        $commission = AffiliateCommission::query()->where('level', 1)->firstOrFail();
+
+        $settled = app(AffiliateService::class)->approve($commission->id, 77);
+
+        $this->assertSame('settled', $settled['status']);
+        $this->assertSame(77, $settled['audit_admin_id']);
+        $this->assertNotNull($settled['settled_ledger_id']);
+        $this->assertDatabaseHas('user_account', [
+            'id' => $parent->id,
+            'available_balance' => '8.00',
+            'frozen_balance' => '0.00',
+        ]);
+        $this->assertDatabaseHas('user_balance_ledger', [
+            'id' => $settled['settled_ledger_id'],
+            'user_id' => $parent->id,
+            'direction' => 'in',
+            'amount' => '8.00',
+            'type' => 'affiliate_commission',
+            'source_type' => 'affiliate_commission',
+            'source_id' => $commission->id,
+            'admin_id' => 77,
+        ]);
+    }
+
+    public function test_affiliate_service_rejects_pending_commission_without_balance_change(): void
+    {
+        [, $parent, $buyer] = $this->createInviteChain('reject');
+        app(AffiliateService::class)->createForActivationCode($buyer->id, 1001, '8.00', '0.00', true);
+        $commission = AffiliateCommission::query()->where('level', 1)->firstOrFail();
+
+        try {
+            app(AffiliateService::class)->reject($commission->id, ' ', 77);
+            $this->fail('Expected blank rejection reason to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Reject reason is required.', $exception->getMessage());
+        }
+
+        $rejected = app(AffiliateService::class)->reject($commission->id, 'Fraud risk', 77);
+
+        $this->assertSame('rejected', $rejected['status']);
+        $this->assertSame('Fraud risk', $rejected['reason']);
+        $this->assertSame(77, $rejected['audit_admin_id']);
+        $this->assertSame('0.00', (string) UserAccount::query()->findOrFail($parent->id)->available_balance);
+        $this->assertSame(0, UserBalanceLedger::query()->where('user_id', $parent->id)->count());
+    }
+
+    public function test_affiliate_service_rejects_review_of_non_pending_commission(): void
+    {
+        [, , $buyer] = $this->createInviteChain('review-state');
+        app(AffiliateService::class)->createForActivationCode($buyer->id, 1101, '8.00', '0.00', true);
+        $commission = AffiliateCommission::query()->where('level', 1)->firstOrFail();
+        app(AffiliateService::class)->reject($commission->id, 'Fraud risk', 77);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Only pending commission can be approved.');
+
+        app(AffiliateService::class)->approve($commission->id, 77);
+    }
+
     private function createAccount(
         string $email,
         string $availableBalance = '0.00',
@@ -228,5 +387,41 @@ class UserAffiliateBalanceTest extends TestCase
             'create_time' => time(),
             'update_time' => time(),
         ]);
+    }
+
+    private function createInviteChain(
+        string $prefix = 'chain',
+        string $parentStatus = 'active',
+        string $grandparentStatus = 'active'
+    ): array {
+        $grandparent = $this->createAccount("{$prefix}-grandparent@example.com", status: $grandparentStatus);
+        $parent = $this->createAccount("{$prefix}-parent@example.com", status: $parentStatus);
+        $buyer = $this->createAccount("{$prefix}-buyer@example.com");
+
+        UserInviteRelation::query()->create([
+            'user_id' => $parent->id,
+            'parent_user_id' => $grandparent->id,
+            'grandparent_user_id' => null,
+            'invite_code_id' => 1,
+            'level_path' => (string) $grandparent->id,
+            'bind_type' => 'register',
+            'status' => 'active',
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+
+        UserInviteRelation::query()->create([
+            'user_id' => $buyer->id,
+            'parent_user_id' => $parent->id,
+            'grandparent_user_id' => $grandparent->id,
+            'invite_code_id' => 2,
+            'level_path' => $grandparent->id.'/'.$parent->id,
+            'bind_type' => 'register',
+            'status' => 'active',
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+
+        return [$grandparent, $parent, $buyer];
     }
 }
