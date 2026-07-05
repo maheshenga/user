@@ -3,14 +3,11 @@
 namespace App\Http\Controllers\user;
 
 use App\Http\Controllers\Controller;
-use App\Http\JumpTrait;
 use App\User\InviteService;
 use Illuminate\Http\JsonResponse;
 
 class InviteController extends Controller
 {
-    use JumpTrait;
-
     public function summary(InviteService $invites): JsonResponse
     {
         $userId = $this->currentUserId();
