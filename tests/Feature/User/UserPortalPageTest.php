@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\User;
 
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 class UserPortalPageTest extends TestCase
@@ -97,15 +98,77 @@ class UserPortalPageTest extends TestCase
 
     public function test_dashboard_renderer_supports_current_user_api_payload_shapes(): void
     {
-        $script = file_get_contents(public_path('static/user/js/portal.js'));
+        $script = <<<'JS'
+const fs = require('fs');
+const assert = require('assert');
 
-        $this->assertIsString($script);
-        $this->assertStringContainsString('Array.isArray(data)', $script);
-        $this->assertStringContainsString('data.active', $script);
-        $this->assertStringContainsString('data.direct_count', $script);
-        $this->assertStringContainsString('data.second_level_count', $script);
-        $this->assertStringContainsString('account_snapshot_json', $script);
-        $this->assertStringContainsString('payout_transaction_id', $script);
-        $this->assertStringContainsString('paid_at', $script);
+global.window = {};
+global.document = {
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+};
+
+eval(fs.readFileSync('public/static/user/js/portal.js', 'utf8'));
+
+assert(window.UserPortalDashboardRenderers, 'dashboard renderers test API missing');
+
+const vip = window.UserPortalDashboardRenderers.render('vip', {
+    active: true,
+    vip_level: 2,
+    vip_expires_at: '2026-08-01 00:00:00',
+    record_count: 1,
+});
+assert(vip.includes('active'));
+assert(vip.includes('2026-08-01 00:00:00'));
+
+const ledger = window.UserPortalDashboardRenderers.render('ledger', [{
+    amount: '12.34',
+    type: 'commission',
+    remark: '<bonus>',
+    create_time: '2026-07-06 09:00:00',
+}]);
+assert(ledger.includes('commission'));
+assert(ledger.includes('&lt;bonus&gt;'));
+assert(!ledger.includes('<bonus>'));
+assert(!ledger.includes('No balance ledger records.'));
+
+const invite = window.UserPortalDashboardRenderers.render('invite', {
+    invite_code: { code: 'ABC123' },
+    direct_count: 3,
+    second_level_count: 2,
+});
+assert(invite.includes('ABC123'));
+assert(invite.includes('3'));
+assert(invite.includes('2'));
+
+const inviteRecords = window.UserPortalDashboardRenderers.render('inviteRecords', [{
+    email: 'friend@example.com',
+    status: 'active',
+    level_path: '1/2',
+    create_time: '2026-07-06 09:01:00',
+}]);
+assert(inviteRecords.includes('friend@example.com'));
+assert(inviteRecords.includes('1/2'));
+assert(!inviteRecords.includes('No invite records.'));
+
+const withdrawals = window.UserPortalDashboardRenderers.render('withdrawals', [{
+    withdrawal_no: 'WD202607060001',
+    amount: '10.00',
+    status: 'paid',
+    account_snapshot_json: { account_no: 'ACCT-1' },
+    payout_transaction_id: 'TX-1',
+    paid_at: '2026-07-06 09:02:00',
+}]);
+assert(withdrawals.includes('WD202607060001'));
+assert(withdrawals.includes('ACCT-1'));
+assert(withdrawals.includes('TX-1'));
+assert(withdrawals.includes('2026-07-06 09:02:00'));
+assert(!withdrawals.includes('Requested At'));
+JS;
+
+        $process = new Process(['node', '-e', $script], base_path());
+        $process->run();
+
+        $this->assertSame(0, $process->getExitCode(), $process->getOutput().$process->getErrorOutput());
     }
 }

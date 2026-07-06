@@ -133,11 +133,18 @@
                 row('Payout Transaction', item.payout_transaction_id),
                 row('Payout Error', item.payout_error),
                 row('Paid At', item.paid_at),
-                row('Requested At', item.create_time ?? item.created_at),
                 '</article>',
             ].join('')) + rawFallback(data);
         },
     };
+
+    if (typeof window !== 'undefined') {
+        window.UserPortalDashboardRenderers = {
+            render(name, data) {
+                return renderers[name](data);
+            },
+        };
+    }
 
     async function request(endpoint, options) {
         const response = await fetch(endpoint, {
