@@ -113,7 +113,8 @@ class UserAdminAffiliateBalanceControllerTest extends TestCase
             'id' => $reject->id,
             'reason' => '',
         ])->assertOk()
-            ->assertJsonPath('code', 0);
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '拒绝原因不能为空。');
 
         $rejectResponse = $this->postJson('/admin/user/commission/reject', [
             'id' => $reject->id,

@@ -55,17 +55,17 @@ final class AffiliateService
     public function approve(int $commissionId, int $adminId): array
     {
         if ($adminId <= 0) {
-            throw new InvalidArgumentException('Admin id is required.');
+            throw new InvalidArgumentException('管理员 ID 不能为空。');
         }
 
         return DB::transaction(function () use ($commissionId, $adminId): array {
             $commission = AffiliateCommission::query()->lockForUpdate()->find($commissionId);
             if ($commission === null) {
-                throw new InvalidArgumentException('Commission not found.');
+                throw new InvalidArgumentException('佣金记录不存在。');
             }
 
             if ($commission->status !== 'pending') {
-                throw new InvalidArgumentException('Only pending commission can be approved.');
+                throw new InvalidArgumentException('只有待审核佣金可以审核通过。');
             }
 
             $ledger = $this->balanceLedger->credit(
@@ -93,22 +93,22 @@ final class AffiliateService
     public function reject(int $commissionId, string $reason, int $adminId): array
     {
         if ($adminId <= 0) {
-            throw new InvalidArgumentException('Admin id is required.');
+            throw new InvalidArgumentException('管理员 ID 不能为空。');
         }
 
         $reason = trim($reason);
         if ($reason === '') {
-            throw new InvalidArgumentException('Reject reason is required.');
+            throw new InvalidArgumentException('拒绝原因不能为空。');
         }
 
         return DB::transaction(function () use ($commissionId, $reason, $adminId): array {
             $commission = AffiliateCommission::query()->lockForUpdate()->find($commissionId);
             if ($commission === null) {
-                throw new InvalidArgumentException('Commission not found.');
+                throw new InvalidArgumentException('佣金记录不存在。');
             }
 
             if ($commission->status !== 'pending') {
-                throw new InvalidArgumentException('Only pending commission can be rejected.');
+                throw new InvalidArgumentException('只有待审核佣金可以拒绝。');
             }
 
             $commission->forceFill([
@@ -132,7 +132,7 @@ final class AffiliateService
     {
         $reason = trim($reason);
         if ($reason === '') {
-            throw new InvalidArgumentException('Reject reason is required.');
+            throw new InvalidArgumentException('拒绝原因不能为空。');
         }
 
         return $this->batchReview($commissionIds, fn (int $id): array => $this->reject($id, $reason, $adminId));
@@ -182,22 +182,22 @@ final class AffiliateService
     public function reverse(int $commissionId, string $reason, int $adminId): array
     {
         if ($adminId <= 0) {
-            throw new InvalidArgumentException('Admin id is required.');
+            throw new InvalidArgumentException('管理员 ID 不能为空。');
         }
 
         $reason = trim($reason);
         if ($reason === '') {
-            throw new InvalidArgumentException('Reverse reason is required.');
+            throw new InvalidArgumentException('冲正原因不能为空。');
         }
 
         return DB::transaction(function () use ($commissionId, $reason, $adminId): array {
             $commission = AffiliateCommission::query()->lockForUpdate()->find($commissionId);
             if ($commission === null) {
-                throw new InvalidArgumentException('Commission not found.');
+                throw new InvalidArgumentException('佣金记录不存在。');
             }
 
             if ($commission->status !== 'settled') {
-                throw new InvalidArgumentException('Only settled commission can be reversed.');
+                throw new InvalidArgumentException('只有已结算佣金可以冲正。');
             }
 
             $this->balanceLedger->debit(

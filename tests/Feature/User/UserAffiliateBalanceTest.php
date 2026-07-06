@@ -352,7 +352,7 @@ class UserAffiliateBalanceTest extends TestCase
             app(AffiliateService::class)->reject($commission->id, ' ', 77);
             $this->fail('Expected blank rejection reason to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Reject reason is required.', $exception->getMessage());
+            $this->assertSame('拒绝原因不能为空。', $exception->getMessage());
         }
 
         $rejected = app(AffiliateService::class)->reject($commission->id, 'Fraud risk', 77);
@@ -372,9 +372,29 @@ class UserAffiliateBalanceTest extends TestCase
         app(AffiliateService::class)->reject($commission->id, 'Fraud risk', 77);
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Only pending commission can be approved.');
+        $this->expectExceptionMessage('只有待审核佣金可以审核通过。');
 
         app(AffiliateService::class)->approve($commission->id, 77);
+    }
+
+    public function test_affiliate_service_returns_chinese_admin_review_errors(): void
+    {
+        [, , $buyer] = $this->createInviteChain('review-errors');
+        app(AffiliateService::class)->createForActivationCode($buyer->id, 1201, '8.00', '0.00', true);
+        $commission = AffiliateCommission::query()->where('level', 1)->firstOrFail();
+
+        foreach ([
+            [fn () => app(AffiliateService::class)->approve($commission->id, 0), '管理员 ID 不能为空。'],
+            [fn () => app(AffiliateService::class)->approve(999999, 77), '佣金记录不存在。'],
+            [fn () => app(AffiliateService::class)->reverse($commission->id, ' ', 77), '冲正原因不能为空。'],
+        ] as [$operation, $message]) {
+            try {
+                $operation();
+                $this->fail("Expected commission review error: {$message}");
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame($message, $exception->getMessage());
+            }
+        }
     }
 
     public function test_activation_redemption_creates_two_level_pending_commissions_for_commissionable_batch(): void

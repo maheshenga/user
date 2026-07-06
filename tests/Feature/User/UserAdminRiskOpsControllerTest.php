@@ -70,7 +70,8 @@ class UserAdminRiskOpsControllerTest extends TestCase
             'reason' => '',
         ]);
         $rejectBlank->assertOk()
-            ->assertJsonPath('code', 0);
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '拒绝原因不能为空。');
 
         $reject = $this->postJson('/admin/user/commission/batchReject', [
             'ids' => [$third->id],
@@ -138,6 +139,14 @@ class UserAdminRiskOpsControllerTest extends TestCase
             ->assertJsonPath('data.0.id', $event->id);
         $this->assertArrayNotHasKey('detail_json', $index->json('data.0'));
 
+        $invalidReview = $this->postJson('/admin/user/risk-event/review', [
+            'id' => $event->id,
+            'status' => 'closed',
+        ]);
+        $invalidReview->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '风控事件状态无效。');
+
         $review = $this->postJson('/admin/user/risk-event/review', [
             'id' => $event->id,
             'status' => 'ignored',
@@ -187,6 +196,15 @@ class UserAdminRiskOpsControllerTest extends TestCase
             ->assertJsonPath('data.payout_admin_id', 77)
             ->assertJsonPath('data.payout_method', 'manual_bank')
             ->assertJsonPath('data.payout_transaction_id', 'BANK-ADMIN-001');
+
+        $duplicatePaid = $this->postJson('/admin/user/withdrawal/payout', [
+            'id' => $approve['id'],
+            'method' => 'manual_bank',
+            'transaction_id' => 'BANK-ADMIN-001',
+        ]);
+        $duplicatePaid->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '只有已通过或打款失败的提现可以确认打款。');
 
         $failedUser = $this->createAccount('withdraw-admin-failed@example.com', '30.00');
         $failedRequest = $service->request($failedUser->id, '6.00', ['account_no' => 'failed'], '127.0.0.1');

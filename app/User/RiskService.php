@@ -105,16 +105,16 @@ final class RiskService
     public function review(int $eventId, string $status, int $adminId): array
     {
         if (! in_array($status, ['reviewed', 'ignored'], true)) {
-            throw new InvalidArgumentException('Risk event status is invalid.');
+            throw new InvalidArgumentException('风控事件状态无效。');
         }
 
         if ($adminId <= 0) {
-            throw new InvalidArgumentException('Admin id is required.');
+            throw new InvalidArgumentException('管理员 ID 不能为空。');
         }
 
         $event = UserRiskEvent::query()->find($eventId);
         if ($event === null) {
-            throw new InvalidArgumentException('Risk event not found.');
+            throw new InvalidArgumentException('风控事件不存在。');
         }
 
         $event->forceFill([

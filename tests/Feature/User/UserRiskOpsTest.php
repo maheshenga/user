@@ -368,7 +368,7 @@ class UserRiskOpsTest extends TestCase
             $service->reject($reject['id'], ' ', 7);
             $this->fail('Expected blank reject reason to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Reject reason is required.', $exception->getMessage());
+            $this->assertSame('拒绝原因不能为空。', $exception->getMessage());
         }
 
         $rejected = $service->reject($reject['id'], 'Manual risk review', 7);
@@ -442,7 +442,7 @@ class UserRiskOpsTest extends TestCase
 
             $this->fail('Expected duplicate payout transaction id to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Payout transaction id has already been used.', $exception->getMessage());
+            $this->assertSame('打款流水号已被使用。', $exception->getMessage());
         }
 
         $this->assertSame(1, DB::table('user_balance_ledger')->where('type', 'withdraw_success')->count());
@@ -488,6 +488,68 @@ class UserRiskOpsTest extends TestCase
             'available_balance' => '40.00',
             'frozen_balance' => '0.00',
         ]);
+    }
+
+    public function test_withdrawal_service_returns_chinese_admin_payout_errors(): void
+    {
+        $user = $this->createAccount('withdraw-admin-errors@example.com', '50.00');
+        $service = app(WithdrawalService::class);
+        $request = $service->request($user->id, '10.00', ['account_no' => 'errors'], '127.0.0.6');
+
+        foreach ([
+            [fn () => $service->approve($request['id'], 0), '管理员 ID 不能为空。'],
+            [fn () => $service->markPaid($request['id'], ['method' => '', 'transaction_id' => 'TX-1'], 8), '打款方式不能为空。'],
+        ] as [$operation, $message]) {
+            try {
+                $operation();
+                $this->fail("Expected withdrawal admin error: {$message}");
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame($message, $exception->getMessage());
+            }
+        }
+
+        $service->approve($request['id'], 7);
+
+        foreach ([
+            [fn () => $service->markPaid($request['id'], ['method' => 'manual_bank', 'transaction_id' => ''], 8), '打款流水号不能为空。'],
+            [fn () => $service->markPayoutFailed($request['id'], ' ', 8), '打款失败原因不能为空。'],
+        ] as [$operation, $message]) {
+            try {
+                $operation();
+                $this->fail("Expected withdrawal payout error: {$message}");
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame($message, $exception->getMessage());
+            }
+        }
+    }
+
+    public function test_risk_service_returns_chinese_review_errors(): void
+    {
+        $event = UserRiskEvent::query()->create([
+            'user_id' => 1,
+            'category' => 'invite',
+            'event_type' => 'invite_burst',
+            'severity' => 'medium',
+            'ip' => '127.0.0.1',
+            'status' => 'open',
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+
+        $service = app(RiskService::class);
+
+        foreach ([
+            [fn () => $service->review($event->id, 'closed', 77), '风控事件状态无效。'],
+            [fn () => $service->review($event->id, 'ignored', 0), '管理员 ID 不能为空。'],
+            [fn () => $service->review(999999, 'ignored', 77), '风控事件不存在。'],
+        ] as [$operation, $message]) {
+            try {
+                $operation();
+                $this->fail("Expected risk review error: {$message}");
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame($message, $exception->getMessage());
+            }
+        }
     }
 
     public function test_user_withdrawal_endpoints_require_login_and_return_user_rows(): void

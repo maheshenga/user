@@ -58,13 +58,13 @@ final class WithdrawalService
     public function approve(int $withdrawalId, int $adminId): array
     {
         if ($adminId <= 0) {
-            throw new InvalidArgumentException('Admin id is required.');
+            throw new InvalidArgumentException('管理员 ID 不能为空。');
         }
 
         return DB::transaction(function () use ($withdrawalId, $adminId): array {
             $withdrawal = $this->lockedWithdrawal($withdrawalId);
             if ($withdrawal->status !== 'pending') {
-                throw new InvalidArgumentException('Only pending withdrawal can be approved.');
+                throw new InvalidArgumentException('只有待审核提现可以审核通过。');
             }
 
             $withdrawal->forceFill([
@@ -83,7 +83,7 @@ final class WithdrawalService
     public function markPaid(int $withdrawalId, array $payload, int $adminId): array
     {
         if ($adminId <= 0) {
-            throw new InvalidArgumentException('Admin id is required.');
+            throw new InvalidArgumentException('管理员 ID 不能为空。');
         }
 
         $method = trim((string) ($payload['method'] ?? ''));
@@ -94,21 +94,21 @@ final class WithdrawalService
         }
 
         if ($method === '') {
-            throw new InvalidArgumentException('Payout method is required.');
+            throw new InvalidArgumentException('打款方式不能为空。');
         }
 
         if ($transactionId === '') {
-            throw new InvalidArgumentException('Payout transaction id is required.');
+            throw new InvalidArgumentException('打款流水号不能为空。');
         }
 
         return DB::transaction(function () use ($withdrawalId, $method, $transactionId, $proof, $adminId): array {
             $withdrawal = $this->lockedWithdrawal($withdrawalId);
             if (! in_array($withdrawal->status, ['approved', 'payout_failed'], true)) {
-                throw new InvalidArgumentException('Only approved or failed payout withdrawal can be marked paid.');
+                throw new InvalidArgumentException('只有已通过或打款失败的提现可以确认打款。');
             }
 
             if ($withdrawal->ledger_success_id !== null) {
-                throw new InvalidArgumentException('Withdrawal payout has already been settled.');
+                throw new InvalidArgumentException('提现打款已结算。');
             }
 
             $this->reservePayoutReference((int) $withdrawal->id, $method, $transactionId, $adminId);
@@ -144,22 +144,22 @@ final class WithdrawalService
     public function markPayoutFailed(int $withdrawalId, string $error, int $adminId): array
     {
         if ($adminId <= 0) {
-            throw new InvalidArgumentException('Admin id is required.');
+            throw new InvalidArgumentException('管理员 ID 不能为空。');
         }
 
         $error = trim($error);
         if ($error === '') {
-            throw new InvalidArgumentException('Payout error is required.');
+            throw new InvalidArgumentException('打款失败原因不能为空。');
         }
 
         return DB::transaction(function () use ($withdrawalId, $error, $adminId): array {
             $withdrawal = $this->lockedWithdrawal($withdrawalId);
             if (! in_array($withdrawal->status, ['approved', 'payout_failed'], true)) {
-                throw new InvalidArgumentException('Only approved or failed payout withdrawal can be marked failed.');
+                throw new InvalidArgumentException('只有已通过或打款失败的提现可以标记打款失败。');
             }
 
             if ($withdrawal->ledger_success_id !== null) {
-                throw new InvalidArgumentException('Paid withdrawal cannot be marked failed.');
+                throw new InvalidArgumentException('已打款提现不能标记失败。');
             }
 
             $withdrawal->forceFill([
@@ -178,18 +178,18 @@ final class WithdrawalService
     public function reject(int $withdrawalId, string $reason, int $adminId): array
     {
         if ($adminId <= 0) {
-            throw new InvalidArgumentException('Admin id is required.');
+            throw new InvalidArgumentException('管理员 ID 不能为空。');
         }
 
         $reason = trim($reason);
         if ($reason === '') {
-            throw new InvalidArgumentException('Reject reason is required.');
+            throw new InvalidArgumentException('拒绝原因不能为空。');
         }
 
         return DB::transaction(function () use ($withdrawalId, $reason, $adminId): array {
             $withdrawal = $this->lockedWithdrawal($withdrawalId);
             if (! in_array($withdrawal->status, ['pending', 'approved', 'payout_failed'], true)) {
-                throw new InvalidArgumentException('Only pending, approved, or failed payout withdrawal can be rejected.');
+                throw new InvalidArgumentException('只有待审核、已通过或打款失败的提现可以拒绝。');
             }
 
             $this->balanceLedger->unfreeze(
@@ -343,7 +343,7 @@ final class WithdrawalService
             ]);
         } catch (QueryException $exception) {
             if ($this->isUniqueConstraintViolation($exception)) {
-                throw new InvalidArgumentException('Payout transaction id has already been used.', 0, $exception);
+                throw new InvalidArgumentException('打款流水号已被使用。', 0, $exception);
             }
 
             throw $exception;
