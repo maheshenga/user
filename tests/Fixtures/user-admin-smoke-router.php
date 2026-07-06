@@ -134,6 +134,50 @@ if (! $state['logged_in']) {
     return;
 }
 
+if ($method === 'GET' && $path === '/static/admin/js/user/account.js') {
+    header('Content-Type: application/javascript; charset=UTF-8');
+    echo <<<'JS'
+define(["jquery", "easy-admin"], function ($, ea) {
+    var init = {
+        table_elem: '#currentTable',
+        table_render_id: 'currentTableRenderId',
+        index_url: 'user/account/index',
+        detail_url: 'user/account/detail',
+        modify_url: 'user/account/modify'
+    };
+
+    return {
+        index: function () {
+            var canModify = $(init.table_elem).attr('data-auth-modify') === '1';
+
+            ea.table.render({
+                init: init,
+                cols: [[
+                    {field: 'status', title: '状态', templet: '#userStatusTpl'}
+                ]]
+            });
+
+            $('body').on('click', '[data-account-status]', function () {
+                var status = $(this).data('account-status');
+
+                ea.request.post({
+                    url: $('[data-user-status-admin]').attr('data-status-endpoint'),
+                    data: {
+                        id: $(this).data('account-id'),
+                        field: 'status',
+                        value: status
+                    }
+                }, function () {
+                    ea.table.reload(init.table_render_id);
+                });
+            });
+        }
+    };
+});
+JS;
+    return;
+}
+
 if ($method === 'GET' && $path === '/admin/ajax/initAdmin') {
     $menuInfo = [];
 
@@ -206,6 +250,39 @@ if ($method === 'GET' && in_array($path, $userOpsPagePaths, true)) {
     if ($mode === 'login-shell-page' && $path === '/admin/user/account/index') {
         header('Content-Type: text/html; charset=UTF-8');
         echo '<!doctype html><html><head><title>Admin Login</title><link rel="stylesheet" href="/static/admin/css/login.css"></head><body><form id="loginForm"><input name="username"><input name="password"></form></body></html>';
+        return;
+    }
+
+    if ($path === '/admin/user/account/index') {
+        header('Content-Type: text/html; charset=UTF-8');
+        echo <<<'HTML'
+<!doctype html>
+<html>
+<head>
+    <meta name="csrf-token" content="fixture-admin-token">
+    <title>用户账号管理</title>
+</head>
+<body>
+<main>
+    <div class="layui-card" data-user-status-admin
+         data-status-endpoint="/admin/user/account/modify"
+         data-status-values="pending,active,disabled,frozen">
+        <div class="layui-card-header">账号状态管理</div>
+        <div class="layui-card-body">
+            <span class="layui-badge layui-bg-gray">待审核 pending</span>
+            <span class="layui-badge layui-bg-green">正常 active</span>
+            <span class="layui-badge">已禁用 disabled</span>
+            <span class="layui-badge layui-bg-orange">已冻结 frozen</span>
+        </div>
+    </div>
+    <table id="currentTable" data-auth-detail="1" data-auth-modify="1" lay-filter="currentTable"></table>
+    <script type="text/html" id="userStatusTpl">
+        <span class="layui-badge layui-bg-gray">待审核</span>
+    </script>
+</main>
+</body>
+</html>
+HTML;
         return;
     }
 

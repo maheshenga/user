@@ -260,6 +260,13 @@ function expectJsonCode(array $response, int $code, string $label): void
     }
 }
 
+function expectBodyContains(string $body, string $needle, string $label): void
+{
+    if (! str_contains($body, $needle)) {
+        throw new AdminSmokeFailure("{$label} missing expected content: {$needle}");
+    }
+}
+
 /**
  * @return list<string>
  */
@@ -425,6 +432,38 @@ function expectAdminPageBody(array $response, string $label): void
     }
 }
 
+/**
+ * @param array{status:int,body:string,json:?array<string, mixed>} $response
+ */
+function expectAccountStatusPage(array $response, string $label): void
+{
+    expectAdminPageBody($response, $label);
+    expectBodyContains($response['body'], '账号状态管理', $label);
+    expectBodyContains($response['body'], 'data-status-endpoint="/admin/user/account/modify"', $label);
+    expectBodyContains($response['body'], 'data-auth-modify=', $label);
+    expectBodyContains($response['body'], 'id="userStatusTpl"', $label);
+    expectBodyContains($response['body'], '待审核', $label);
+    expectBodyContains($response['body'], '正常', $label);
+    expectBodyContains($response['body'], '已禁用', $label);
+    expectBodyContains($response['body'], '已冻结', $label);
+}
+
+/**
+ * @param array{status:int,body:string,json:?array<string, mixed>} $response
+ */
+function expectAccountStatusScript(array $response, string $label): void
+{
+    expectStatus($response, [200], $label);
+    expectBodyContains($response['body'], "modify_url: 'user/account/modify'", $label);
+    expectBodyContains($response['body'], "templet: '#userStatusTpl'", $label);
+    expectBodyContains($response['body'], 'data-status-endpoint', $label);
+    expectBodyContains($response['body'], 'data-auth-modify', $label);
+    expectBodyContains($response['body'], 'data-account-status', $label);
+    expectBodyContains($response['body'], "field: 'status'", $label);
+    expectBodyContains($response['body'], 'value: status', $label);
+    expectBodyContains($response['body'], 'ea.table.reload(init.table_render_id)', $label);
+}
+
 function pass(string $message): void
 {
     fwrite(STDOUT, "PASS {$message}\n");
@@ -479,6 +518,14 @@ function runAdminSmoke(): void
         expectAdminPageBody($response, 'GET /' . $prefix . '/' . $path);
         pass('GET /' . $prefix . '/' . $path);
     }
+
+    $response = $client->request('GET', adminPath($prefix, 'user/account/index'));
+    expectAccountStatusPage($response, 'GET /' . $prefix . '/user/account/index account status UI');
+    pass('GET /' . $prefix . '/user/account/index account status UI');
+
+    $response = $client->request('GET', '/static/admin/js/user/account.js');
+    expectAccountStatusScript($response, 'GET /static/admin/js/user/account.js');
+    pass('GET /static/admin/js/user/account.js status actions');
 
     fwrite(STDOUT, "OK user admin smoke passed\n");
 }

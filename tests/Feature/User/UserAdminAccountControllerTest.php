@@ -299,6 +299,21 @@ class UserAdminAccountControllerTest extends TestCase
         $this->assertStringNotContainsString("delete_url: 'user/account/delete'", $script);
     }
 
+    public function test_user_admin_smoke_script_checks_account_status_ui_and_js(): void
+    {
+        $script = file_get_contents(base_path('scripts/user-admin-smoke.php'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('expectAccountStatusPage', $script);
+        $this->assertStringContainsString('expectAccountStatusScript', $script);
+        $this->assertStringContainsString('data-status-endpoint="/admin/user/account/modify"', $script);
+        $this->assertStringContainsString('data-auth-modify=', $script);
+        $this->assertStringContainsString('id="userStatusTpl"', $script);
+        $this->assertStringContainsString('data-account-status', $script);
+        $this->assertStringContainsString("field: 'status'", $script);
+        $this->assertStringContainsString('value: status', $script);
+    }
+
     public function test_admin_user_account_modify_allows_status_updates_only(): void
     {
         $user = UserAccount::query()->create([
