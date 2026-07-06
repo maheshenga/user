@@ -2,14 +2,13 @@
 
 namespace App\Http\Controllers\user;
 
-use App\Http\Controllers\Controller;
 use App\Http\JumpTrait;
 use App\User\ActivationCodeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use InvalidArgumentException;
 
-class ActivationCodeController extends Controller
+class ActivationCodeController extends UserApiController
 {
     use JumpTrait;
 
@@ -36,10 +35,4 @@ class ActivationCodeController extends Controller
         }
     }
 
-    private function currentUserId(): ?int
-    {
-        $id = session('user.id');
-
-        return $id === null ? null : (int) $id;
-    }
 }

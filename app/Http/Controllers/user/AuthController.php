@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\user;
 
-use App\Http\Controllers\Controller;
 use App\Http\JumpTrait;
 use App\User\PasswordResetService;
 use App\User\UserAuthService;
@@ -10,7 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use InvalidArgumentException;
 
-class AuthController extends Controller
+class AuthController extends UserApiController
 {
     use JumpTrait;
 
@@ -95,30 +94,14 @@ class AuthController extends Controller
 
     public function session(): JsonResponse
     {
-        $user = session('user');
+        $user = $this->currentUser();
 
-        if (empty($user) || ! is_array($user)) {
-            return response()->json([
-                'code' => 0,
-                'msg' => '请先登录。',
-                'data' => [],
-                'url' => '',
-                'wait' => 3,
-                '__token__' => csrf_token(),
-            ]);
+        if ($user === null) {
+            return $this->jsonError('请先登录。');
         }
 
-        unset($user['password']);
-
-        return response()->json([
-            'code' => 1,
-            'msg' => '用户会话',
-            'data' => [
-                'user' => $user,
-            ],
-            'url' => '',
-            'wait' => 3,
-            '__token__' => csrf_token(),
+        return $this->jsonSuccess('用户会话', [
+            'user' => $user,
         ]);
     }
 

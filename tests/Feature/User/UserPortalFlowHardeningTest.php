@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\User;
 
+use App\Models\UserAccount;
+use App\User\UserAccountStatus;
 use App\User\UserAuthService;
 use Tests\TestCase;
 
@@ -25,19 +27,20 @@ class UserPortalFlowHardeningTest extends TestCase
 
     public function test_session_endpoint_returns_current_session_user_without_password(): void
     {
-        $this->withSession([
-            'user' => [
-                'id' => 99,
-                'email' => 'session@example.com',
-                'mobile' => null,
-                'nickname' => 'Session User',
-                'password' => 'must-not-leak',
-            ],
-        ])->getJson('/user/session')
+        $registered = app(UserAuthService::class)->register([
+            'email' => 'session@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $sessionUser = $registered['user'];
+        $sessionUser['password'] = 'must-not-leak';
+
+        $this->withSession(['user' => $sessionUser])
+            ->getJson('/user/session')
             ->assertOk()
             ->assertJsonPath('code', 1)
             ->assertJsonPath('msg', '用户会话')
-            ->assertJsonPath('data.user.id', 99)
+            ->assertJsonPath('data.user.id', $registered['user']['id'])
             ->assertJsonPath('data.user.email', 'session@example.com')
             ->assertJsonMissingPath('data.user.password');
     }
@@ -111,6 +114,64 @@ class UserPortalFlowHardeningTest extends TestCase
                     'inviteRecords',
                 ],
             ]);
+    }
+
+    public function test_user_session_endpoint_rejects_disabled_stale_session_user(): void
+    {
+        $registered = app(UserAuthService::class)->register([
+            'email' => 'disabled-session@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        UserAccount::query()
+            ->whereKey($registered['user']['id'])
+            ->update(['status' => UserAccountStatus::DISABLED]);
+
+        $this->withSession(['user' => $registered['user']])
+            ->getJson('/user/session')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '请先登录。')
+            ->assertSessionMissing('user');
+    }
+
+    public function test_user_protected_endpoints_reject_deleted_stale_session_user(): void
+    {
+        $registered = app(UserAuthService::class)->register([
+            'email' => 'deleted-session@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        UserAccount::query()->whereKey($registered['user']['id'])->delete();
+
+        foreach ([
+            '/user/dashboard/summary',
+            '/user/vip',
+            '/user/balance',
+            '/user/balance/ledger',
+            '/user/withdrawal',
+            '/user/invite',
+            '/user/invite/records',
+        ] as $endpoint) {
+            $this->withSession(['user' => $registered['user']])
+                ->getJson($endpoint)
+                ->assertOk()
+                ->assertJsonPath('code', 0)
+                ->assertJsonPath('msg', '请先登录。')
+                ->assertSessionMissing('user');
+        }
+
+        foreach ([
+            ['/user/activation-code/redeem', ['code' => 'ANY-CODE']],
+            ['/user/withdrawal/request', ['amount' => '1.00', 'account' => ['account_no' => 'ACCT-1']]],
+        ] as [$endpoint, $payload]) {
+            $this->withSession(['user' => $registered['user']])
+                ->postJson($endpoint, $payload)
+                ->assertOk()
+                ->assertJsonPath('code', 0)
+                ->assertJsonPath('msg', '请先登录。')
+                ->assertSessionMissing('user');
+        }
     }
 
     public function test_portal_forms_disable_submit_controls_while_request_is_pending(): void
