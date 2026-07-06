@@ -28,6 +28,8 @@ class UserPortalSmokeScriptTest extends TestCase
         $this->assertSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('OK user portal smoke passed', $output);
         $this->assertStringContainsString('/user/session logged in', $output);
+        $this->assertStringContainsString('PASS GET /u/dashboard dashboard action hooks', $output);
+        $this->assertStringContainsString('PASS GET /static/user/js/portal.js dashboard action wiring', $output);
         $this->assertStringContainsString('PASS POST /user/activation-code/redeem', $output);
         $this->assertStringContainsString('PASS POST /user/withdrawal/request', $output);
     }
@@ -54,8 +56,31 @@ class UserPortalSmokeScriptTest extends TestCase
         $this->assertSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('OK user portal smoke passed', $output);
         $this->assertStringContainsString('/user/session logged in', $output);
+        $this->assertStringContainsString('PASS GET /u/dashboard dashboard action hooks', $output);
+        $this->assertStringContainsString('PASS GET /static/user/js/portal.js dashboard action wiring', $output);
         $this->assertStringContainsString('PASS POST /user/activation-code/redeem', $output);
         $this->assertStringContainsString('PASS POST /user/withdrawal/request', $output);
+    }
+
+    public function test_user_portal_dashboard_javascript_is_valid_and_wires_actions(): void
+    {
+        $scriptPath = public_path('static/user/js/portal.js');
+        $process = new Process(['node', '--check', $scriptPath], base_path());
+        $process->setTimeout(10);
+        $process->run();
+
+        $output = $process->getOutput() . $process->getErrorOutput();
+
+        $this->assertSame(0, $process->getExitCode(), $output);
+
+        $script = file_get_contents($scriptPath);
+        $this->assertIsString($script);
+        $this->assertStringContainsString('data-dashboard-form="activation"', $script);
+        $this->assertStringContainsString('data-dashboard-form="withdrawal"', $script);
+        $this->assertStringContainsString('endpoints.activation', $script);
+        $this->assertStringContainsString('endpoints.withdrawalRequest', $script);
+        $this->assertStringContainsString("loadBox('vip'", $script);
+        $this->assertStringContainsString("loadBox('withdrawals'", $script);
     }
 
     private function startFixtureServer(?string $mode = null): string

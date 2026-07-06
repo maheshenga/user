@@ -243,6 +243,39 @@ function expectJsonCode(array $response, int $code, string $label): void
     }
 }
 
+function expectBodyContains(string $body, string $needle, string $label): void
+{
+    if (! str_contains($body, $needle)) {
+        throw new SmokeFailure("{$label} missing expected content: {$needle}");
+    }
+}
+
+function expectDashboardPage(array $response, string $label): void
+{
+    expectStatus($response, [200], $label);
+    expectBodyContains($response['body'], 'data-dashboard-endpoints', $label);
+    expectBodyContains($response['body'], 'data-activation="/user/activation-code/redeem"', $label);
+    expectBodyContains($response['body'], 'data-withdrawal-request="/user/withdrawal/request"', $label);
+    expectBodyContains($response['body'], 'data-dashboard-form="activation"', $label);
+    expectBodyContains($response['body'], 'data-dashboard-form="withdrawal"', $label);
+}
+
+function expectPortalScript(array $response, string $label): void
+{
+    expectStatus($response, [200], $label);
+
+    foreach ([
+        'data-dashboard-form="activation"',
+        'data-dashboard-form="withdrawal"',
+        'endpoints.activation',
+        'endpoints.withdrawalRequest',
+        "loadBox('vip'",
+        "loadBox('withdrawals'",
+    ] as $needle) {
+        expectBodyContains($response['body'], $needle, $label);
+    }
+}
+
 function pass(string $message): void
 {
     fwrite(STDOUT, "PASS {$message}\n");
@@ -277,6 +310,14 @@ function runSmoke(): void
         expectStatus($response, $expectedStatuses, "GET {$path}");
         pass("GET {$path}");
     }
+
+    $response = $client->request('GET', '/u/dashboard');
+    expectDashboardPage($response, 'GET /u/dashboard dashboard action hooks');
+    pass('GET /u/dashboard dashboard action hooks');
+
+    $response = $client->request('GET', '/static/user/js/portal.js');
+    expectPortalScript($response, 'GET /static/user/js/portal.js dashboard action wiring');
+    pass('GET /static/user/js/portal.js dashboard action wiring');
 
     $response = $client->request('GET', '/user/session');
     expectJsonCode($response, 0, 'GET /user/session before login');

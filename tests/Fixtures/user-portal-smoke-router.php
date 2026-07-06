@@ -69,6 +69,59 @@ if ($method === 'GET' && $path === '/u') {
     return;
 }
 
+if ($method === 'GET' && $path === '/static/user/js/portal.js') {
+    header('Content-Type: application/javascript; charset=UTF-8');
+    echo <<<'JS'
+(function () {
+    function request(endpoint) {
+        return endpoint;
+    }
+    function loadBox(name, endpoint) {
+        return [name, endpoint];
+    }
+    const endpoints = {
+        activation: '/user/activation-code/redeem',
+        withdrawalRequest: '/user/withdrawal/request',
+        vip: '/user/vip',
+        withdrawals: '/user/withdrawal'
+    };
+    document.querySelector('[data-dashboard-form="activation"]');
+    document.querySelector('[data-dashboard-form="withdrawal"]');
+    request(endpoints.activation);
+    request(endpoints.withdrawalRequest);
+    loadBox('vip', endpoints.vip);
+    loadBox('withdrawals', endpoints.withdrawals);
+}());
+JS;
+    return;
+}
+
+if ($method === 'GET' && $path === '/u/dashboard') {
+    header('Content-Type: text/html; charset=UTF-8');
+    echo <<<'HTML'
+<!doctype html>
+<html>
+<head>
+    <meta name="csrf-token" content="fixture-token">
+    <title>Dashboard</title>
+</head>
+<body>
+<main>
+    <div data-dashboard-endpoints
+         data-activation="/user/activation-code/redeem"
+         data-withdrawal-request="/user/withdrawal/request"
+         data-vip="/user/vip"
+         data-withdrawals="/user/withdrawal"></div>
+    <form data-dashboard-form="activation"></form>
+    <form data-dashboard-form="withdrawal"></form>
+</main>
+<script src="/static/user/js/portal.js"></script>
+</body>
+</html>
+HTML;
+    return;
+}
+
 if ($method === 'GET' && in_array($path, [
     '/u/login',
     '/u/register',
