@@ -265,15 +265,33 @@ function expectJsonCode(array $response, int $code, string $label): void
  */
 function expectMenu(array $payload, string $adminPrefix): void
 {
-    $userOpsMenu = findMenuByTitle($payload['menuInfo'] ?? [], 'User Operations');
+    $userOpsMenu = findMenuByTitles($payload['menuInfo'] ?? [], ['用户运营', 'User Operations']);
 
     if ($userOpsMenu === null) {
-        throw new AdminSmokeFailure('Menu response missing User Operations.');
+        throw new AdminSmokeFailure('Menu response missing 用户运营.');
     }
 
     if (! menuContainsHref($userOpsMenu, 'user/dashboard/index', $adminPrefix)) {
-        throw new AdminSmokeFailure('Menu response missing user/dashboard/index under User Operations.');
+        throw new AdminSmokeFailure('Menu response missing user/dashboard/index under 用户运营.');
     }
+}
+
+/**
+ * @param mixed $node
+ * @param array<int, string> $titles
+ * @return array<string, mixed>|null
+ */
+function findMenuByTitles($node, array $titles): ?array
+{
+    foreach ($titles as $title) {
+        $match = findMenuByTitle($node, $title);
+
+        if ($match !== null) {
+            return $match;
+        }
+    }
+
+    return null;
 }
 
 /**
@@ -422,7 +440,7 @@ function runAdminSmoke(): void
     }
 
     expectMenu($response['json'], $prefix);
-    pass('GET /' . $prefix . '/ajax/initAdmin menu contains User Operations');
+    pass('GET /' . $prefix . '/ajax/initAdmin menu contains 用户运营');
 
     $response = $client->request('GET', adminPath($prefix, 'user/dashboard/index'), ajax: true, jsonAccept: true);
     expectStatus($response, [200], 'GET /' . $prefix . '/user/dashboard/index JSON');

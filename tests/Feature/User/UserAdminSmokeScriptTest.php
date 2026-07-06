@@ -27,7 +27,7 @@ class UserAdminSmokeScriptTest extends TestCase
 
         $this->assertSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('OK user admin smoke passed', $output);
-        $this->assertStringContainsString('PASS GET /admin/ajax/initAdmin menu contains User Operations', $output);
+        $this->assertStringContainsString('PASS GET /admin/ajax/initAdmin menu contains 用户运营', $output);
     }
 
     public function test_user_admin_smoke_script_accepts_space_separated_option_values(): void
@@ -50,7 +50,7 @@ class UserAdminSmokeScriptTest extends TestCase
 
         $this->assertNotSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('FAIL user admin smoke failed', $output);
-        $this->assertStringContainsString('Menu response missing User Operations', $output);
+        $this->assertStringContainsString('Menu response missing 用户运营', $output);
     }
 
     public function test_user_admin_smoke_script_fails_when_dashboard_menu_link_is_missing(): void
@@ -62,7 +62,7 @@ class UserAdminSmokeScriptTest extends TestCase
 
         $this->assertNotSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('FAIL user admin smoke failed', $output);
-        $this->assertStringContainsString('Menu response missing user/dashboard/index under User Operations', $output);
+        $this->assertStringContainsString('Menu response missing user/dashboard/index under 用户运营', $output);
     }
 
     public function test_user_admin_smoke_script_requires_dashboard_link_under_user_operations_menu(): void
@@ -74,7 +74,7 @@ class UserAdminSmokeScriptTest extends TestCase
 
         $this->assertNotSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('FAIL user admin smoke failed', $output);
-        $this->assertStringContainsString('Menu response missing user/dashboard/index under User Operations', $output);
+        $this->assertStringContainsString('Menu response missing user/dashboard/index under 用户运营', $output);
     }
 
     public function test_user_admin_smoke_script_fails_when_dashboard_metric_is_missing(): void

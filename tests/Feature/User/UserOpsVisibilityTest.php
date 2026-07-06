@@ -195,8 +195,8 @@ class UserOpsVisibilityTest extends TestCase
         $response = $this->get('/admin/user/dashboard/index');
 
         $response->assertOk();
-        $response->assertSee('User Operations');
-        $response->assertSee('Total Users');
+        $response->assertSee('用户运营');
+        $response->assertSee('用户总数');
     }
 
     public function test_user_ops_menu_sync_creates_visible_menu_entries(): void
@@ -207,7 +207,7 @@ class UserOpsVisibilityTest extends TestCase
 
         $parent = DB::table('system_menu')
             ->where('pid', 0)
-            ->where('title', 'User Operations')
+            ->where('title', '用户运营')
             ->where('href', '')
             ->whereNull('delete_time')
             ->first();
@@ -235,7 +235,7 @@ class UserOpsVisibilityTest extends TestCase
             1,
             DB::table('system_menu')
                 ->where('pid', 0)
-                ->where('title', 'User Operations')
+                ->where('title', '用户运营')
                 ->where('href', '')
                 ->whereNull('delete_time')
                 ->count()
@@ -254,23 +254,110 @@ class UserOpsVisibilityTest extends TestCase
         }
     }
 
+    public function test_user_ops_menu_sync_migrates_legacy_english_parent(): void
+    {
+        $legacyParentId = DB::table('system_menu')->insertGetId([
+            'pid' => 0,
+            'title' => 'User Operations',
+            'icon' => 'fa fa-users',
+            'href' => '',
+            'target' => '_self',
+            'sort' => 990,
+            'status' => 1,
+            'create_time' => time(),
+            'update_time' => time(),
+            'delete_time' => null,
+        ]);
+
+        $this->artisan('user:ops-menu:sync')->assertExitCode(0);
+
+        $this->assertDatabaseHas('system_menu', [
+            'id' => $legacyParentId,
+            'pid' => 0,
+            'title' => '用户运营',
+            'href' => '',
+            'status' => 1,
+            'delete_time' => null,
+        ]);
+        $this->assertSame(
+            1,
+            DB::table('system_menu')
+                ->where('pid', 0)
+                ->whereIn('title', ['User Operations', '用户运营'])
+                ->where('href', '')
+                ->whereNull('delete_time')
+                ->count()
+        );
+    }
+
+    public function test_user_ops_menu_sync_removes_duplicate_legacy_parent(): void
+    {
+        DB::table('system_menu')->insert([
+            [
+                'pid' => 0,
+                'title' => '用户运营',
+                'icon' => 'fa fa-users',
+                'href' => '',
+                'target' => '_self',
+                'sort' => 990,
+                'status' => 1,
+                'create_time' => time(),
+                'update_time' => time(),
+                'delete_time' => null,
+            ],
+            [
+                'pid' => 0,
+                'title' => 'User Operations',
+                'icon' => 'fa fa-users',
+                'href' => '',
+                'target' => '_self',
+                'sort' => 990,
+                'status' => 1,
+                'create_time' => time(),
+                'update_time' => time(),
+                'delete_time' => null,
+            ],
+        ]);
+
+        $this->artisan('user:ops-menu:sync')->assertExitCode(0);
+
+        $this->assertSame(
+            1,
+            DB::table('system_menu')
+                ->where('pid', 0)
+                ->where('title', '用户运营')
+                ->where('href', '')
+                ->whereNull('delete_time')
+                ->count()
+        );
+        $this->assertSame(
+            0,
+            DB::table('system_menu')
+                ->where('pid', 0)
+                ->where('title', 'User Operations')
+                ->where('href', '')
+                ->whereNull('delete_time')
+                ->count()
+        );
+    }
+
     private function expectedMenuEntries(): array
     {
         return [
-            'user/dashboard/index' => 'Overview',
-            'user/account/index' => 'User Accounts',
-            'user/invite/index' => 'Invite Codes',
-            'user/invite/relations' => 'Invite Relations',
-            'user/vip-plan/index' => 'VIP Plans',
-            'user/activation-code/index' => 'Activation Codes',
-            'user/activation-code/redemptions' => 'Activation Redemptions',
-            'user/balance/index' => 'Balance Ledger',
-            'user/commission/index' => 'Affiliate Commissions',
-            'user/withdrawal/index' => 'Withdrawal Review',
-            'user/risk-event/index' => 'Risk Events',
-            'user/security-log/index' => 'Security Logs',
-            'user/notification-outbox/index' => 'Notification Outbox',
-            'user/settings/index' => 'Settings',
+            'user/dashboard/index' => '运营概览',
+            'user/account/index' => '用户账号',
+            'user/invite/index' => '邀请码',
+            'user/invite/relations' => '邀请关系',
+            'user/vip-plan/index' => 'VIP 套餐',
+            'user/activation-code/index' => '激活码',
+            'user/activation-code/redemptions' => '激活记录',
+            'user/balance/index' => '余额流水',
+            'user/commission/index' => '分销佣金',
+            'user/withdrawal/index' => '提现审核',
+            'user/risk-event/index' => '风控事件',
+            'user/security-log/index' => '安全日志',
+            'user/notification-outbox/index' => '通知队列',
+            'user/settings/index' => '设置',
         ];
     }
 

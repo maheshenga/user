@@ -106,24 +106,24 @@ if ($method === 'GET' && $path === '/admin/ajax/initAdmin') {
 
     if ($mode !== 'missing-menu') {
         $children = [
-            ['title' => 'Overview', 'href' => '/admin/user/dashboard/index'],
-            ['title' => 'User Accounts', 'href' => '/admin/user/account/index'],
+            ['title' => '运营概览', 'href' => '/admin/user/dashboard/index'],
+            ['title' => '用户账号', 'href' => '/admin/user/account/index'],
         ];
 
         if ($mode === 'missing-dashboard-link') {
             $children = [
-                ['title' => 'User Accounts', 'href' => '/admin/user/account/index'],
+                ['title' => '用户账号', 'href' => '/admin/user/account/index'],
             ];
         }
 
         if ($mode === 'dashboard-link-outside-user-ops') {
             $children = [
-                ['title' => 'User Accounts', 'href' => '/admin/user/account/index'],
+                ['title' => '用户账号', 'href' => '/admin/user/account/index'],
             ];
         }
 
         $menuInfo[] = [
-            'title' => 'User Operations',
+            'title' => '用户运营',
             'href' => '',
             'child' => $children,
         ];

@@ -96,7 +96,7 @@ class UserOpsSettingsTest extends TestCase
         $response = $this->get('/admin/user/settings/index');
 
         $response->assertOk();
-        $response->assertSee('User Operations Settings');
+        $response->assertSee('用户运营设置');
         $response->assertSee('name="password_reset_expires_minutes"', false);
         $response->assertSee('value="30"', false);
     }
@@ -150,7 +150,7 @@ class UserOpsSettingsTest extends TestCase
 
         $this->assertDatabaseHas('system_menu', [
             'href' => 'user/settings/index',
-            'title' => 'Settings',
+            'title' => '设置',
         ]);
     }
 
