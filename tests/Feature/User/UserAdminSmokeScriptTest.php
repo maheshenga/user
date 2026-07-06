@@ -53,6 +53,18 @@ class UserAdminSmokeScriptTest extends TestCase
         $this->assertStringContainsString('Menu response missing User Operations', $output);
     }
 
+    public function test_user_admin_smoke_script_fails_when_dashboard_menu_link_is_missing(): void
+    {
+        $baseUrl = $this->startFixtureServer('missing-dashboard-link');
+
+        $process = $this->runSmokeScript($baseUrl);
+        $output = $process->getOutput() . $process->getErrorOutput();
+
+        $this->assertNotSame(0, $process->getExitCode(), $output);
+        $this->assertStringContainsString('FAIL user admin smoke failed', $output);
+        $this->assertStringContainsString('Menu response missing user/dashboard/index', $output);
+    }
+
     public function test_user_admin_smoke_script_fails_when_dashboard_metric_is_missing(): void
     {
         $baseUrl = $this->startFixtureServer('missing-dashboard-metric');

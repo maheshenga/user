@@ -66,6 +66,15 @@ if ($method === 'GET' && $path === '/admin/login') {
 if ($method === 'POST' && $path === '/admin/login') {
     $payload = $input();
 
+    if (($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '') !== 'fixture-admin-token') {
+        $json([
+            'code' => 0,
+            'msg' => 'invalid csrf token',
+            '__token__' => 'fixture-admin-token',
+        ]);
+        return;
+    }
+
     if (trim((string) ($payload['username'] ?? '')) === '' || (string) ($payload['password'] ?? '') === '') {
         $json([
             'code' => 0,
@@ -96,13 +105,21 @@ if ($method === 'GET' && $path === '/admin/ajax/initAdmin') {
     $menuInfo = [];
 
     if ($mode !== 'missing-menu') {
+        $children = [
+            ['title' => 'Overview', 'href' => '/admin/user/dashboard/index'],
+            ['title' => 'User Accounts', 'href' => '/admin/user/account/index'],
+        ];
+
+        if ($mode === 'missing-dashboard-link') {
+            $children = [
+                ['title' => 'User Accounts', 'href' => '/admin/user/account/index'],
+            ];
+        }
+
         $menuInfo[] = [
             'title' => 'User Operations',
             'href' => '',
-            'child' => [
-                ['title' => 'Overview', 'href' => '/admin/user/dashboard/index'],
-                ['title' => 'User Accounts', 'href' => '/admin/user/account/index'],
-            ],
+            'child' => $children,
         ];
     }
 
