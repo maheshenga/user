@@ -117,7 +117,7 @@ if ($method === 'POST' && $path === '/user/login') {
     if ($account === '' || $password === '') {
         $json([
             'code' => 0,
-            'msg' => 'Account and password are required.',
+            'msg' => '请填写账号和密码。',
         ]);
         return;
     }

@@ -10,6 +10,12 @@
         target.classList.toggle('error', ok === false);
     }
 
+    function setFormBusy(form, busy) {
+        form.querySelectorAll('button, input[type="submit"]').forEach((element) => {
+            element.disabled = busy;
+        });
+    }
+
     function pretty(payload) {
         if (payload === null || payload === undefined) {
             return '';
@@ -175,6 +181,7 @@
                 event.preventDefault();
                 const status = form.querySelector('[data-form-status]');
                 setStatus(status, '提交中...', null);
+                setFormBusy(form, true);
 
                 try {
                     const result = await request(form.dataset.endpoint, {
@@ -207,6 +214,8 @@
                     }
                 } catch (error) {
                     setStatus(status, error.message, false);
+                } finally {
+                    setFormBusy(form, false);
                 }
             });
         });
@@ -323,6 +332,7 @@
             activationForm.addEventListener('submit', async (event) => {
                 event.preventDefault();
                 const status = activationForm.querySelector('[data-form-status]');
+                setFormBusy(activationForm, true);
                 try {
                     const result = await request(endpoints.activation, {
                         method: 'POST',
@@ -336,6 +346,8 @@
                     }
                 } catch (error) {
                     setStatus(status, error.message, false);
+                } finally {
+                    setFormBusy(activationForm, false);
                 }
             });
         }
@@ -345,6 +357,7 @@
             withdrawalForm.addEventListener('submit', async (event) => {
                 event.preventDefault();
                 const status = withdrawalForm.querySelector('[data-form-status]');
+                setFormBusy(withdrawalForm, true);
                 try {
                     const result = await request(endpoints.withdrawalRequest, {
                         method: 'POST',
@@ -358,6 +371,8 @@
                     }
                 } catch (error) {
                     setStatus(status, error.message, false);
+                } finally {
+                    setFormBusy(withdrawalForm, false);
                 }
             });
         }

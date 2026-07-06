@@ -13,11 +13,11 @@ class VipController extends Controller
     {
         $userId = $this->currentUserId();
         if ($userId === null) {
-            return $this->jsonError('User login required.');
+            return $this->jsonError('请先登录。');
         }
 
         try {
-            return $this->jsonSuccess('VIP summary', $vip->summary($userId));
+            return $this->jsonSuccess('VIP 概览', $vip->summary($userId));
         } catch (InvalidArgumentException $exception) {
             return $this->jsonError($exception->getMessage());
         }

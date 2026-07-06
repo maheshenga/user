@@ -224,7 +224,7 @@ class UserInviteTest extends TestCase
 
             $response->assertOk()
                 ->assertJsonPath('code', 0)
-                ->assertJsonPath('msg', 'User login required.');
+                ->assertJsonPath('msg', '请先登录。');
         }
     }
 

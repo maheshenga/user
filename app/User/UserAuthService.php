@@ -26,19 +26,19 @@ final class UserAuthService
         $inviteCode = $this->normalizeNullableString($payload['invite_code'] ?? null);
 
         if ($mobile === null && $email === null) {
-            throw new InvalidArgumentException('Mobile or email is required.');
+            throw new InvalidArgumentException('请填写手机号或邮箱。');
         }
 
         if (strlen($password) < 6) {
-            throw new InvalidArgumentException('Password must be at least 6 characters.');
+            throw new InvalidArgumentException('密码至少需要 6 位。');
         }
 
         if ($mobile !== null && UserAccount::query()->where('mobile', $mobile)->exists()) {
-            throw new InvalidArgumentException('Mobile already exists.');
+            throw new InvalidArgumentException('手机号已存在。');
         }
 
         if ($email !== null && UserAccount::query()->where('email', $email)->exists()) {
-            throw new InvalidArgumentException('Email already exists.');
+            throw new InvalidArgumentException('邮箱已存在。');
         }
 
         try {
@@ -88,15 +88,17 @@ final class UserAuthService
         [$loginType, $account] = $this->loginTypeAndAccount($payload['account'] ?? null);
 
         if ($account === null || $password === '') {
-            throw new InvalidArgumentException('Account and password are required.');
+            throw new InvalidArgumentException('请填写账号和密码。');
         }
+
+        $this->ensureLoginNotLocked($account, $loginType, $ip);
 
         $user = UserAccount::query()
             ->where($loginType, $account)
             ->first();
 
         if ($user === null || ! $this->passwords->verify($password, $user->password)) {
-            $message = 'Invalid account or password.';
+            $message = '账号或密码错误。';
 
             $this->writeLoginLog(null, $account, $loginType, $ip, 'failed', $message);
 
@@ -104,7 +106,7 @@ final class UserAuthService
         }
 
         if (! UserAccountStatus::canLogin($user->status)) {
-            $message = 'User account is not active.';
+            $message = '账号当前不可登录。';
 
             $this->writeLoginLog($user, $account, $loginType, $ip, 'failed', $message);
 
@@ -171,6 +173,21 @@ final class UserAuthService
         return ['mobile', $account];
     }
 
+    private function ensureLoginNotLocked(string $account, string $loginType, string $ip): void
+    {
+        $failedCount = UserLoginLog::query()
+            ->where('account', $account)
+            ->where('login_type', $loginType)
+            ->where('ip', $ip)
+            ->where('result', 'failed')
+            ->where('create_time', '>=', time() - 900)
+            ->count();
+
+        if ($failedCount >= 5) {
+            throw new InvalidArgumentException('登录失败次数过多，请 15 分钟后再试。');
+        }
+    }
+
     private function writeLoginLog(
         ?UserAccount $user,
         string $account,
@@ -200,27 +217,27 @@ final class UserAuthService
         $message = strtolower($exception->getMessage() . ' ' . implode(' ', $exception->errorInfo ?? []));
 
         if ($mobile !== null && $this->mentionsUniqueColumn($message, 'mobile')) {
-            return new InvalidArgumentException('Mobile already exists.', 0, $exception);
+            return new InvalidArgumentException('手机号已存在。', 0, $exception);
         }
 
         if ($email !== null && $this->mentionsUniqueColumn($message, 'email')) {
-            return new InvalidArgumentException('Email already exists.', 0, $exception);
+            return new InvalidArgumentException('邮箱已存在。', 0, $exception);
         }
 
         if ($mobile !== null && UserAccount::query()->where('mobile', $mobile)->exists()) {
-            return new InvalidArgumentException('Mobile already exists.', 0, $exception);
+            return new InvalidArgumentException('手机号已存在。', 0, $exception);
         }
 
         if ($email !== null && UserAccount::query()->where('email', $email)->exists()) {
-            return new InvalidArgumentException('Email already exists.', 0, $exception);
+            return new InvalidArgumentException('邮箱已存在。', 0, $exception);
         }
 
         if ($mobile !== null && $email === null) {
-            return new InvalidArgumentException('Mobile already exists.', 0, $exception);
+            return new InvalidArgumentException('手机号已存在。', 0, $exception);
         }
 
         if ($email !== null && $mobile === null) {
-            return new InvalidArgumentException('Email already exists.', 0, $exception);
+            return new InvalidArgumentException('邮箱已存在。', 0, $exception);
         }
 
         return null;

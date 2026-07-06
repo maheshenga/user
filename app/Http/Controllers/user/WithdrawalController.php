@@ -13,7 +13,7 @@ class WithdrawalController extends Controller
     {
         $userId = $this->currentUserId();
         if ($userId === null) {
-            return $this->jsonError('User login required.');
+            return $this->jsonError('请先登录。');
         }
 
         $account = request()->input('account', []);
@@ -22,7 +22,7 @@ class WithdrawalController extends Controller
         }
 
         try {
-            return $this->jsonSuccess('Withdrawal requested', $withdrawals->request(
+            return $this->jsonSuccess('提现申请已提交', $withdrawals->request(
                 $userId,
                 request()->input('amount', 0),
                 $account,
@@ -37,12 +37,12 @@ class WithdrawalController extends Controller
     {
         $userId = $this->currentUserId();
         if ($userId === null) {
-            return $this->jsonError('User login required.');
+            return $this->jsonError('请先登录。');
         }
 
         $limit = max(1, min(100, (int) request()->query('limit', 20)));
 
-        return $this->jsonSuccess('Withdrawal requests', $withdrawals->listForUser($userId, $limit));
+        return $this->jsonSuccess('提现记录', $withdrawals->listForUser($userId, $limit));
     }
 
     private function currentUserId(): ?int

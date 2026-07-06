@@ -173,7 +173,7 @@ class UserPasswordResetTest extends TestCase
 
             $this->fail('Expected old password to fail after reset.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Invalid account or password.', $exception->getMessage());
+            $this->assertSame('账号或密码错误。', $exception->getMessage());
         }
     }
 
@@ -221,7 +221,7 @@ class UserPasswordResetTest extends TestCase
 
             $this->fail('Expected wrong token to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Invalid reset token or code.', $exception->getMessage());
+            $this->assertSame('重置凭证无效。', $exception->getMessage());
         }
 
         $this->assertSame(1, UserPasswordReset::query()->firstOrFail()->attempt_count);
@@ -237,7 +237,7 @@ class UserPasswordResetTest extends TestCase
 
             $this->fail('Expected expired token to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Reset token is expired.', $exception->getMessage());
+            $this->assertSame('重置凭证已过期。', $exception->getMessage());
         }
 
         UserPasswordReset::query()->update([
@@ -254,8 +254,43 @@ class UserPasswordResetTest extends TestCase
 
             $this->fail('Expected used token to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Reset token has already been used.', $exception->getMessage());
+            $this->assertSame('重置凭证已使用。', $exception->getMessage());
         }
+    }
+
+    public function test_reset_token_is_blocked_after_too_many_wrong_attempts(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'reset-limit@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $service = app(PasswordResetService::class);
+        $service->requestReset([
+            'account' => 'reset-limit@example.com',
+        ], '127.0.0.1');
+        $outbox = UserNotificationOutbox::query()->firstOrFail();
+
+        for ($i = 0; $i < 5; $i++) {
+            try {
+                $service->resetPassword([
+                    'account' => 'reset-limit@example.com',
+                    'token' => 'bad-secret',
+                    'password' => 'new-secret123',
+                ], '127.0.0.1');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame('重置凭证无效。', $exception->getMessage());
+            }
+        }
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('重置尝试次数过多，请重新申请。');
+
+        $service->resetPassword([
+            'account' => 'reset-limit@example.com',
+            'token' => $outbox->payload_json['token'],
+            'password' => 'new-secret123',
+        ], '127.0.0.1');
     }
 
     public function test_password_reset_endpoints_complete_flow(): void

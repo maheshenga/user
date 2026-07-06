@@ -148,6 +148,9 @@ class AuthService
                 'id'     => $this->adminId,
                 'status' => 1,
             ])->first();
+        if ($adminInfo === null) {
+            return [];
+        }
         $adminInfo = get_object_vars($adminInfo);
         if (!empty($adminInfo) && !empty($adminInfo['auth_ids'])) {
 
@@ -174,6 +177,9 @@ class AuthService
         $result = DB::table($this->config['system_admin'])
             ->where('id', $this->adminId)
             ->first();
+        if ($result === null) {
+            return [];
+        }
         return get_object_vars($result);
     }
 

@@ -18,7 +18,7 @@ class UserPortalFlowHardeningTest extends TestCase
         $this->getJson('/user/session')
             ->assertOk()
             ->assertJsonPath('code', 0)
-            ->assertJsonPath('msg', 'User login required.')
+            ->assertJsonPath('msg', '请先登录。')
             ->assertJsonPath('data', []);
     }
 
@@ -35,7 +35,7 @@ class UserPortalFlowHardeningTest extends TestCase
         ])->getJson('/user/session')
             ->assertOk()
             ->assertJsonPath('code', 1)
-            ->assertJsonPath('msg', 'User session')
+            ->assertJsonPath('msg', '用户会话')
             ->assertJsonPath('data.user.id', 99)
             ->assertJsonPath('data.user.email', 'session@example.com')
             ->assertJsonMissingPath('data.user.password');
@@ -75,6 +75,16 @@ class UserPortalFlowHardeningTest extends TestCase
         $this->getJson('/user/session')
             ->assertOk()
             ->assertJsonPath('code', 0)
-            ->assertJsonPath('msg', 'User login required.');
+            ->assertJsonPath('msg', '请先登录。');
+    }
+
+    public function test_portal_forms_disable_submit_controls_while_request_is_pending(): void
+    {
+        $script = file_get_contents(public_path('static/user/js/portal.js'));
+
+        $this->assertStringContainsString('setFormBusy(form, true)', $script);
+        $this->assertStringContainsString('setFormBusy(form, false)', $script);
+        $this->assertStringContainsString('setFormBusy(activationForm, true)', $script);
+        $this->assertStringContainsString('setFormBusy(withdrawalForm, true)', $script);
     }
 }

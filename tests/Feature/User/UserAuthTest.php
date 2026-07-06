@@ -166,7 +166,7 @@ class UserAuthTest extends TestCase
 
             $this->fail('Expected wrong password to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Invalid account or password.', $exception->getMessage());
+            $this->assertSame('账号或密码错误。', $exception->getMessage());
         }
     }
 
@@ -290,11 +290,30 @@ class UserAuthTest extends TestCase
     public function test_register_endpoint_returns_error_for_invalid_payload(): void
     {
         $response = $this->postJson('/user/register', [
-            'password' => '12345',
+            'password' => 'secret123',
         ]);
 
         $response->assertOk()
             ->assertJsonPath('code', 0);
+    }
+
+    public function test_user_api_messages_are_chinese(): void
+    {
+        $this->getJson('/user/session')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '请先登录。');
+
+        $this->getJson('/user/vip')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '请先登录。');
+
+        $this->postJson('/user/register', [
+            'password' => 'secret123',
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '请填写手机号或邮箱。');
     }
 
     public function test_user_auth_endpoint_routes_use_install_guard_and_throttle(): void
@@ -353,7 +372,7 @@ class UserAuthTest extends TestCase
 
                 $this->fail('Expected missing login credentials to fail.');
             } catch (InvalidArgumentException $exception) {
-                $this->assertSame('Account and password are required.', $exception->getMessage());
+                $this->assertSame('请填写账号和密码。', $exception->getMessage());
             }
         }
 
@@ -372,7 +391,7 @@ class UserAuthTest extends TestCase
 
             $this->fail('Expected nonexistent account login to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Invalid account or password.', $exception->getMessage());
+            $this->assertSame('账号或密码错误。', $exception->getMessage());
         }
 
         $this->assertDatabaseHas('user_login_log', [
@@ -380,7 +399,7 @@ class UserAuthTest extends TestCase
             'account' => 'missing@example.com',
             'login_type' => 'email',
             'result' => 'failed',
-            'error_message' => 'Invalid account or password.',
+            'error_message' => '账号或密码错误。',
         ]);
     }
 
@@ -401,16 +420,44 @@ class UserAuthTest extends TestCase
 
             $this->fail('Expected wrong password login to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Invalid account or password.', $exception->getMessage());
+            $this->assertSame('账号或密码错误。', $exception->getMessage());
         } finally {
             $this->assertDatabaseHas('user_login_log', [
                 'user_id' => null,
                 'account' => '13800000007',
                 'login_type' => 'mobile',
                 'result' => 'failed',
-                'error_message' => 'Invalid account or password.',
+                'error_message' => '账号或密码错误。',
             ]);
         }
+    }
+
+    public function test_login_locks_account_after_repeated_failures(): void
+    {
+        $service = app(UserAuthService::class);
+        $service->register([
+            'email' => 'lock@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        for ($i = 0; $i < 5; $i++) {
+            try {
+                $service->login([
+                    'account' => 'lock@example.com',
+                    'password' => 'wrong-password',
+                ], '127.0.0.9');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame('账号或密码错误。', $exception->getMessage());
+            }
+        }
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('登录失败次数过多，请 15 分钟后再试。');
+
+        $service->login([
+            'account' => 'lock@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.9');
     }
 
     public function test_disabled_user_cannot_login(): void
@@ -433,14 +480,14 @@ class UserAuthTest extends TestCase
 
             $this->fail('Expected disabled user login to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('User account is not active.', $exception->getMessage());
+            $this->assertSame('账号当前不可登录。', $exception->getMessage());
         } finally {
             $this->assertDatabaseHas('user_login_log', [
                 'user_id' => $user->id,
                 'account' => 'disabled@example.com',
                 'login_type' => 'email',
                 'result' => 'failed',
-                'error_message' => 'User account is not active.',
+                'error_message' => '账号当前不可登录。',
             ]);
         }
     }
@@ -465,14 +512,14 @@ class UserAuthTest extends TestCase
 
             $this->fail('Expected frozen user login to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('User account is not active.', $exception->getMessage());
+            $this->assertSame('账号当前不可登录。', $exception->getMessage());
         } finally {
             $this->assertDatabaseHas('user_login_log', [
                 'user_id' => $user->id,
                 'account' => 'frozen@example.com',
                 'login_type' => 'email',
                 'result' => 'failed',
-                'error_message' => 'User account is not active.',
+                'error_message' => '账号当前不可登录。',
             ]);
         }
     }
@@ -563,7 +610,7 @@ class UserAuthTest extends TestCase
     public function test_register_requires_mobile_or_email(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Mobile or email is required.');
+        $this->expectExceptionMessage('请填写手机号或邮箱。');
 
         app(UserAuthService::class)->register([
             'password' => 'secret123',
@@ -573,7 +620,7 @@ class UserAuthTest extends TestCase
     public function test_register_rejects_blank_contact_strings_as_missing(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Mobile or email is required.');
+        $this->expectExceptionMessage('请填写手机号或邮箱。');
 
         app(UserAuthService::class)->register([
             'mobile' => '   ',
@@ -585,7 +632,7 @@ class UserAuthTest extends TestCase
     public function test_register_rejects_short_password(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Password must be at least 6 characters.');
+        $this->expectExceptionMessage('密码至少需要 6 位。');
 
         app(UserAuthService::class)->register([
             'mobile' => '13800000004',
@@ -620,7 +667,7 @@ class UserAuthTest extends TestCase
         ], '127.0.0.1');
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Email already exists.');
+        $this->expectExceptionMessage('邮箱已存在。');
 
         $service->register([
             'email' => ' PERSON4@EXAMPLE.COM ',
@@ -647,7 +694,7 @@ class UserAuthTest extends TestCase
 
             $this->fail('Expected duplicate mobile registration to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Mobile already exists.', $exception->getMessage());
+            $this->assertSame('手机号已存在。', $exception->getMessage());
         }
 
         try {
@@ -659,7 +706,7 @@ class UserAuthTest extends TestCase
 
             $this->fail('Expected duplicate email registration to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Email already exists.', $exception->getMessage());
+            $this->assertSame('邮箱已存在。', $exception->getMessage());
         }
     }
 
@@ -695,7 +742,7 @@ class UserAuthTest extends TestCase
 
             $this->fail('Expected racing duplicate mobile registration to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Mobile already exists.', $exception->getMessage());
+            $this->assertSame('手机号已存在。', $exception->getMessage());
         } finally {
             UserAccount::flushEventListeners();
         }
@@ -733,7 +780,7 @@ class UserAuthTest extends TestCase
 
             $this->fail('Expected racing duplicate email registration to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Email already exists.', $exception->getMessage());
+            $this->assertSame('邮箱已存在。', $exception->getMessage());
         } finally {
             UserAccount::flushEventListeners();
         }

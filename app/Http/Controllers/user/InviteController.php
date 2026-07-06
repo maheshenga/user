@@ -12,20 +12,20 @@ class InviteController extends Controller
     {
         $userId = $this->currentUserId();
         if ($userId === null) {
-            return $this->jsonError('User login required.');
+            return $this->jsonError('请先登录。');
         }
 
-        return $this->jsonSuccess('Invite summary', $invites->inviteSummary($userId));
+        return $this->jsonSuccess('邀请概览', $invites->inviteSummary($userId));
     }
 
     public function records(InviteService $invites): JsonResponse
     {
         $userId = $this->currentUserId();
         if ($userId === null) {
-            return $this->jsonError('User login required.');
+            return $this->jsonError('请先登录。');
         }
 
-        return $this->jsonSuccess('Invite records', $invites->inviteRecords($userId));
+        return $this->jsonSuccess('邀请记录', $invites->inviteRecords($userId));
     }
 
     private function currentUserId(): ?int

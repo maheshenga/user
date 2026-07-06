@@ -17,7 +17,7 @@ class ActivationCodeController extends Controller
     {
         $userId = $this->currentUserId();
         if ($userId === null) {
-            return $this->error('User login required.');
+            return $this->error('请先登录。');
         }
 
         $payload = request()->only(['code']);
@@ -30,7 +30,7 @@ class ActivationCodeController extends Controller
         }
 
         try {
-            return $this->success('Activation code redeemed.', $activationCodes->redeem($payload, $userId, request()->ip()));
+            return $this->success('激活码兑换成功。', $activationCodes->redeem($payload, $userId, request()->ip()));
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }

@@ -66,7 +66,7 @@ class AuthController extends Controller
         }
 
         try {
-            return $this->success('Password reset accepted.', $passwords->requestReset($payload, request()->ip()));
+            return $this->success('重置申请已受理。', $passwords->requestReset($payload, request()->ip()));
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }
@@ -87,7 +87,7 @@ class AuthController extends Controller
         }
 
         try {
-            return $this->success('Password reset completed.', $passwords->resetPassword($payload, request()->ip()));
+            return $this->success('密码重置成功。', $passwords->resetPassword($payload, request()->ip()));
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }
@@ -100,7 +100,7 @@ class AuthController extends Controller
         if (empty($user) || ! is_array($user)) {
             return response()->json([
                 'code' => 0,
-                'msg' => 'User login required.',
+                'msg' => '请先登录。',
                 'data' => [],
                 'url' => '',
                 'wait' => 3,
@@ -112,7 +112,7 @@ class AuthController extends Controller
 
         return response()->json([
             'code' => 1,
-            'msg' => 'User session',
+            'msg' => '用户会话',
             'data' => [
                 'user' => $user,
             ],

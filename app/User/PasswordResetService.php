@@ -23,7 +23,7 @@ final class PasswordResetService
     {
         [$accountType, $account] = $this->accountTypeAndValue($payload['account'] ?? null);
         if ($account === null) {
-            throw new InvalidArgumentException('Account is required.');
+            throw new InvalidArgumentException('请填写账号。');
         }
 
         $user = UserAccount::query()->where($accountType, $account)->first();
@@ -72,15 +72,15 @@ final class PasswordResetService
         $code = $this->normalizeNullableString($payload['code'] ?? null);
 
         if ($account === null) {
-            throw new InvalidArgumentException('Account is required.');
+            throw new InvalidArgumentException('请填写账号。');
         }
 
         if ($token === null && $code === null) {
-            throw new InvalidArgumentException('Reset token or code is required.');
+            throw new InvalidArgumentException('请填写重置凭证。');
         }
 
         if (strlen($password) < 6 || strlen($password) > 72) {
-            throw new InvalidArgumentException('Password must be between 6 and 72 characters.');
+            throw new InvalidArgumentException('密码长度需要在 6 到 72 位之间。');
         }
 
         $result = DB::transaction(function () use ($accountType, $account, $token, $code, $password, $ip): array {
@@ -92,15 +92,19 @@ final class PasswordResetService
                 ->first();
 
             if ($reset === null) {
-                throw new InvalidArgumentException('Invalid reset token or code.');
+                throw new InvalidArgumentException('重置凭证无效。');
             }
 
             if ($reset->used_at !== null) {
-                throw new InvalidArgumentException('Reset token has already been used.');
+                throw new InvalidArgumentException('重置凭证已使用。');
             }
 
             if ($reset->expires_at === null || Carbon::parse($reset->expires_at)->isPast()) {
-                throw new InvalidArgumentException('Reset token is expired.');
+                throw new InvalidArgumentException('重置凭证已过期。');
+            }
+
+            if ((int) $reset->attempt_count >= 5) {
+                throw new InvalidArgumentException('重置尝试次数过多，请重新申请。');
             }
 
             if (! $this->matchesResetSecret($reset, $token, $code)) {
@@ -109,12 +113,12 @@ final class PasswordResetService
                     'update_time' => time(),
                 ])->save();
 
-                return ['error' => 'Invalid reset token or code.'];
+                return ['error' => '重置凭证无效。'];
             }
 
             $user = UserAccount::query()->whereKey($reset->user_id)->lockForUpdate()->first();
             if ($user === null) {
-                throw new InvalidArgumentException('Invalid reset token or code.');
+                throw new InvalidArgumentException('重置凭证无效。');
             }
 
             $now = time();

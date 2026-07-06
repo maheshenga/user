@@ -13,11 +13,11 @@ class BalanceController extends Controller
     {
         $userId = $this->currentUserId();
         if ($userId === null) {
-            return $this->jsonError('User login required.');
+            return $this->jsonError('请先登录。');
         }
 
         try {
-            return $this->jsonSuccess('Balance summary', $balance->summary($userId));
+            return $this->jsonSuccess('余额概览', $balance->summary($userId));
         } catch (InvalidArgumentException $exception) {
             return $this->jsonError($exception->getMessage());
         }
@@ -27,13 +27,13 @@ class BalanceController extends Controller
     {
         $userId = $this->currentUserId();
         if ($userId === null) {
-            return $this->jsonError('User login required.');
+            return $this->jsonError('请先登录。');
         }
 
         $limit = max(1, min(100, (int) request()->query('limit', 20)));
 
         try {
-            return $this->jsonSuccess('Balance ledger', $balance->ledger($userId, $limit));
+            return $this->jsonSuccess('余额流水', $balance->ledger($userId, $limit));
         } catch (InvalidArgumentException $exception) {
             return $this->jsonError($exception->getMessage());
         }
