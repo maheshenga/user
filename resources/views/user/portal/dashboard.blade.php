@@ -26,32 +26,32 @@
         <section class="panel">
             <h2>VIP</h2>
             <button type="button" data-refresh="vip" data-dashboard-protected disabled>Refresh VIP</button>
-            <div class="data-box" data-dashboard-box="vip">Waiting for VIP summary.</div>
+            <div class="data-box" data-dashboard-box="vip" data-dashboard-render="vip">Waiting for VIP summary.</div>
         </section>
         <section class="panel">
             <h2>Balance</h2>
             <button type="button" data-refresh="balance" data-dashboard-protected disabled>Refresh Balance</button>
-            <div class="data-box" data-dashboard-box="balance">Waiting for balance summary.</div>
+            <div class="data-box" data-dashboard-box="balance" data-dashboard-render="balance">Waiting for balance summary.</div>
         </section>
         <section class="panel">
             <h2>Balance Ledger</h2>
             <button type="button" data-refresh="ledger" data-dashboard-protected disabled>Refresh Ledger</button>
-            <div class="data-box" data-dashboard-box="ledger">Waiting for ledger.</div>
+            <div class="data-box" data-dashboard-box="ledger" data-dashboard-render="ledger">Waiting for ledger.</div>
         </section>
         <section class="panel">
             <h2>Invite Summary</h2>
             <button type="button" data-refresh="invite" data-dashboard-protected disabled>Refresh Invite</button>
-            <div class="data-box" data-dashboard-box="invite">Waiting for invite summary.</div>
+            <div class="data-box" data-dashboard-box="invite" data-dashboard-render="invite">Waiting for invite summary.</div>
         </section>
         <section class="panel">
             <h2>Invite Records</h2>
             <button type="button" data-refresh="inviteRecords" data-dashboard-protected disabled>Refresh Records</button>
-            <div class="data-box" data-dashboard-box="inviteRecords">Waiting for invite records.</div>
+            <div class="data-box" data-dashboard-box="inviteRecords" data-dashboard-render="inviteRecords">Waiting for invite records.</div>
         </section>
         <section class="panel">
             <h2>Withdrawals</h2>
             <button type="button" data-refresh="withdrawals" data-dashboard-protected disabled>Refresh Withdrawals</button>
-            <div class="data-box" data-dashboard-box="withdrawals">Waiting for withdrawals.</div>
+            <div class="data-box" data-dashboard-box="withdrawals" data-dashboard-render="withdrawals">Waiting for withdrawals.</div>
         </section>
     </div>
 

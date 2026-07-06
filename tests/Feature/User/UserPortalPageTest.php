@@ -71,7 +71,13 @@ class UserPortalPageTest extends TestCase
             ->assertSee('data-invite-records="/user/invite/records"', false)
             ->assertSee('data-activation="/user/activation-code/redeem"', false)
             ->assertSee('data-withdrawal-request="/user/withdrawal/request"', false)
-            ->assertSee('data-logout="/user/logout"', false);
+            ->assertSee('data-logout="/user/logout"', false)
+            ->assertSee('data-dashboard-render="vip"', false)
+            ->assertSee('data-dashboard-render="balance"', false)
+            ->assertSee('data-dashboard-render="ledger"', false)
+            ->assertSee('data-dashboard-render="invite"', false)
+            ->assertSee('data-dashboard-render="inviteRecords"', false)
+            ->assertSee('data-dashboard-render="withdrawals"', false);
     }
 
     public function test_dashboard_embeds_current_session_user_when_logged_in(): void
