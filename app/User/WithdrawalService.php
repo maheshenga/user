@@ -21,7 +21,7 @@ final class WithdrawalService
         $this->assertAmountPolicy($amount);
 
         if ($accountSnapshot === []) {
-            throw new InvalidArgumentException('Withdrawal account snapshot is required.');
+            throw new InvalidArgumentException('提现账户信息不能为空。');
         }
 
         return DB::transaction(function () use ($userId, $amount, $accountSnapshot, $ip): array {
@@ -258,7 +258,7 @@ final class WithdrawalService
     {
         $withdrawal = UserWithdrawalRequest::query()->lockForUpdate()->find($withdrawalId);
         if ($withdrawal === null) {
-            throw new InvalidArgumentException('Withdrawal request not found.');
+            throw new InvalidArgumentException('提现申请不存在。');
         }
 
         return $withdrawal;
@@ -268,7 +268,7 @@ final class WithdrawalService
     {
         $money = $this->money($amount);
         if ((float) $money <= 0) {
-            throw new InvalidArgumentException('Amount must be greater than zero.');
+            throw new InvalidArgumentException('金额必须大于 0。');
         }
 
         return $money;

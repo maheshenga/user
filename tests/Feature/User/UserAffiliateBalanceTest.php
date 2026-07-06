@@ -136,7 +136,7 @@ class UserAffiliateBalanceTest extends TestCase
         $user = $this->createAccount('ledger-insufficient@example.com');
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Available balance is insufficient.');
+        $this->expectExceptionMessage('可用余额不足。');
 
         app(BalanceLedgerService::class)->debit($user->id, '0.01', 'reversal', null, null, 'Too much');
     }
@@ -180,14 +180,14 @@ class UserAffiliateBalanceTest extends TestCase
             $service->adminAdjust($user->id, '5.00', ' ', 9);
             $this->fail('Expected blank admin adjustment reason to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Adjustment reason is required.', $exception->getMessage());
+            $this->assertSame('调整原因不能为空。', $exception->getMessage());
         }
 
         try {
             $service->adminAdjust($user->id, '5.00', 'Manual correction', 0);
             $this->fail('Expected missing admin id to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Admin id is required.', $exception->getMessage());
+            $this->assertSame('管理员 ID 不能为空。', $exception->getMessage());
         }
 
         $ledger = $service->adminAdjust($user->id, '-3.25', 'Manual correction', 9);

@@ -73,16 +73,16 @@ final class BalanceLedgerService
     {
         $reason = trim($reason);
         if ($reason === '') {
-            throw new InvalidArgumentException('Adjustment reason is required.');
+            throw new InvalidArgumentException('调整原因不能为空。');
         }
 
         if ($adminId <= 0) {
-            throw new InvalidArgumentException('Admin id is required.');
+            throw new InvalidArgumentException('管理员 ID 不能为空。');
         }
 
         $signedAmount = $this->normalizeSignedAmount($amount);
         if ($signedAmount === '0.00') {
-            throw new InvalidArgumentException('Amount must not be zero.');
+            throw new InvalidArgumentException('调整金额不能为 0。');
         }
 
         $ledger = str_starts_with($signedAmount, '-')
@@ -98,7 +98,7 @@ final class BalanceLedgerService
     {
         $user = UserAccount::query()->find($userId);
         if ($user === null) {
-            throw new InvalidArgumentException('User account not found.');
+            throw new InvalidArgumentException('用户账户不存在。');
         }
 
         return [
@@ -136,7 +136,7 @@ final class BalanceLedgerService
         return DB::transaction(function () use ($userId, $amount, $direction, $type, $sourceType, $sourceId, $remark, $adminId): array {
             $user = UserAccount::query()->lockForUpdate()->find($userId);
             if ($user === null) {
-                throw new InvalidArgumentException('User account not found.');
+                throw new InvalidArgumentException('用户账户不存在。');
             }
 
             $balanceBefore = $this->money($user->available_balance ?? 0);
@@ -178,14 +178,14 @@ final class BalanceLedgerService
             'freeze' => [$this->subAvailable($balanceBefore, $amount), $this->add($frozenBefore, $amount)],
             'unfreeze' => [$this->add($balanceBefore, $amount), $this->subFrozen($frozenBefore, $amount)],
             'settle_frozen' => [$balanceBefore, $this->subFrozen($frozenBefore, $amount)],
-            default => throw new InvalidArgumentException('Unsupported balance direction.'),
+            default => throw new InvalidArgumentException('不支持的余额变动方向。'),
         };
     }
 
     private function subAvailable(string $balance, string $amount): string
     {
         if ($this->compare($balance, $amount) < 0) {
-            throw new InvalidArgumentException('Available balance is insufficient.');
+            throw new InvalidArgumentException('可用余额不足。');
         }
 
         return $this->sub($balance, $amount);
@@ -194,7 +194,7 @@ final class BalanceLedgerService
     private function subFrozen(string $frozen, string $amount): string
     {
         if ($this->compare($frozen, $amount) < 0) {
-            throw new InvalidArgumentException('Frozen balance is insufficient.');
+            throw new InvalidArgumentException('冻结余额不足。');
         }
 
         return $this->sub($frozen, $amount);
@@ -204,7 +204,7 @@ final class BalanceLedgerService
     {
         $amount = $this->money($amount);
         if ($this->compare($amount, '0.00') <= 0) {
-            throw new InvalidArgumentException('Amount must be greater than zero.');
+            throw new InvalidArgumentException('金额必须大于 0。');
         }
 
         return $amount;

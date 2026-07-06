@@ -303,12 +303,19 @@ class UserRiskOpsTest extends TestCase
                 $service->request($user->id, $amount, ['account_no' => 'masked'], '127.0.0.6');
                 $this->fail("Expected withdrawal amount [{$amount}] to fail.");
             } catch (InvalidArgumentException $exception) {
-                $this->assertSame('Amount must be greater than zero.', $exception->getMessage());
+                $this->assertSame('金额必须大于 0。', $exception->getMessage());
             }
         }
 
+        try {
+            $service->request($user->id, '1.00', [], '127.0.0.6');
+            $this->fail('Expected empty withdrawal account snapshot to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('提现账户信息不能为空。', $exception->getMessage());
+        }
+
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Available balance is insufficient.');
+        $this->expectExceptionMessage('可用余额不足。');
 
         $service->request($user->id, '6.00', ['account_no' => 'masked'], '127.0.0.6');
     }
