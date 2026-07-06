@@ -21,6 +21,17 @@ class AuthController extends UserApiController
             'email' => 'nullable|email|max:180',
             'password' => 'required|string|min:6|max:72',
             'invite_code' => 'nullable|string|max:40',
+        ], [
+            'mobile.string' => '手机号格式不正确。',
+            'mobile.max' => '手机号不能超过 32 个字符。',
+            'email.email' => '邮箱格式不正确。',
+            'email.max' => '邮箱不能超过 180 个字符。',
+            'password.required' => '密码不能为空。',
+            'password.string' => '密码格式不正确。',
+            'password.min' => '密码至少需要 6 位。',
+            'password.max' => '密码不能超过 72 位。',
+            'invite_code.string' => '邀请码格式不正确。',
+            'invite_code.max' => '邀请码不能超过 40 个字符。',
         ]);
 
         if ($validator->fails()) {
@@ -40,6 +51,13 @@ class AuthController extends UserApiController
         $validator = Validator::make($payload, [
             'account' => 'required|string|max:180',
             'password' => 'required|string|max:72',
+        ], [
+            'account.required' => '账号不能为空。',
+            'account.string' => '账号格式不正确。',
+            'account.max' => '账号不能超过 180 个字符。',
+            'password.required' => '密码不能为空。',
+            'password.string' => '密码格式不正确。',
+            'password.max' => '密码不能超过 72 位。',
         ]);
 
         if ($validator->fails()) {
@@ -58,6 +76,10 @@ class AuthController extends UserApiController
         $payload = request()->only(['account']);
         $validator = Validator::make($payload, [
             'account' => 'required|string|max:180',
+        ], [
+            'account.required' => '账号不能为空。',
+            'account.string' => '账号格式不正确。',
+            'account.max' => '账号不能超过 180 个字符。',
         ]);
 
         if ($validator->fails()) {
@@ -79,6 +101,16 @@ class AuthController extends UserApiController
             'password' => 'required|string|min:6|max:72',
             'token' => 'nullable|string',
             'code' => 'nullable|string',
+        ], [
+            'account.required' => '账号不能为空。',
+            'account.string' => '账号格式不正确。',
+            'account.max' => '账号不能超过 180 个字符。',
+            'password.required' => '密码不能为空。',
+            'password.string' => '密码格式不正确。',
+            'password.min' => '密码至少需要 6 位。',
+            'password.max' => '密码不能超过 72 位。',
+            'token.string' => '重置令牌格式不正确。',
+            'code.string' => '验证码格式不正确。',
         ]);
 
         if ($validator->fails()) {

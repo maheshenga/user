@@ -334,13 +334,25 @@ class UserPasswordResetTest extends TestCase
     public function test_password_reset_endpoints_return_error_for_bad_payload(): void
     {
         $forgot = $this->postJson('/user/password/forgot', []);
-        $forgot->assertOk()->assertJsonPath('code', 0);
+        $forgot->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '账号不能为空。');
 
         $reset = $this->postJson('/user/password/reset', [
             'account' => 'missing@example.com',
             'password' => '12345',
         ]);
-        $reset->assertOk()->assertJsonPath('code', 0);
+        $reset->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '密码至少需要 6 位。');
+
+        $missingCredential = $this->postJson('/user/password/reset', [
+            'account' => 'missing@example.com',
+            'password' => 'secret123',
+        ]);
+        $missingCredential->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '请填写重置凭证。');
     }
 
     public function test_password_reset_routes_use_install_guard_and_throttle(): void

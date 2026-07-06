@@ -294,7 +294,14 @@ class UserAuthTest extends TestCase
         ]);
 
         $response->assertOk()
-            ->assertJsonPath('code', 0);
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '请填写手机号或邮箱。');
+
+        $this->postJson('/user/register', [
+            'mobile' => '13800000012',
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '密码不能为空。');
     }
 
     public function test_user_api_messages_are_chinese(): void
@@ -360,6 +367,18 @@ class UserAuthTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('code', 0);
+
+        $this->postJson('/user/login', [
+            'password' => 'secret123',
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '账号不能为空。');
+
+        $this->postJson('/user/login', [
+            'account' => 'missing@example.com',
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '密码不能为空。');
     }
 
     public function test_login_requires_account_and_password_without_logging(): void

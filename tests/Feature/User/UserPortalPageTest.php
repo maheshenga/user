@@ -65,12 +65,14 @@ class UserPortalPageTest extends TestCase
     {
         $this->get('/u/login')
             ->assertOk()
+            ->assertSee('<title>登录 - 用户中心</title>', false)
             ->assertSee('class="auth-card"', false)
             ->assertSee('登录后查看 VIP、余额、邀请和提现进度。')
             ->assertSee('data-loading-text="登录中..."', false);
 
         $this->get('/u/register')
             ->assertOk()
+            ->assertSee('<title>注册 - 用户中心</title>', false)
             ->assertSee('创建用户账号后会自动生成邀请码。')
             ->assertSee('手机号和邮箱至少填写一项。')
             ->assertSee('邀请码可选，用于绑定邀请关系。')
@@ -78,11 +80,13 @@ class UserPortalPageTest extends TestCase
 
         $this->get('/u/forgot-password')
             ->assertOk()
+            ->assertSee('<title>找回密码 - 用户中心</title>', false)
             ->assertSee('提交账号后，系统会生成可用于重置密码的记录。')
             ->assertSee('data-loading-text="发送中..."', false);
 
         $this->get('/u/reset-password')
             ->assertOk()
+            ->assertSee('<title>重置密码 - 用户中心</title>', false)
             ->assertSee('输入账号、新密码，并填写重置令牌或验证码。')
             ->assertSee('令牌和验证码至少填写一项。')
             ->assertSee('data-loading-text="重置中..."', false);
@@ -101,6 +105,7 @@ class UserPortalPageTest extends TestCase
     {
         $this->get('/u/dashboard')
             ->assertOk()
+            ->assertSee('<title>控制台 - 用户中心</title>', false)
             ->assertSee('控制台')
             ->assertSee('data-user-session', false)
             ->assertSee('data-dashboard-endpoints', false)
