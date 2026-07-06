@@ -28,6 +28,8 @@ class UserPortalSmokeScriptTest extends TestCase
         $this->assertSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('OK user portal smoke passed', $output);
         $this->assertStringContainsString('/user/session logged in', $output);
+        $this->assertStringContainsString('PASS POST /user/activation-code/redeem', $output);
+        $this->assertStringContainsString('PASS POST /user/withdrawal/request', $output);
     }
 
     public function test_user_portal_smoke_script_fails_with_clear_message_for_bad_session_payload(): void
@@ -52,6 +54,8 @@ class UserPortalSmokeScriptTest extends TestCase
         $this->assertSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('OK user portal smoke passed', $output);
         $this->assertStringContainsString('/user/session logged in', $output);
+        $this->assertStringContainsString('PASS POST /user/activation-code/redeem', $output);
+        $this->assertStringContainsString('PASS POST /user/withdrawal/request', $output);
     }
 
     private function startFixtureServer(?string $mode = null): string

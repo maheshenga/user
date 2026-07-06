@@ -195,5 +195,63 @@ if ($method === 'GET' && in_array($path, [
     return;
 }
 
+if ($method === 'POST' && $path === '/user/activation-code/redeem') {
+    $payload = $input();
+
+    if (! $state['logged_in']) {
+        $json([
+            'code' => 0,
+            'msg' => 'not logged in',
+        ]);
+        return;
+    }
+
+    if (trim((string) ($payload['code'] ?? '')) === '') {
+        $json([
+            'code' => 0,
+            'msg' => 'Activation code is required.',
+        ]);
+        return;
+    }
+
+    $json([
+        'code' => 1,
+        'msg' => 'activation redeemed',
+        'data' => [
+            'vip_level' => 1,
+        ],
+    ]);
+    return;
+}
+
+if ($method === 'POST' && $path === '/user/withdrawal/request') {
+    $payload = $input();
+
+    if (! $state['logged_in']) {
+        $json([
+            'code' => 0,
+            'msg' => 'not logged in',
+        ]);
+        return;
+    }
+
+    if (! is_numeric($payload['amount'] ?? null) || (float) $payload['amount'] <= 0) {
+        $json([
+            'code' => 0,
+            'msg' => 'Withdrawal amount must be positive.',
+        ]);
+        return;
+    }
+
+    $json([
+        'code' => 1,
+        'msg' => 'withdrawal requested',
+        'data' => [
+            'status' => 'pending_review',
+        ],
+    ]);
+    return;
+}
+
 http_response_code(404);
 echo 'Not Found';

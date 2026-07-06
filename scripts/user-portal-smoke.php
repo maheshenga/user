@@ -319,6 +319,18 @@ function runSmoke(): void
         pass("GET {$path}");
     }
 
+    $response = $client->request('POST', '/user/activation-code/redeem', [
+        'code' => '',
+    ]);
+    expectJsonCode($response, 0, 'POST /user/activation-code/redeem');
+    pass('POST /user/activation-code/redeem');
+
+    $response = $client->request('POST', '/user/withdrawal/request', [
+        'amount' => '0',
+    ]);
+    expectJsonCode($response, 0, 'POST /user/withdrawal/request');
+    pass('POST /user/withdrawal/request');
+
     $response = $client->request('POST', '/user/logout');
     expectJsonCode($response, 1, 'POST /user/logout');
     pass('POST /user/logout');
