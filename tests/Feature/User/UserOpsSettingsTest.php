@@ -141,7 +141,26 @@ class UserOpsSettingsTest extends TestCase
         ]);
 
         $response->assertOk()->assertJsonPath('code', 0);
-        $response->assertJsonFragment(['msg' => 'Withdrawal max amount must be zero or greater than min amount.']);
+        $response->assertJsonFragment(['msg' => '最大提现金额必须为 0，或大于等于最小提现金额。']);
+    }
+
+    public function test_user_ops_settings_validation_messages_are_chinese(): void
+    {
+        $settings = app(\App\User\UserOpsSettings::class);
+
+        try {
+            $settings->validateForSave(['password_reset_expires_minutes' => 'abc']);
+            $this->fail('Expected invalid integer exception.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('找回密码有效分钟数必须是整数。', $exception->getMessage());
+        }
+
+        try {
+            $settings->validateForSave(['withdrawal_min_amount' => '-1']);
+            $this->fail('Expected invalid money exception.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('最小提现金额必须是非负金额。', $exception->getMessage());
+        }
     }
 
     public function test_user_ops_menu_sync_adds_settings_entry(): void
@@ -208,7 +227,7 @@ class UserOpsSettingsTest extends TestCase
         ]);
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Withdrawal amount must be at least 10.00.');
+        $this->expectExceptionMessage('提现金额不能低于 10.00。');
 
         app(WithdrawalService::class)->request((int) $user->id, '5.00', ['account' => 'bank'], '127.0.0.1');
     }
@@ -226,7 +245,7 @@ class UserOpsSettingsTest extends TestCase
         ]);
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Withdrawal amount must be at most 100.00.');
+        $this->expectExceptionMessage('提现金额不能高于 100.00。');
 
         app(WithdrawalService::class)->request((int) $user->id, '120.00', ['account' => 'bank'], '127.0.0.1');
     }

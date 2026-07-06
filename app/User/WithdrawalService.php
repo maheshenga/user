@@ -283,12 +283,12 @@ final class WithdrawalService
     {
         $min = $this->settings->withdrawalMinAmount();
         if ($this->compare($amount, $min) < 0) {
-            throw new InvalidArgumentException("Withdrawal amount must be at least {$min}.");
+            throw new InvalidArgumentException("提现金额不能低于 {$min}。");
         }
 
         $max = $this->settings->withdrawalMaxAmount();
         if ($this->compare($max, '0.00') > 0 && $this->compare($amount, $max) > 0) {
-            throw new InvalidArgumentException("Withdrawal amount must be at most {$max}.");
+            throw new InvalidArgumentException("提现金额不能高于 {$max}。");
         }
     }
 
