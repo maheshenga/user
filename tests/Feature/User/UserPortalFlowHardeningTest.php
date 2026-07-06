@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\User;
 
+use App\User\UserAuthService;
 use Tests\TestCase;
 
 class UserPortalFlowHardeningTest extends TestCase
@@ -76,6 +77,40 @@ class UserPortalFlowHardeningTest extends TestCase
             ->assertOk()
             ->assertJsonPath('code', 0)
             ->assertJsonPath('msg', '请先登录。');
+    }
+
+    public function test_dashboard_summary_requires_user_login(): void
+    {
+        $this->getJson('/user/dashboard/summary')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '请先登录。');
+    }
+
+    public function test_dashboard_summary_returns_all_first_load_panels(): void
+    {
+        $registered = app(UserAuthService::class)->register([
+            'email' => 'summary@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $this->withSession(['user' => $registered['user']])
+            ->getJson('/user/dashboard/summary')
+            ->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('msg', '仪表盘概览')
+            ->assertJsonPath('data.user.email', 'summary@example.com')
+            ->assertJsonStructure([
+                'data' => [
+                    'user',
+                    'vip',
+                    'balance',
+                    'ledger',
+                    'withdrawals',
+                    'invite',
+                    'inviteRecords',
+                ],
+            ]);
     }
 
     public function test_portal_forms_disable_submit_controls_while_request_is_pending(): void

@@ -8,6 +8,7 @@
             <span data-current-user-label>{{ $currentUser['nickname'] ?? $currentUser['email'] ?? $currentUser['mobile'] ?? '未登录' }}</span>
         </div>
         <div data-dashboard-endpoints
+             data-summary="/user/dashboard/summary"
              data-session="/user/session"
              data-vip="/user/vip"
              data-balance="/user/balance"

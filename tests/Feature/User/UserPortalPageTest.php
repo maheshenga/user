@@ -68,6 +68,7 @@ class UserPortalPageTest extends TestCase
             ->assertSee('控制台')
             ->assertSee('data-user-session', false)
             ->assertSee('data-dashboard-endpoints', false)
+            ->assertSee('data-summary="/user/dashboard/summary"', false)
             ->assertSee('data-session="/user/session"', false)
             ->assertSee('data-vip="/user/vip"', false)
             ->assertSee('data-balance="/user/balance"', false)
@@ -84,6 +85,16 @@ class UserPortalPageTest extends TestCase
             ->assertSee('data-dashboard-render="invite"', false)
             ->assertSee('data-dashboard-render="inviteRecords"', false)
             ->assertSee('data-dashboard-render="withdrawals"', false);
+    }
+
+    public function test_dashboard_first_load_uses_summary_endpoint_hook(): void
+    {
+        $script = file_get_contents(public_path('static/user/js/portal.js'));
+
+        $this->assertStringContainsString('summary: element.dataset.summary', $script);
+        $this->assertStringContainsString('loadDashboardSummary(endpoints)', $script);
+        $this->assertStringContainsString("renderSummaryBox('vip', data.vip)", $script);
+        $this->assertStringContainsString("renderSummaryBox('inviteRecords', data.inviteRecords)", $script);
     }
 
     public function test_dashboard_embeds_current_session_user_when_logged_in(): void

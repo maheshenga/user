@@ -44,6 +44,7 @@ Route::middleware([CheckInstall::class, 'throttle:20,1'])->prefix('user')->group
     Route::post('/login', [\App\Http\Controllers\user\AuthController::class, 'login']);
     Route::post('/logout', [\App\Http\Controllers\user\AuthController::class, 'logout']);
     Route::get('/session', [\App\Http\Controllers\user\AuthController::class, 'session']);
+    Route::get('/dashboard/summary', [\App\Http\Controllers\user\DashboardController::class, 'summary']);
     Route::post('/password/forgot', [\App\Http\Controllers\user\AuthController::class, 'forgotPassword']);
     Route::post('/password/reset', [\App\Http\Controllers\user\AuthController::class, 'resetPassword']);
     Route::get('/vip', [\App\Http\Controllers\user\VipController::class, 'summary']);

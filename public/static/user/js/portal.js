@@ -226,6 +226,7 @@
             return {};
         }
         return {
+            summary: element.dataset.summary,
             session: element.dataset.session,
             vip: element.dataset.vip,
             balance: element.dataset.balance,
@@ -237,6 +238,47 @@
             withdrawalRequest: element.dataset.withdrawalRequest,
             logout: element.dataset.logout,
         };
+    }
+
+    function renderSummaryBox(name, data) {
+        const box = document.querySelector(`[data-dashboard-box="${name}"]`);
+        if (!box) {
+            return;
+        }
+
+        const rendererName = box.dataset.dashboardRender || name;
+        const renderer = renderers[rendererName];
+        if (renderer) {
+            box.innerHTML = renderer(data || {});
+            return;
+        }
+
+        box.textContent = pretty(data || {});
+    }
+
+    async function loadDashboardSummary(endpoints) {
+        if (!endpoints.summary) {
+            return false;
+        }
+
+        try {
+            const result = await request(endpoints.summary);
+            if (Number(result.code) !== 1) {
+                return false;
+            }
+
+            const data = result.data || {};
+            renderSummaryBox('vip', data.vip);
+            renderSummaryBox('balance', data.balance);
+            renderSummaryBox('ledger', data.ledger);
+            renderSummaryBox('withdrawals', data.withdrawals);
+            renderSummaryBox('invite', data.invite);
+            renderSummaryBox('inviteRecords', data.inviteRecords);
+
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
     async function loadBox(name, endpoint) {
@@ -318,8 +360,14 @@
                 return;
             }
 
-            ['vip', 'balance', 'ledger', 'withdrawals', 'invite', 'inviteRecords'].forEach((name) => {
-                loadBox(name, endpoints[name]);
+            loadDashboardSummary(endpoints).then((loaded) => {
+                if (loaded) {
+                    return;
+                }
+
+                ['vip', 'balance', 'ledger', 'withdrawals', 'invite', 'inviteRecords'].forEach((name) => {
+                    loadBox(name, endpoints[name]);
+                });
             });
         });
 
