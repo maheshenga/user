@@ -261,6 +261,29 @@ function expectJsonCode(array $response, int $code, string $label): void
 }
 
 /**
+ * @return list<string>
+ */
+function expectedUserOpsPaths(): array
+{
+    return [
+        'user/dashboard/index',
+        'user/account/index',
+        'user/invite/index',
+        'user/invite/relations',
+        'user/vip-plan/index',
+        'user/activation-code/index',
+        'user/activation-code/redemptions',
+        'user/balance/index',
+        'user/commission/index',
+        'user/withdrawal/index',
+        'user/risk-event/index',
+        'user/security-log/index',
+        'user/notification-outbox/index',
+        'user/settings/index',
+    ];
+}
+
+/**
  * @param array<string, mixed> $payload
  */
 function expectMenu(array $payload, string $adminPrefix): void
@@ -271,8 +294,10 @@ function expectMenu(array $payload, string $adminPrefix): void
         throw new AdminSmokeFailure('Menu response missing 用户运营.');
     }
 
-    if (! menuContainsHref($userOpsMenu, 'user/dashboard/index', $adminPrefix)) {
-        throw new AdminSmokeFailure('Menu response missing user/dashboard/index under 用户运营.');
+    foreach (expectedUserOpsPaths() as $path) {
+        if (! menuContainsHref($userOpsMenu, $path, $adminPrefix)) {
+            throw new AdminSmokeFailure("Menu response missing {$path} under 用户运营.");
+        }
     }
 }
 
@@ -448,13 +473,7 @@ function runAdminSmoke(): void
     expectDashboardMetrics($response['json'] ?? []);
     pass('GET /' . $prefix . '/user/dashboard/index JSON metrics');
 
-    foreach ([
-        'user/dashboard/index',
-        'user/account/index',
-        'user/withdrawal/index',
-        'user/risk-event/index',
-        'user/notification-outbox/index',
-    ] as $path) {
+    foreach (expectedUserOpsPaths() as $path) {
         $response = $client->request('GET', adminPath($prefix, $path));
         expectStatus($response, [200], 'GET /' . $prefix . '/' . $path);
         expectAdminPageBody($response, 'GET /' . $prefix . '/' . $path);

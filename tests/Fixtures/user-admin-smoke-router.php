@@ -58,6 +58,39 @@ $isJsonRequest = static function (): bool {
     return str_contains(strtolower($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json');
 };
 
+$userOpsChildren = static function (string $mode): array {
+    $paths = [
+        'user/dashboard/index' => '运营概览',
+        'user/account/index' => '用户账号',
+        'user/invite/index' => '邀请码',
+        'user/invite/relations' => '邀请关系',
+        'user/vip-plan/index' => 'VIP 套餐',
+        'user/activation-code/index' => '激活码',
+        'user/activation-code/redemptions' => '激活记录',
+        'user/balance/index' => '余额流水',
+        'user/commission/index' => '分销佣金',
+        'user/withdrawal/index' => '提现审核',
+        'user/risk-event/index' => '风控事件',
+        'user/security-log/index' => '安全日志',
+        'user/notification-outbox/index' => '通知队列',
+        'user/settings/index' => '设置',
+    ];
+
+    if ($mode === 'missing-dashboard-link' || $mode === 'dashboard-link-outside-user-ops') {
+        unset($paths['user/dashboard/index']);
+    }
+
+    if ($mode === 'missing-settings-link') {
+        unset($paths['user/settings/index']);
+    }
+
+    return array_map(
+        static fn (string $path, string $title): array => ['title' => $title, 'href' => '/admin/' . $path],
+        array_keys($paths),
+        array_values($paths)
+    );
+};
+
 if ($method === 'GET' && $path === '/admin/login') {
     $html('Admin Login');
     return;
@@ -105,22 +138,7 @@ if ($method === 'GET' && $path === '/admin/ajax/initAdmin') {
     $menuInfo = [];
 
     if ($mode !== 'missing-menu') {
-        $children = [
-            ['title' => '运营概览', 'href' => '/admin/user/dashboard/index'],
-            ['title' => '用户账号', 'href' => '/admin/user/account/index'],
-        ];
-
-        if ($mode === 'missing-dashboard-link') {
-            $children = [
-                ['title' => '用户账号', 'href' => '/admin/user/account/index'],
-            ];
-        }
-
-        if ($mode === 'dashboard-link-outside-user-ops') {
-            $children = [
-                ['title' => '用户账号', 'href' => '/admin/user/account/index'],
-            ];
-        }
+        $children = $userOpsChildren($mode);
 
         $menuInfo[] = [
             'title' => '用户运营',
@@ -173,13 +191,12 @@ if ($method === 'GET' && $path === '/admin/user/dashboard/index' && $isJsonReque
     return;
 }
 
-if ($method === 'GET' && in_array($path, [
-    '/admin/user/dashboard/index',
-    '/admin/user/account/index',
-    '/admin/user/withdrawal/index',
-    '/admin/user/risk-event/index',
-    '/admin/user/notification-outbox/index',
-], true)) {
+$userOpsPagePaths = array_values(array_filter(array_map(
+    static fn (array $child): ?string => parse_url($child['href'], PHP_URL_PATH) ?: null,
+    $userOpsChildren('')
+)));
+
+if ($method === 'GET' && in_array($path, $userOpsPagePaths, true)) {
     if ($mode === 'page-error' && $path === '/admin/user/account/index') {
         header('Content-Type: text/html; charset=UTF-8');
         echo '<!doctype html><html><body><div class="system-message error"><h1>No permission</h1></div></body></html>';
