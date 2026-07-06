@@ -42,6 +42,18 @@ class UserPortalSmokeScriptTest extends TestCase
         $this->assertStringContainsString('Session response missing matching user email', $output);
     }
 
+    public function test_user_portal_smoke_script_accepts_space_separated_option_values(): void
+    {
+        $baseUrl = $this->startFixtureServer();
+
+        $process = $this->runSmokeScript($baseUrl, useEqualsSyntax: false);
+        $output = $process->getOutput() . $process->getErrorOutput();
+
+        $this->assertSame(0, $process->getExitCode(), $output);
+        $this->assertStringContainsString('OK user portal smoke passed', $output);
+        $this->assertStringContainsString('/user/session logged in', $output);
+    }
+
     private function startFixtureServer(?string $mode = null): string
     {
         $port = $this->getFreePort();
@@ -90,16 +102,33 @@ class UserPortalSmokeScriptTest extends TestCase
         $this->fail('Fixture server did not become ready: ' . $this->serverProcess->getErrorOutput());
     }
 
-    private function runSmokeScript(string $baseUrl): Process
+    private function runSmokeScript(string $baseUrl, bool $useEqualsSyntax = true): Process
     {
-        $process = new Process([
-            PHP_BINARY,
-            base_path('scripts/user-portal-smoke.php'),
-            "--base-url={$baseUrl}",
-            '--email=smoke-success@example.com',
-            '--password=secret123',
-            '--timeout=5',
-        ], base_path());
+        $arguments = [PHP_BINARY, base_path('scripts/user-portal-smoke.php')];
+
+        if ($useEqualsSyntax) {
+            array_push(
+                $arguments,
+                "--base-url={$baseUrl}",
+                '--email=smoke-success@example.com',
+                '--password=secret123',
+                '--timeout=5'
+            );
+        } else {
+            array_push(
+                $arguments,
+                '--base-url',
+                $baseUrl,
+                '--email',
+                'smoke-success@example.com',
+                '--password',
+                'secret123',
+                '--timeout',
+                '5'
+            );
+        }
+
+        $process = new Process($arguments, base_path());
         $process->setTimeout(10);
         $process->run();
 

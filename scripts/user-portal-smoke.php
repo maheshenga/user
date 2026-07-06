@@ -13,9 +13,9 @@ function parseOptions(array $argv): array
 {
     $options = getopt('', [
         'base-url:',
-        'email::',
-        'password::',
-        'timeout::',
+        'email:',
+        'password:',
+        'timeout:',
     ]);
 
     if ($options === false || ! isset($options['base-url']) || ! is_string($options['base-url'])) {
