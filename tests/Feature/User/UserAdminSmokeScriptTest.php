@@ -33,6 +33,26 @@ class UserAdminSmokeScriptTest extends TestCase
         $this->assertStringContainsString('PASS POST /admin/user/account/modify status endpoint guards', $output);
     }
 
+    public function test_user_admin_smoke_operator_guide_documents_command_and_scope(): void
+    {
+        $docPath = base_path('docs/operations/user-admin-smoke.md');
+        $this->assertFileExists($docPath);
+
+        $doc = file_get_contents($docPath);
+        $this->assertIsString($doc);
+        $this->assertStringContainsString('composer run smoke:user-admin --', $doc);
+        $this->assertStringContainsString('--base-url=http://127.0.0.1:8000', $doc);
+        $this->assertStringContainsString('--admin-prefix=admin', $doc);
+        $this->assertStringContainsString('--username=admin', $doc);
+        $this->assertStringContainsString('--password=123456', $doc);
+        $this->assertStringContainsString('用户运营', $doc);
+        $this->assertStringContainsString('账号状态管理', $doc);
+        $this->assertStringContainsString('/static/admin/js/user/account.js', $doc);
+        $this->assertStringContainsString('/admin/user/account/modify', $doc);
+        $this->assertStringContainsString('status endpoint guards', $doc);
+        $this->assertStringContainsString('OK user admin smoke passed', $doc);
+    }
+
     public function test_user_admin_smoke_script_accepts_space_separated_option_values(): void
     {
         $baseUrl = $this->startFixtureServer();
