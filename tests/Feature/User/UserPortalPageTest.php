@@ -94,4 +94,18 @@ class UserPortalPageTest extends TestCase
             ->assertSee('portal@example.com')
             ->assertSee('"id":42', false);
     }
+
+    public function test_dashboard_renderer_supports_current_user_api_payload_shapes(): void
+    {
+        $script = file_get_contents(public_path('static/user/js/portal.js'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('Array.isArray(data)', $script);
+        $this->assertStringContainsString('data.active', $script);
+        $this->assertStringContainsString('data.direct_count', $script);
+        $this->assertStringContainsString('data.second_level_count', $script);
+        $this->assertStringContainsString('account_snapshot_json', $script);
+        $this->assertStringContainsString('payout_transaction_id', $script);
+        $this->assertStringContainsString('paid_at', $script);
+    }
 }

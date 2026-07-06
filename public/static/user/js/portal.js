@@ -52,14 +52,29 @@
         return `<div class="summary-list">${items.map(renderer).join('')}</div>`;
     }
 
+    function listFromPayload(data, keys) {
+        if (Array.isArray(data)) {
+            return data;
+        }
+
+        for (const key of keys) {
+            if (Array.isArray(data?.[key])) {
+                return data[key];
+            }
+        }
+
+        return [];
+    }
+
     const renderers = {
         vip(data) {
             const user = data.user || data.vip || data;
             return [
                 row('VIP Level', user.vip_level ?? user.level),
-                row('Status', user.vip_status ?? user.status),
+                row('Status', user.vip_status ?? user.status ?? (data.active === true ? 'active' : data.active === false ? 'inactive' : undefined)),
                 row('Started At', user.vip_started_at ?? user.started_at),
-                row('Expired At', user.vip_expired_at ?? user.expired_at),
+                row('Expired At', user.vip_expired_at ?? user.expired_at ?? data.vip_expires_at),
+                row('Active Records', data.record_count),
                 rawFallback(data),
             ].join('');
         },
@@ -73,7 +88,7 @@
             ].join('');
         },
         ledger(data) {
-            const rows = data.rows || data.list || data.ledger || [];
+            const rows = listFromPayload(data, ['rows', 'list', 'ledger']);
             return renderList(rows, 'No balance ledger records.', (item) => [
                 '<article class="summary-item">',
                 row('Amount', item.amount),
@@ -88,28 +103,36 @@
             return [
                 row('Invite Code', code.code ?? data.code),
                 row('Invite URL', code.url ?? data.invite_url),
-                row('Level 1 Total', data.level1_total ?? data.first_level_total),
-                row('Level 2 Total', data.level2_total ?? data.second_level_total),
+                row('Level 1 Total', data.direct_count ?? data.level1_total ?? data.first_level_total),
+                row('Level 2 Total', data.second_level_count ?? data.level2_total ?? data.second_level_total),
                 rawFallback(data),
             ].join('');
         },
         inviteRecords(data) {
-            const rows = data.rows || data.list || data.records || [];
+            const rows = listFromPayload(data, ['rows', 'list', 'records']);
             return renderList(rows, 'No invite records.', (item) => [
                 '<article class="summary-item">',
                 row('User', item.email ?? item.mobile ?? item.nickname ?? item.user_id),
-                row('Level', item.level),
+                row('Status', item.status),
+                row('Path', item.level_path ?? item.level),
                 row('Registered At', item.registered_at ?? item.create_time),
                 '</article>',
             ].join('')) + rawFallback(data);
         },
         withdrawals(data) {
-            const rows = data.rows || data.list || data.withdrawals || [];
+            const rows = listFromPayload(data, ['rows', 'list', 'withdrawals']);
             return renderList(rows, 'No withdrawal records.', (item) => [
                 '<article class="summary-item">',
+                row('No.', item.withdrawal_no ?? item.id),
                 row('Amount', item.amount),
                 row('Status', item.status),
-                row('Account', item.account_no ?? item.account?.account_no),
+                row('Account', item.account_no ?? item.account?.account_no ?? item.account_snapshot_json?.account_no),
+                row('Review Reason', item.reason),
+                row('Audited At', item.audited_at ?? item.approved_at),
+                row('Payout Method', item.payout_method),
+                row('Payout Transaction', item.payout_transaction_id),
+                row('Payout Error', item.payout_error),
+                row('Paid At', item.paid_at),
                 row('Requested At', item.create_time ?? item.created_at),
                 '</article>',
             ].join('')) + rawFallback(data);
