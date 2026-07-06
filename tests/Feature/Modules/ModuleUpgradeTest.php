@@ -62,7 +62,7 @@ class ModuleUpgradeTest extends TestCase
             app(ModuleUpgrader::class)->upgradeLocal('blog');
             $this->fail('Expected local upgrade to reject non-increasing versions.');
         } catch (\InvalidArgumentException $exception) {
-            $this->assertStringContainsString('must be greater', $exception->getMessage());
+            $this->assertStringContainsString('必须大于当前版本 [1.0.0]', $exception->getMessage());
         }
     }
 
@@ -107,7 +107,7 @@ class ModuleUpgradeTest extends TestCase
             app(ModuleUpgrader::class)->upgradeLocal('blog');
             $this->fail('Expected local upgrade to reject manifest name mismatch.');
         } catch (\InvalidArgumentException $exception) {
-            $this->assertStringContainsString('Expected module [blog], got [shop].', $exception->getMessage());
+            $this->assertStringContainsString('期望模块 [blog]，实际为 [shop]。', $exception->getMessage());
         }
 
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
@@ -135,7 +135,7 @@ class ModuleUpgradeTest extends TestCase
             app(ModuleUpgrader::class)->upgradeLocal('blog');
             $this->fail('Expected local upgrade to reject a busy module lock.');
         } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('already upgrading', $exception->getMessage());
+            $this->assertStringContainsString('模块 [blog] 正在升级中，请稍后再试。', $exception->getMessage());
         } finally {
             flock($lock, LOCK_UN);
             fclose($lock);
@@ -190,7 +190,7 @@ class ModuleUpgradeTest extends TestCase
             app(ModuleUpgrader::class)->upgradeZip($zipPath, 'shop');
             $this->fail('Expected zip upgrade to reject expected name mismatch.');
         } catch (\InvalidArgumentException $exception) {
-            $this->assertStringContainsString('Expected module [shop], got [blog].', $exception->getMessage());
+            $this->assertStringContainsString('期望模块 [shop]，实际为 [blog]。', $exception->getMessage());
         }
 
         $this->assertSame($before, $this->moduleTmpDirectories());
@@ -280,7 +280,7 @@ class ModuleUpgradeTest extends TestCase
             app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
             $this->fail('Expected zip install to reject existing target directory.');
         } catch (\RuntimeException|\InvalidArgumentException $exception) {
-            $this->assertStringContainsString('already exists', $exception->getMessage());
+            $this->assertStringContainsString('模块目标目录已存在', $exception->getMessage());
         }
 
         $this->assertFileExists($target.DIRECTORY_SEPARATOR.'keep.txt');

@@ -100,7 +100,7 @@ class ModuleLifecycleTest extends TestCase
         );
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('must be approved before install');
+        $this->expectExceptionMessage('模块 [blog] 必须先通过审核才能安装。');
 
         app(\App\Modules\ModuleInstaller::class)->install('blog');
     }
@@ -177,7 +177,7 @@ class ModuleLifecycleTest extends TestCase
         app(\App\Modules\ModuleRepository::class)->upsertDiscovered(app(\App\Modules\ModuleManager::class)->manifest('blog'));
 
         $this->artisan('module:enable', ['name' => 'blog'])
-            ->expectsOutputToContain('cannot be enabled from status [pending_review]')
+            ->expectsOutputToContain('模块 [blog] 当前状态 [pending_review] 不允许启用。')
             ->assertExitCode(1);
 
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'pending_review']);

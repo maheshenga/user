@@ -105,7 +105,7 @@ final class ModuleRepository
         $module = SystemModule::query()->where('name', $name)->firstOrFail();
         $oldState = (string) $module->status;
         if (! in_array($oldState, ['pending_review', 'rejected'], true)) {
-            throw new \InvalidArgumentException("Module [{$name}] cannot be approved from status [{$oldState}]");
+            throw new \InvalidArgumentException("模块 [{$name}] 当前状态 [{$oldState}] 不允许审核通过。");
         }
 
         $module->update([
@@ -121,7 +121,7 @@ final class ModuleRepository
         $module = SystemModule::query()->where('name', $name)->firstOrFail();
         $oldState = (string) $module->status;
         if (! in_array($oldState, ['pending_review', 'approved'], true)) {
-            throw new \InvalidArgumentException("Module [{$name}] cannot be rejected from status [{$oldState}]");
+            throw new \InvalidArgumentException("模块 [{$name}] 当前状态 [{$oldState}] 不允许审核拒绝。");
         }
 
         $module->update([

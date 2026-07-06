@@ -168,7 +168,7 @@ class ModuleCenterControllerTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('code', 0)
-            ->assertJsonPath('msg', 'Module not installed: missing');
+            ->assertJsonPath('msg', '模块未安装：missing');
     }
 
     public function test_admin_can_approve_pending_module(): void

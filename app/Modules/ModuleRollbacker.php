@@ -26,12 +26,12 @@ final class ModuleRollbacker
     {
         $module = $this->repository->installed($name);
         if ($module === null) {
-            throw new InvalidArgumentException("Module not installed: {$name}");
+            throw new InvalidArgumentException("模块未安装：{$name}");
         }
 
         $status = (string) $module->status;
         if (! in_array($status, ['installed', 'enabled', 'disabled'], true)) {
-            throw new InvalidArgumentException("Module [{$name}] cannot be rolled back from status [{$status}]");
+            throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$status}] 不允许回滚。");
         }
 
         $restoreSource = null;
@@ -54,7 +54,7 @@ final class ModuleRollbacker
 
             $this->migrations->assertMissingReversible($rollbackCurrent, $target);
             if ($this->migrations->missingMigrationCount($rollbackCurrent, $target) > 1) {
-                throw new RuntimeException('Manual rollback required: automatic rollback supports at most one missing migration.');
+                throw new RuntimeException('需要人工回滚：自动回滚最多支持一个缺失迁移。');
             }
 
             $this->migrations->rollbackMissingFrom($rollbackCurrent, $target);
@@ -65,7 +65,7 @@ final class ModuleRollbacker
                 $keepCurrentSource = true;
 
                 throw new RuntimeException(
-                    "Module file replacement failed after migration rollback; current files kept at [{$currentSource}]: {$exception->getMessage()}",
+                    "迁移回滚后替换模块文件失败；当前文件已保留在 [{$currentSource}]：{$exception->getMessage()}",
                     0,
                     $exception
                 );
@@ -128,13 +128,13 @@ final class ModuleRollbacker
             return $path;
         }
 
-        throw new RuntimeException("No backup found for module: {$name}");
+        throw new RuntimeException("未找到模块备份：{$name}");
     }
 
     private function assertManifestName(ModuleManifest $manifest, string $expectedName): void
     {
         if ($manifest->name() !== $expectedName) {
-            throw new InvalidArgumentException("Expected module [{$expectedName}], got [{$manifest->name()}].");
+            throw new InvalidArgumentException("期望模块 [{$expectedName}]，实际为 [{$manifest->name()}]。");
         }
     }
 
@@ -151,13 +151,13 @@ final class ModuleRollbacker
     {
         $dir = storage_path('modules/locks');
         if (! is_dir($dir) && ! mkdir($dir, 0777, true) && ! is_dir($dir)) {
-            throw new RuntimeException("Unable to create module lock directory: {$dir}");
+            throw new RuntimeException("无法创建模块锁目录：{$dir}");
         }
 
         $path = $dir.DIRECTORY_SEPARATOR.$this->safeLockSegment($module).'.lock';
         $handle = fopen($path, 'c');
         if ($handle === false) {
-            throw new RuntimeException("Unable to open module lock: {$path}");
+            throw new RuntimeException("无法打开模块锁：{$path}");
         }
 
         try {
@@ -176,7 +176,7 @@ final class ModuleRollbacker
                 usleep(50_000);
             } while (microtime(true) < $deadline);
 
-            throw new RuntimeException("Module [{$module}] is already upgrading.");
+            throw new RuntimeException("模块 [{$module}] 正在升级中，请稍后再试。");
         } finally {
             fclose($handle);
         }

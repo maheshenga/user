@@ -21,7 +21,7 @@ final class ModuleInstaller
     {
         $manifest = $this->manager->manifest($name);
         if ($manifest === null) {
-            throw new InvalidArgumentException("Module not found: {$name}");
+            throw new InvalidArgumentException("模块不存在：{$name}");
         }
 
         $current = $this->repository->installed($name);
@@ -35,7 +35,7 @@ final class ModuleInstaller
 
         $this->runLifecycleAction('install', $name, $oldState, $newState, $actorId, function () use ($current, $manifest, $name, $newState): void {
             if ($current !== null && in_array($current->status, ['pending_review', 'rejected'], true)) {
-                throw new InvalidArgumentException("Module [{$name}] must be approved before install.");
+                throw new InvalidArgumentException("模块 [{$name}] 必须先通过审核才能安装。");
             }
 
             $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $name);
@@ -54,13 +54,13 @@ final class ModuleInstaller
 
         $this->runLifecycleAction('enable', $name, $oldState, 'enabled', $actorId, function () use ($module, $name): void {
             if ($module === null) {
-                throw new InvalidArgumentException("Module not installed: {$name}");
+                throw new InvalidArgumentException("模块未安装：{$name}");
             }
 
             $this->reservedPrefixes->assertAllowed((string) $module->admin_prefix, $name);
 
             if (! in_array($module->status, ['installed', 'disabled'], true)) {
-                throw new InvalidArgumentException("Module [{$name}] cannot be enabled from status [{$module->status}]");
+                throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$module->status}] 不允许启用。");
             }
 
             $this->repository->setStatus($name, 'enabled');
@@ -74,11 +74,11 @@ final class ModuleInstaller
 
         $this->runLifecycleAction('disable', $name, $oldState, 'disabled', $actorId, function () use ($module, $name): void {
             if ($module === null) {
-                throw new InvalidArgumentException("Module not installed: {$name}");
+                throw new InvalidArgumentException("模块未安装：{$name}");
             }
 
             if ($module->status !== 'enabled') {
-                throw new InvalidArgumentException("Module [{$name}] cannot be disabled from status [{$module->status}]");
+                throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$module->status}] 不允许禁用。");
             }
 
             $this->repository->setStatus($name, 'disabled');
@@ -92,11 +92,11 @@ final class ModuleInstaller
 
         $this->runLifecycleAction('uninstall', $name, $oldState, 'uninstalled', $actorId, function () use ($module, $name): void {
             if ($module === null) {
-                throw new InvalidArgumentException("Module not installed: {$name}");
+                throw new InvalidArgumentException("模块未安装：{$name}");
             }
 
             if (! in_array($module->status, ['installed', 'disabled', 'enabled'], true)) {
-                throw new InvalidArgumentException("Module [{$name}] cannot be uninstalled from status [{$module->status}]");
+                throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$module->status}] 不允许卸载。");
             }
 
             $this->repository->setStatus($name, 'uninstalled');

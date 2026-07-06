@@ -135,7 +135,7 @@ class ModuleRollbackTest extends TestCase
                 app(ModuleRollbacker::class)->rollback('blog');
                 $this->fail("Expected rollback to reject {$status} status.");
             } catch (InvalidArgumentException $exception) {
-                $this->assertStringContainsString("cannot be rolled back from status [{$status}]", $exception->getMessage());
+                $this->assertStringContainsString("模块 [blog] 当前状态 [{$status}] 不允许回滚。", $exception->getMessage());
             }
 
             $this->assertSame('current', file_get_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt'));
@@ -158,13 +158,13 @@ class ModuleRollbackTest extends TestCase
             app(ModuleRollbacker::class)->rollback('blog', 6);
             $this->fail('Expected rollback to require a backup.');
         } catch (RuntimeException $exception) {
-            $this->assertStringContainsString('No backup found', $exception->getMessage());
+            $this->assertStringContainsString('未找到模块备份：blog', $exception->getMessage());
         }
 
         $this->assertDatabaseHas('system_module', [
             'name' => 'blog',
             'version' => '1.0.0',
-            'last_error' => 'No backup found for module: blog',
+            'last_error' => '未找到模块备份：blog',
         ]);
         $this->assertDatabaseHas('system_module_log', [
             'admin_id' => 6,
@@ -186,7 +186,7 @@ class ModuleRollbackTest extends TestCase
             app(ModuleRollbacker::class)->rollback('blog');
             $this->fail('Expected rollback to reject a mismatched backup manifest.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertStringContainsString('Expected module [blog], got [shop].', $exception->getMessage());
+            $this->assertStringContainsString('期望模块 [blog]，实际为 [shop]。', $exception->getMessage());
         }
 
         $this->assertSame('current', file_get_contents($modulePath.DIRECTORY_SEPARATOR.'keep.txt'));
@@ -270,7 +270,7 @@ class ModuleRollbackTest extends TestCase
             app(ModuleRollbacker::class)->rollback('blog');
             $this->fail('Expected rollback to require manual migration rollback.');
         } catch (RuntimeException $exception) {
-            $this->assertStringContainsString('Manual rollback required', $exception->getMessage());
+            $this->assertStringContainsString('需要人工回滚', $exception->getMessage());
         }
 
         $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'current.txt');
@@ -368,7 +368,7 @@ class ModuleRollbackTest extends TestCase
             app(ModuleRollbacker::class)->rollback('blog');
             $this->fail('Expected rollback to reject a busy module lock.');
         } catch (RuntimeException $exception) {
-            $this->assertStringContainsString('already upgrading', $exception->getMessage());
+            $this->assertStringContainsString('模块 [blog] 正在升级中，请稍后再试。', $exception->getMessage());
         } finally {
             flock($lock, LOCK_UN);
             fclose($lock);

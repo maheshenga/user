@@ -51,7 +51,7 @@ final class ModuleUpgrader
 
                     $target = rtrim((string) config('modules.path', base_path('modules')), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.Str::studly($manifest->name());
                     if (file_exists($target)) {
-                        throw new RuntimeException("Module target already exists: {$target}");
+                        throw new RuntimeException("模块目标目录已存在：{$target}");
                     }
 
                     $this->files->replace($target, $extracted);
@@ -90,7 +90,7 @@ final class ModuleUpgrader
     {
         $module = $this->repository->installed($name);
         if ($module === null) {
-            throw new InvalidArgumentException("Module not installed: {$name}");
+            throw new InvalidArgumentException("模块未安装：{$name}");
         }
 
         return $module;
@@ -99,7 +99,7 @@ final class ModuleUpgrader
     private function assertManifestName(ModuleManifest $manifest, string $expectedName): void
     {
         if ($manifest->name() !== $expectedName) {
-            throw new InvalidArgumentException("Expected module [{$expectedName}], got [{$manifest->name()}].");
+            throw new InvalidArgumentException("期望模块 [{$expectedName}]，实际为 [{$manifest->name()}]。");
         }
     }
 
@@ -128,11 +128,11 @@ final class ModuleUpgrader
     private function assertUpgradeable(string $status, string $currentVersion, ModuleManifest $manifest): void
     {
         if (! in_array($status, ['installed', 'enabled', 'disabled'], true)) {
-            throw new InvalidArgumentException("Module [{$manifest->name()}] cannot be upgraded from status [{$status}]");
+            throw new InvalidArgumentException("模块 [{$manifest->name()}] 当前状态 [{$status}] 不允许升级。");
         }
 
         if (version_compare($manifest->version(), $currentVersion, '<=')) {
-            throw new InvalidArgumentException("Module [{$manifest->name()}] version [{$manifest->version()}] must be greater than [{$currentVersion}]");
+            throw new InvalidArgumentException("模块 [{$manifest->name()}] 新版本 [{$manifest->version()}] 必须大于当前版本 [{$currentVersion}]。");
         }
     }
 
@@ -174,13 +174,13 @@ final class ModuleUpgrader
     {
         $dir = storage_path('modules/locks');
         if (! is_dir($dir) && ! mkdir($dir, 0777, true) && ! is_dir($dir)) {
-            throw new RuntimeException("Unable to create module lock directory: {$dir}");
+            throw new RuntimeException("无法创建模块锁目录：{$dir}");
         }
 
         $path = $dir.DIRECTORY_SEPARATOR.$this->safeLockSegment($module).'.lock';
         $handle = fopen($path, 'c');
         if ($handle === false) {
-            throw new RuntimeException("Unable to open module lock: {$path}");
+            throw new RuntimeException("无法打开模块锁：{$path}");
         }
 
         try {
@@ -199,7 +199,7 @@ final class ModuleUpgrader
                 usleep(50_000);
             } while (microtime(true) < $deadline);
 
-            throw new RuntimeException("Module [{$module}] is already upgrading.");
+            throw new RuntimeException("模块 [{$module}] 正在升级中，请稍后再试。");
         } finally {
             fclose($handle);
         }
