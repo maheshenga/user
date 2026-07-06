@@ -265,6 +265,21 @@ class UserAdminAccountControllerTest extends TestCase
         $response->assertSee('Detail User');
     }
 
+    public function test_admin_user_account_index_exposes_status_management_ui_hooks(): void
+    {
+        $response = $this->get('/admin/user/account/index');
+
+        $response->assertOk();
+        $response->assertSee('账号状态管理');
+        $response->assertSee('data-status-endpoint="/admin/user/account/modify"', false);
+        $response->assertSee('data-status-values="pending,active,disabled,frozen"', false);
+        $response->assertSee('待审核');
+        $response->assertSee('正常');
+        $response->assertSee('已禁用');
+        $response->assertSee('已冻结');
+        $response->assertSee('id="userStatusTpl"', false);
+    }
+
     public function test_admin_user_account_modify_allows_status_updates_only(): void
     {
         $user = UserAccount::query()->create([
