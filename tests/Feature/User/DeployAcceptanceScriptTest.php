@@ -141,6 +141,69 @@ class DeployAcceptanceScriptTest extends TestCase
         $this->assertSame(0, $skipped->getExitCode(), $skipped->getOutput() . $skipped->getErrorOutput());
     }
 
+    public function test_deploy_acceptance_rejects_unsafe_production_env(): void
+    {
+        $envFile = $this->writeTempEnv([
+            'APP_KEY=base64:' . base64_encode(str_repeat('a', 32)),
+            'APP_ENV=production',
+            'APP_DEBUG=true',
+            'APP_URL=https://example.com',
+            'APP_LOCALE=en',
+            'SESSION_ENCRYPT=false',
+            'DB_CONNECTION=mysql',
+            'DB_USERNAME=root',
+            'DB_PASSWORD=root',
+        ]);
+
+        try {
+            $process = $this->runDeployAcceptance([
+                '--skip-migrate',
+                '--skip-menu-sync',
+                '--skip-portal',
+                '--skip-admin',
+            ], ['DEPLOY_ACCEPTANCE_ENV_FILE' => $envFile]);
+
+            $output = $process->getOutput() . $process->getErrorOutput();
+
+            $this->assertNotSame(0, $process->getExitCode(), $output);
+            $this->assertStringContainsString('APP_DEBUG must be false in production.', $output);
+        } finally {
+            @unlink($envFile);
+        }
+    }
+
+    public function test_deploy_acceptance_accepts_hardened_production_env(): void
+    {
+        $envFile = $this->writeTempEnv([
+            'APP_KEY=base64:' . base64_encode(str_repeat('a', 32)),
+            'APP_ENV=production',
+            'APP_DEBUG=false',
+            'APP_URL=https://example.com',
+            'APP_LOCALE=zh_CN',
+            'SESSION_ENCRYPT=true',
+            'DB_CONNECTION=mysql',
+            'DB_USERNAME=easyadmin_prod',
+            'DB_PASSWORD=change_me_to_a_strong_password',
+        ]);
+
+        try {
+            $process = $this->runDeployAcceptance([
+                '--skip-migrate',
+                '--skip-menu-sync',
+                '--skip-portal',
+                '--skip-admin',
+            ], ['DEPLOY_ACCEPTANCE_ENV_FILE' => $envFile]);
+
+            $output = $process->getOutput() . $process->getErrorOutput();
+
+            $this->assertSame(0, $process->getExitCode(), $output);
+            $this->assertStringContainsString('PASS env APP_KEY present', $output);
+            $this->assertStringContainsString('PASS env production hardening', $output);
+        } finally {
+            @unlink($envFile);
+        }
+    }
+
     /**
      * @param list<string> $arguments
      * @param array<string, string> $environment
@@ -160,6 +223,17 @@ class DeployAcceptanceScriptTest extends TestCase
     private function recordFile(): string
     {
         return sys_get_temp_dir() . '/deploy-acceptance-' . bin2hex(random_bytes(6)) . '.jsonl';
+    }
+
+    /**
+     * @param list<string> $lines
+     */
+    private function writeTempEnv(array $lines): string
+    {
+        $path = sys_get_temp_dir() . '/deploy-env-' . bin2hex(random_bytes(6));
+        file_put_contents($path, implode(PHP_EOL, $lines) . PHP_EOL);
+
+        return $path;
     }
 
     /**

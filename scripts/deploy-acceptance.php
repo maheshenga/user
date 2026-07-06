@@ -119,9 +119,80 @@ function dryRunDeploymentCheck(string $message): void
     fwrite(STDOUT, "DRY-RUN {$message}\n");
 }
 
+function deploymentEnvPath(): string
+{
+    $override = getenv('DEPLOY_ACCEPTANCE_ENV_FILE');
+
+    if (is_string($override) && trim($override) !== '') {
+        return $override;
+    }
+
+    return projectRoot() . DIRECTORY_SEPARATOR . '.env';
+}
+
+/**
+ * @return array<string, string>
+ */
+function parseDotEnv(string $contents): array
+{
+    $values = [];
+    $lines = preg_split('/\R/', $contents) ?: [];
+
+    foreach ($lines as $line) {
+        $line = trim($line);
+
+        if ($line === '' || str_starts_with($line, '#') || ! str_contains($line, '=')) {
+            continue;
+        }
+
+        [$key, $value] = explode('=', $line, 2);
+        $key = trim($key);
+
+        if ($key === '') {
+            continue;
+        }
+
+        $values[$key] = trim(trim($value), "\"'");
+    }
+
+    return $values;
+}
+
+/**
+ * @param array<string, string> $env
+ */
+function envValue(array $env, string $key, string $default = ''): string
+{
+    return $env[$key] ?? $default;
+}
+
+/**
+ * @param array<string, string> $env
+ */
+function assertProductionEnvValue(array $env, string $key, string $expected, string $message): void
+{
+    if (strtolower(envValue($env, $key)) !== strtolower($expected)) {
+        throw new DeploymentAcceptanceFailure($message);
+    }
+}
+
+/**
+ * @param array<string, string> $env
+ */
+function assertProductionDatabaseCredentials(array $env): void
+{
+    if (
+        strtolower(envValue($env, 'DB_CONNECTION')) === 'mysql'
+        && strtolower(envValue($env, 'DB_USERNAME')) === 'root'
+        && envValue($env, 'DB_PASSWORD') === 'root'
+    ) {
+        throw new DeploymentAcceptanceFailure('Default root database credentials are not allowed in production.');
+    }
+}
+
 function checkDeploymentEnv(): void
 {
-    $envPath = projectRoot() . DIRECTORY_SEPARATOR . '.env';
+    $envPath = deploymentEnvPath();
 
     if (! is_file($envPath)) {
         throw new DeploymentAcceptanceFailure('Missing .env file.');
@@ -138,6 +209,21 @@ function checkDeploymentEnv(): void
     }
 
     passDeploymentCheck('env APP_KEY present');
+
+    $parsed = parseDotEnv($env);
+
+    if (envValue($parsed, 'APP_ENV') === 'production') {
+        assertProductionEnvValue($parsed, 'APP_DEBUG', 'false', 'APP_DEBUG must be false in production.');
+        assertProductionEnvValue($parsed, 'SESSION_ENCRYPT', 'true', 'SESSION_ENCRYPT must be true in production.');
+        assertProductionEnvValue($parsed, 'APP_LOCALE', 'zh_CN', 'APP_LOCALE must be zh_CN in production.');
+        assertProductionDatabaseCredentials($parsed);
+
+        if (envValue($parsed, 'APP_URL') === '' || envValue($parsed, 'APP_URL') === 'http://localhost') {
+            throw new DeploymentAcceptanceFailure('APP_URL must be a production URL in production.');
+        }
+
+        passDeploymentCheck('env production hardening');
+    }
 }
 
 /**
