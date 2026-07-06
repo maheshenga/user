@@ -132,10 +132,10 @@ class UserInviteTest extends TestCase
         ], '127.0.0.1');
 
         foreach ([
-            [fn (): string => 'missing-code', 'Invite code is invalid.'],
-            [fn (): string => $this->mutatedCode($owner['invite_code']['id'], ['status' => 'disabled']), 'Invite code is not active.'],
-            [fn (): string => $this->mutatedCode($owner['invite_code']['id'], ['expires_at' => Carbon::now()->subMinute()]), 'Invite code is expired.'],
-            [fn (): string => $this->mutatedCode($owner['invite_code']['id'], ['max_uses' => 1, 'used_count' => 1]), 'Invite code usage limit reached.'],
+            [fn (): string => 'missing-code', '邀请码无效。'],
+            [fn (): string => $this->mutatedCode($owner['invite_code']['id'], ['status' => 'disabled']), '邀请码未启用。'],
+            [fn (): string => $this->mutatedCode($owner['invite_code']['id'], ['expires_at' => Carbon::now()->subMinute()]), '邀请码已过期。'],
+            [fn (): string => $this->mutatedCode($owner['invite_code']['id'], ['max_uses' => 1, 'used_count' => 1]), '邀请码使用次数已达上限。'],
         ] as $index => [$codeFactory, $message]) {
             try {
                 $auth->register([
@@ -148,6 +148,59 @@ class UserInviteTest extends TestCase
             } catch (InvalidArgumentException $exception) {
                 $this->assertSame($message, $exception->getMessage());
             }
+        }
+    }
+
+    public function test_self_duplicate_and_circular_invite_relations_return_chinese_errors(): void
+    {
+        $auth = app(UserAuthService::class);
+
+        $parent = $auth->register([
+            'mobile' => '13900000030',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        try {
+            app(InviteService::class)->bindRegistration(
+                UserAccount::query()->findOrFail($parent['user']['id']),
+                $parent['invite_code']['code']
+            );
+            $this->fail('Expected self invite to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('不能邀请自己。', $exception->getMessage());
+        }
+
+        $child = $auth->register([
+            'mobile' => '13900000031',
+            'password' => 'secret123',
+            'invite_code' => $parent['invite_code']['code'],
+        ], '127.0.0.1');
+
+        try {
+            app(InviteService::class)->bindRegistration(
+                UserAccount::query()->findOrFail($child['user']['id']),
+                $parent['invite_code']['code']
+            );
+            $this->fail('Expected duplicate invite relation to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('邀请关系已存在。', $exception->getMessage());
+        }
+
+        $childRelation = UserInviteRelation::query()
+            ->where('user_id', $child['user']['id'])
+            ->firstOrFail();
+        $childRelation->forceFill([
+            'level_path' => $child['user']['id'].'/'.$parent['user']['id'],
+        ])->save();
+
+        try {
+            app(InviteService::class)->bindRegistration(
+                UserAccount::query()->findOrFail($parent['user']['id']),
+                $child['invite_code']['code']
+            );
+            $this->fail('Expected circular invite relation to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('邀请关系不能形成循环。', $exception->getMessage());
         }
     }
 
@@ -198,6 +251,16 @@ class UserInviteTest extends TestCase
         $registerResponse->assertOk()
             ->assertJsonPath('code', 1)
             ->assertJsonPath('data.invite_relation.parent_user_id', $parent['user']['id']);
+
+        $invalidRegisterResponse = $this->postJson('/user/register', [
+            'mobile' => '13900000022',
+            'password' => 'secret123',
+            'invite_code' => 'missing-code',
+        ]);
+
+        $invalidRegisterResponse->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '邀请码无效。');
 
         $summaryResponse = $this
             ->withSession(['user' => ['id' => $parent['user']['id']]])

@@ -50,7 +50,7 @@ final class InviteService
             ]);
         }
 
-        throw new InvalidArgumentException('Unable to generate invite code.');
+        throw new InvalidArgumentException('无法生成邀请码。');
     }
 
     public function bindRegistration(UserAccount $user, ?string $inviteCode): ?UserInviteRelation
@@ -67,18 +67,18 @@ final class InviteService
                 ->first();
 
             if ($code === null) {
-                throw new InvalidArgumentException('Invite code is invalid.');
+                throw new InvalidArgumentException('邀请码无效。');
             }
 
             $this->assertCodeUsable($code);
 
             $parentId = (int) $code->owner_user_id;
             if ($parentId === (int) $user->id) {
-                throw new InvalidArgumentException('User cannot invite self.');
+                throw new InvalidArgumentException('不能邀请自己。');
             }
 
             if (UserInviteRelation::query()->where('user_id', $user->id)->exists()) {
-                throw new InvalidArgumentException('Invite relation already exists.');
+                throw new InvalidArgumentException('邀请关系已存在。');
             }
 
             $parentRelation = UserInviteRelation::query()
@@ -90,7 +90,7 @@ final class InviteService
                 : $parentRelation->level_path.'/'.$parentId;
 
             if ($this->pathContainsUser($levelPath, (int) $user->id)) {
-                throw new InvalidArgumentException('Invite relation cannot be circular.');
+                throw new InvalidArgumentException('邀请关系不能形成循环。');
             }
 
             $now = time();
@@ -195,15 +195,15 @@ final class InviteService
     private function assertCodeUsable(UserInviteCode $code): void
     {
         if ($code->status !== InviteCodeStatus::ACTIVE) {
-            throw new InvalidArgumentException('Invite code is not active.');
+            throw new InvalidArgumentException('邀请码未启用。');
         }
 
         if ($code->expires_at !== null && Carbon::parse($code->expires_at)->isPast()) {
-            throw new InvalidArgumentException('Invite code is expired.');
+            throw new InvalidArgumentException('邀请码已过期。');
         }
 
         if ((int) $code->max_uses > 0 && (int) $code->used_count >= (int) $code->max_uses) {
-            throw new InvalidArgumentException('Invite code usage limit reached.');
+            throw new InvalidArgumentException('邀请码使用次数已达上限。');
         }
     }
 
