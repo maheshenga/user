@@ -6,6 +6,7 @@ use App\Http\Middleware\CheckInstall;
 use App\Http\Middleware\RateLimiting;
 use App\Http\Middleware\SystemLog;
 use App\Models\UserAccount;
+use App\User\UserAccountStatus;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -264,6 +265,75 @@ class UserAdminAccountControllerTest extends TestCase
         $response->assertSee('Detail User');
     }
 
+    public function test_admin_user_account_modify_allows_status_updates_only(): void
+    {
+        $user = UserAccount::query()->create([
+            'mobile' => '13800138012',
+            'email' => 'status-update@example.com',
+            'password' => 'secret123',
+            'nickname' => 'Status User',
+            'status' => UserAccountStatus::ACTIVE,
+        ]);
+
+        $this->postJson('/admin/user/account/modify', [
+            'id' => $user->id,
+            'field' => 'status',
+            'value' => UserAccountStatus::DISABLED,
+        ])->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('msg', '保存成功');
+
+        $this->assertDatabaseHas('user_account', [
+            'id' => $user->id,
+            'status' => UserAccountStatus::DISABLED,
+        ]);
+
+        $this->postJson('/admin/user/account/modify', [
+            'id' => $user->id,
+            'field' => 'status',
+            'value' => UserAccountStatus::ACTIVE,
+        ])->assertOk()
+            ->assertJsonPath('code', 1);
+
+        $this->assertDatabaseHas('user_account', [
+            'id' => $user->id,
+            'status' => UserAccountStatus::ACTIVE,
+        ]);
+    }
+
+    public function test_admin_user_account_modify_rejects_non_status_fields_and_invalid_statuses(): void
+    {
+        $user = UserAccount::query()->create([
+            'mobile' => '13800138013',
+            'email' => 'status-guard@example.com',
+            'password' => 'secret123',
+            'nickname' => 'Guarded Name',
+            'status' => UserAccountStatus::ACTIVE,
+        ]);
+
+        $this->postJson('/admin/user/account/modify', [
+            'id' => $user->id,
+            'field' => 'nickname',
+            'value' => 'Changed Name',
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '用户账号管理仅允许修改账号状态。');
+
+        $this->postJson('/admin/user/account/modify', [
+            'id' => $user->id,
+            'field' => 'status',
+            'value' => 'archived',
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '账号状态值无效。');
+
+        $this->assertDatabaseHas('user_account', [
+            'id' => $user->id,
+            'nickname' => 'Guarded Name',
+            'status' => UserAccountStatus::ACTIVE,
+        ]);
+    }
+
     public function test_admin_user_account_controller_rejects_inherited_write_actions(): void
     {
         $user = UserAccount::query()->create([
@@ -277,7 +347,6 @@ class UserAdminAccountControllerTest extends TestCase
             ['postJson', '/admin/user/account/add', ['mobile' => '13800138011', 'password' => 'secret123']],
             ['postJson', '/admin/user/account/edit', ['id' => $user->id, 'nickname' => 'Changed']],
             ['postJson', '/admin/user/account/delete', ['id' => $user->id]],
-            ['postJson', '/admin/user/account/modify', ['id' => $user->id, 'field' => 'status', 'value' => 'disabled']],
             ['getJson', '/admin/user/account/recycle', []],
         ] as [$method, $uri, $payload]) {
             $response = $this->{$method}($uri, $payload);

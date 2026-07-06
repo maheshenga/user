@@ -6,6 +6,7 @@ use App\Http\Controllers\common\AdminController;
 use App\Http\Services\annotation\ControllerAnnotation;
 use App\Http\Services\annotation\NodeAnnotation;
 use App\Models\UserAccount;
+use App\User\UserAccountStatus;
 use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 
@@ -136,9 +137,41 @@ class AccountController extends AdminController
         return $this->readOnlyError();
     }
 
+    #[NodeAnnotation(title: '修改状态', auth: true)]
     public function modify(): JsonResponse
     {
-        return $this->readOnlyError();
+        if (! request()->ajax() && ! request()->expectsJson()) {
+            return $this->error();
+        }
+
+        $id = (int) request()->post('id', 0);
+        $field = (string) request()->post('field', '');
+        $value = (string) request()->post('value', '');
+
+        if ($id <= 0 || $field === '' || $value === '') {
+            return $this->error('ID、字段和值不能为空');
+        }
+
+        if ($field !== 'status') {
+            return $this->error('用户账号管理仅允许修改账号状态。');
+        }
+
+        if (! in_array($value, $this->allowedStatuses(), true)) {
+            return $this->error('账号状态值无效。');
+        }
+
+        $user = UserAccount::query()->find($id);
+
+        if ($user === null) {
+            return $this->error('用户不存在');
+        }
+
+        $user->forceFill([
+            'status' => $value,
+            'update_time' => time(),
+        ])->save();
+
+        return $this->success('保存成功');
     }
 
     public function recycle(): JsonResponse
@@ -171,6 +204,16 @@ class AccountController extends AdminController
         $direction = in_array($direction, ['asc', 'desc'], true) ? $direction : 'desc';
 
         return [$order, $direction];
+    }
+
+    private function allowedStatuses(): array
+    {
+        return [
+            UserAccountStatus::PENDING,
+            UserAccountStatus::ACTIVE,
+            UserAccountStatus::DISABLED,
+            UserAccountStatus::FROZEN,
+        ];
     }
 
     private function readOnlyError(): JsonResponse
