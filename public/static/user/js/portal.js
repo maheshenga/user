@@ -41,7 +41,7 @@
     }
 
     function rawFallback(data) {
-        return `<details class="raw-payload"><summary>Raw data</summary><pre>${escapeHtml(pretty(data))}</pre></details>`;
+        return `<details class="raw-payload"><summary>原始数据</summary><pre>${escapeHtml(pretty(data))}</pre></details>`;
     }
 
     function renderList(items, emptyText, renderer) {
@@ -70,69 +70,69 @@
         vip(data) {
             const user = data.user || data.vip || data;
             return [
-                row('VIP Level', user.vip_level ?? user.level),
-                row('Status', user.vip_status ?? user.status ?? (data.active === true ? 'active' : data.active === false ? 'inactive' : undefined)),
-                row('Started At', user.vip_started_at ?? user.started_at),
-                row('Expired At', user.vip_expired_at ?? user.expired_at ?? data.vip_expires_at),
-                row('Active Records', data.record_count),
+                row('VIP 等级', user.vip_level ?? user.level),
+                row('状态', user.vip_status ?? user.status ?? (data.active === true ? '有效' : data.active === false ? '无效' : undefined)),
+                row('开始时间', user.vip_started_at ?? user.started_at),
+                row('到期时间', user.vip_expired_at ?? user.expired_at ?? data.vip_expires_at),
+                row('有效记录数', data.record_count),
                 rawFallback(data),
             ].join('');
         },
         balance(data) {
             return [
-                row('Available', data.available_balance ?? data.available),
-                row('Frozen', data.frozen_balance ?? data.frozen),
-                row('Total Earned', data.total_earned),
-                row('Total Withdrawn', data.total_withdrawn),
+                row('可用余额', data.available_balance ?? data.available),
+                row('冻结余额', data.frozen_balance ?? data.frozen),
+                row('累计收益', data.total_earned),
+                row('累计提现', data.total_withdrawn),
                 rawFallback(data),
             ].join('');
         },
         ledger(data) {
             const rows = listFromPayload(data, ['rows', 'list', 'ledger']);
-            return renderList(rows, 'No balance ledger records.', (item) => [
+            return renderList(rows, '暂无余额流水记录。', (item) => [
                 '<article class="summary-item">',
-                row('Amount', item.amount),
-                row('Type', item.type ?? item.direction),
-                row('Reason', item.reason ?? item.remark),
-                row('Time', item.create_time ?? item.created_at),
+                row('金额', item.amount),
+                row('类型', item.type ?? item.direction),
+                row('原因', item.reason ?? item.remark),
+                row('时间', item.create_time ?? item.created_at),
                 '</article>',
             ].join('')) + rawFallback(data);
         },
         invite(data) {
             const code = data.invite_code || data.default_code || data.code || {};
             return [
-                row('Invite Code', code.code ?? data.code),
-                row('Invite URL', code.url ?? data.invite_url),
-                row('Level 1 Total', data.direct_count ?? data.level1_total ?? data.first_level_total),
-                row('Level 2 Total', data.second_level_count ?? data.level2_total ?? data.second_level_total),
+                row('邀请码', code.code ?? data.code),
+                row('邀请链接', code.url ?? data.invite_url),
+                row('一级人数', data.direct_count ?? data.level1_total ?? data.first_level_total),
+                row('二级人数', data.second_level_count ?? data.level2_total ?? data.second_level_total),
                 rawFallback(data),
             ].join('');
         },
         inviteRecords(data) {
             const rows = listFromPayload(data, ['rows', 'list', 'records']);
-            return renderList(rows, 'No invite records.', (item) => [
+            return renderList(rows, '暂无邀请记录。', (item) => [
                 '<article class="summary-item">',
-                row('User', item.email ?? item.mobile ?? item.nickname ?? item.user_id),
-                row('Status', item.status),
-                row('Path', item.level_path ?? item.level),
-                row('Registered At', item.registered_at ?? item.create_time),
+                row('用户', item.email ?? item.mobile ?? item.nickname ?? item.user_id),
+                row('状态', item.status),
+                row('层级路径', item.level_path ?? item.level),
+                row('注册时间', item.registered_at ?? item.create_time),
                 '</article>',
             ].join('')) + rawFallback(data);
         },
         withdrawals(data) {
             const rows = listFromPayload(data, ['rows', 'list', 'withdrawals']);
-            return renderList(rows, 'No withdrawal records.', (item) => [
+            return renderList(rows, '暂无提现记录。', (item) => [
                 '<article class="summary-item">',
-                row('No.', item.withdrawal_no ?? item.id),
-                row('Amount', item.amount),
-                row('Status', item.status),
-                row('Account', item.account_no ?? item.account?.account_no ?? item.account_snapshot_json?.account_no),
-                row('Review Reason', item.reason),
-                row('Audited At', item.audited_at ?? item.approved_at),
-                row('Payout Method', item.payout_method),
-                row('Payout Transaction', item.payout_transaction_id),
-                row('Payout Error', item.payout_error),
-                row('Paid At', item.paid_at),
+                row('单号', item.withdrawal_no ?? item.id),
+                row('金额', item.amount),
+                row('状态', item.status),
+                row('账号', item.account_no ?? item.account?.account_no ?? item.account_snapshot_json?.account_no),
+                row('审核原因', item.reason),
+                row('审核时间', item.audited_at ?? item.approved_at),
+                row('打款方式', item.payout_method),
+                row('打款流水号', item.payout_transaction_id),
+                row('打款错误', item.payout_error),
+                row('打款时间', item.paid_at),
                 '</article>',
             ].join('')) + rawFallback(data);
         },
@@ -174,7 +174,7 @@
             form.addEventListener('submit', async (event) => {
                 event.preventDefault();
                 const status = form.querySelector('[data-form-status]');
-                setStatus(status, 'Submitting...', null);
+                setStatus(status, '提交中...', null);
 
                 try {
                     const result = await request(form.dataset.endpoint, {
@@ -182,7 +182,7 @@
                         body: new FormData(form),
                     });
                     const ok = Number(result.code) === 1;
-                    setStatus(status, result.msg || (ok ? 'Success' : 'Failed'), ok);
+                    setStatus(status, result.msg || (ok ? '操作成功' : '操作失败'), ok);
 
                     if (ok && form.dataset.successRedirect) {
                         if (form.dataset.registerLoginEndpoint) {
@@ -198,7 +198,7 @@
                             });
 
                             if (Number(loginResult.code) !== 1) {
-                                setStatus(status, loginResult.msg || 'Registered. Please login manually.', false);
+                                setStatus(status, loginResult.msg || '注册成功，请手动登录。', false);
                                 return;
                             }
                         }
@@ -235,11 +235,11 @@
         if (!box || !endpoint) {
             return;
         }
-        box.textContent = 'Loading...';
+        box.textContent = '加载中...';
         try {
             const result = await request(endpoint);
             if (Number(result.code) !== 1) {
-                box.textContent = result.msg || 'Request failed.';
+                box.textContent = result.msg || '请求失败。';
                 return;
             }
 
@@ -275,7 +275,7 @@
             const ok = Number(result.code) === 1;
 
             if (!ok) {
-                setStatus(status, result.msg || 'User login required.', false);
+                setStatus(status, result.msg || '请先登录用户账号。', false);
                 setDashboardControlsEnabled(false);
                 return false;
             }
@@ -283,7 +283,7 @@
             const user = result.data?.user || {};
             const label = document.querySelector('[data-current-user-label]');
             if (label) {
-                label.textContent = user.nickname || user.email || user.mobile || `User #${user.id}`;
+                label.textContent = user.nickname || user.email || user.mobile || `用户 #${user.id}`;
             }
             setStatus(status, '', null);
             setDashboardControlsEnabled(true);
@@ -329,7 +329,7 @@
                         body: new FormData(activationForm),
                     });
                     const ok = Number(result.code) === 1;
-                    setStatus(status, result.msg || (ok ? 'Redeemed' : 'Failed'), ok);
+                    setStatus(status, result.msg || (ok ? '兑换成功' : '兑换失败'), ok);
                     if (ok) {
                         loadBox('vip', endpoints.vip);
                         loadBox('balance', endpoints.balance);
@@ -351,7 +351,7 @@
                         body: new FormData(withdrawalForm),
                     });
                     const ok = Number(result.code) === 1;
-                    setStatus(status, result.msg || (ok ? 'Requested' : 'Failed'), ok);
+                    setStatus(status, result.msg || (ok ? '申请已提交' : '申请失败'), ok);
                     if (ok) {
                         loadBox('withdrawals', endpoints.withdrawals);
                         loadBox('balance', endpoints.balance);
@@ -367,7 +367,7 @@
             try {
                 const result = await request(endpoints.logout, { method: 'POST', body: new FormData() });
                 const ok = Number(result.code) === 1;
-                setStatus(status, result.msg || (ok ? 'Logged out' : 'Logout failed'), ok);
+                setStatus(status, result.msg || (ok ? '已退出登录' : '退出失败'), ok);
                 if (ok) {
                     window.location.href = '/u/login';
                 }

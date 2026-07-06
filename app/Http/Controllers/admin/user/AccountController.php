@@ -9,7 +9,7 @@ use App\Models\UserAccount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 
-#[ControllerAnnotation(title: 'User Account Management')]
+#[ControllerAnnotation(title: '用户账号管理')]
 class AccountController extends AdminController
 {
     private const LIST_COLUMNS = [
@@ -80,7 +80,7 @@ class AccountController extends AdminController
         return $this;
     }
 
-    #[NodeAnnotation(title: 'List', auth: true)]
+    #[NodeAnnotation(title: '列表', auth: true)]
     public function index(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -108,14 +108,14 @@ class AccountController extends AdminController
         ]);
     }
 
-    #[NodeAnnotation(title: 'Detail', auth: true)]
+    #[NodeAnnotation(title: '详情', auth: true)]
     public function detail(): View|JsonResponse
     {
         $id = (int) request()->input('id', 0);
         $user = UserAccount::query()->find($id);
 
         if (empty($user)) {
-            return $this->error('User not found');
+            return $this->error('用户不存在');
         }
 
         return $this->fetch('', ['user' => $user]);
@@ -148,7 +148,7 @@ class AccountController extends AdminController
 
     public function export(): View|bool
     {
-        abort(403, 'User account management is read-only in Phase 1.');
+        abort(403, '用户账号管理当前为只读。');
     }
 
     private function sanitizeTableWhere(array $where): array
@@ -177,7 +177,7 @@ class AccountController extends AdminController
     {
         return response()->json([
             'code' => 0,
-            'msg' => 'User account management is read-only in Phase 1.',
+            'msg' => '用户账号管理当前为只读。',
             'data' => [],
         ]);
     }

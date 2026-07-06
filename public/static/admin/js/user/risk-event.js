@@ -12,17 +12,17 @@ define(["jquery", "easy-admin"], function ($, ea) {
                 toolbar: [],
                 cols: [[
                     {field: 'id', width: 80, title: 'ID', search: false},
-                    {field: 'user_id', width: 110, title: 'User ID'},
-                    {field: 'category', width: 140, title: 'Category'},
-                    {field: 'event_type', width: 180, title: 'Event'},
-                    {field: 'severity', width: 120, title: 'Severity'},
-                    {field: 'source_type', width: 180, title: 'Source Type'},
-                    {field: 'source_id', width: 120, title: 'Source ID'},
+                    {field: 'user_id', width: 110, title: '用户ID'},
+                    {field: 'category', width: 140, title: '分类'},
+                    {field: 'event_type', width: 180, title: '事件'},
+                    {field: 'severity', width: 120, title: '等级'},
+                    {field: 'source_type', width: 180, title: '来源类型'},
+                    {field: 'source_id', width: 120, title: '来源ID'},
                     {field: 'ip', width: 140, title: 'IP'},
-                    {field: 'status', width: 120, title: 'Status'},
-                    {field: 'review_admin_id', width: 140, title: 'Admin'},
-                    {field: 'reviewed_at', minWidth: 170, title: 'Reviewed At', search: false},
-                    {field: 'create_time', minWidth: 170, title: 'Created At', search: false}
+                    {field: 'status', width: 120, title: '状态'},
+                    {field: 'review_admin_id', width: 140, title: '审核管理员'},
+                    {field: 'reviewed_at', minWidth: 170, title: '审核时间', search: false},
+                    {field: 'create_time', minWidth: 170, title: '创建时间', search: false}
                 ]]
             });
             ea.listen();

@@ -125,20 +125,20 @@ class ModuleController extends AdminController
         return $this->runLifecycleAction(fn () => app(ModuleInstaller::class)->install($this->moduleName(), $this->actorId()));
     }
 
-    #[NodeAnnotation(title: 'Approve module', auth: true)]
+    #[NodeAnnotation(title: '审核通过模块', auth: true)]
     public function approve(): Response|JsonResponse|View
     {
         return $this->runLifecycleAction(fn () => app(ModuleRepository::class)->approve($this->moduleName(), $this->actorId()));
     }
 
-    #[NodeAnnotation(title: 'Reject module', auth: true)]
+    #[NodeAnnotation(title: '审核拒绝模块', auth: true)]
     public function reject(): Response|JsonResponse|View
     {
         return $this->runLifecycleAction(function (): void {
-            $reason = trim((string) request()->input('reason', 'Rejected by administrator.'));
+            $reason = trim((string) request()->input('reason', '管理员审核拒绝。'));
             app(ModuleRepository::class)->reject(
                 $this->moduleName(),
-                $reason === '' ? 'Rejected by administrator.' : $reason,
+                $reason === '' ? '管理员审核拒绝。' : $reason,
                 $this->actorId()
             );
         });
@@ -238,7 +238,7 @@ class ModuleController extends AdminController
 
         return response()->json([
             'code' => 0,
-            'msg' => 'Lifecycle actions require POST.',
+            'msg' => '模块生命周期操作必须使用 POST 请求。',
             'data' => [],
             'url' => '',
             'wait' => 3,

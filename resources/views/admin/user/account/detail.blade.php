@@ -8,43 +8,43 @@
                 <td>{{ $user->id }}</td>
             </tr>
             <tr>
-                <th>Mobile</th>
+                <th>手机号</th>
                 <td>{{ $user->mobile }}</td>
             </tr>
             <tr>
-                <th>Email</th>
+                <th>邮箱</th>
                 <td>{{ $user->email }}</td>
             </tr>
             <tr>
-                <th>Nickname</th>
+                <th>昵称</th>
                 <td>{{ $user->nickname }}</td>
             </tr>
             <tr>
-                <th>Status</th>
+                <th>状态</th>
                 <td>{{ $user->status }}</td>
             </tr>
             <tr>
-                <th>Register IP</th>
+                <th>注册IP</th>
                 <td>{{ $user->register_ip }}</td>
             </tr>
             <tr>
-                <th>Last Login IP</th>
+                <th>最后登录IP</th>
                 <td>{{ $user->last_login_ip }}</td>
             </tr>
             <tr>
-                <th>Available Balance</th>
+                <th>可用余额</th>
                 <td>{{ $user->available_balance }}</td>
             </tr>
             <tr>
-                <th>Frozen Balance</th>
+                <th>冻结余额</th>
                 <td>{{ $user->frozen_balance }}</td>
             </tr>
             <tr>
-                <th>VIP Level</th>
+                <th>VIP等级</th>
                 <td>{{ $user->vip_level }}</td>
             </tr>
             <tr>
-                <th>VIP Expires At</th>
+                <th>VIP到期时间</th>
                 <td>{{ $user->vip_expires_at }}</td>
             </tr>
             </tbody>

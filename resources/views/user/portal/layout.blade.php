@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $title ?? 'User Portal' }} - User Portal</title>
+    <title>{{ $title ?? '用户中心' }} - 用户中心</title>
     <style>
         :root {
             color-scheme: light;
@@ -133,12 +133,12 @@
 <body>
 <header class="portal-header">
     <div class="portal-header-inner">
-        <a class="portal-brand" href="/u/dashboard">User Portal</a>
+        <a class="portal-brand" href="/u/dashboard">用户中心</a>
         <nav class="portal-nav">
-            <a href="/u/login">Login</a>
-            <a href="/u/register">Register</a>
-            <a href="/u/forgot-password">Forgot Password</a>
-            <a href="/u/dashboard">Dashboard</a>
+            <a href="/u/login">登录</a>
+            <a href="/u/register">注册</a>
+            <a href="/u/forgot-password">找回密码</a>
+            <a href="/u/dashboard">控制台</a>
         </nav>
     </div>
 </header>

@@ -10,7 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
-#[ControllerAnnotation(title: 'User Invite Management')]
+#[ControllerAnnotation(title: '用户邀请管理')]
 class InviteController extends AdminController
 {
     private const CODE_LIST_COLUMNS = [
@@ -97,7 +97,7 @@ class InviteController extends AdminController
         return $this;
     }
 
-    #[NodeAnnotation(title: 'Invite Codes', auth: true)]
+    #[NodeAnnotation(title: '邀请码列表', auth: true)]
     public function index(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -125,7 +125,7 @@ class InviteController extends AdminController
         ]);
     }
 
-    #[NodeAnnotation(title: 'Invite Relations', auth: true)]
+    #[NodeAnnotation(title: '邀请关系', auth: true)]
     public function relations(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -184,7 +184,7 @@ class InviteController extends AdminController
 
     public function export(): View|bool
     {
-        abort(403, 'User invite management is read-only in Phase 2.');
+        abort(403, '用户邀请管理当前为只读。');
     }
 
     private function sanitizeTableWhere(array $where, array $allowedColumns): array
@@ -211,7 +211,7 @@ class InviteController extends AdminController
     {
         return response()->json([
             'code' => 0,
-            'msg' => 'User invite management is read-only in Phase 2.',
+            'msg' => '用户邀请管理当前为只读。',
             'data' => [],
         ]);
     }

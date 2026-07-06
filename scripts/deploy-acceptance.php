@@ -276,6 +276,10 @@ function deploymentCommands(array $options): array
             'label' => 'artisan user:ops-menu:sync',
             'command' => phpCommand($php, ['artisan', 'user:ops-menu:sync']),
         ];
+        $commands[] = [
+            'label' => 'artisan system:module-menu:sync',
+            'command' => phpCommand($php, ['artisan', 'system:module-menu:sync']),
+        ];
     }
 
     if (! $options['skip_portal']) {

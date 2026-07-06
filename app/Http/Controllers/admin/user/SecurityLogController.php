@@ -9,7 +9,7 @@ use App\Models\UserSecurityLog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 
-#[ControllerAnnotation(title: 'User Security Logs')]
+#[ControllerAnnotation(title: '用户安全日志')]
 class SecurityLogController extends AdminController
 {
     private const LIST_COLUMNS = [
@@ -66,7 +66,7 @@ class SecurityLogController extends AdminController
         return $this;
     }
 
-    #[NodeAnnotation(title: 'Security Logs', auth: true)]
+    #[NodeAnnotation(title: '安全日志', auth: true)]
     public function index(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -121,7 +121,7 @@ class SecurityLogController extends AdminController
 
     public function export(): View|bool
     {
-        abort(403, 'User security logs are read-only in Phase 3.');
+        abort(403, '用户安全日志当前为只读。');
     }
 
     private function sanitizeTableWhere(array $where): array
@@ -148,7 +148,7 @@ class SecurityLogController extends AdminController
     {
         return response()->json([
             'code' => 0,
-            'msg' => 'User security logs are read-only in Phase 3.',
+            'msg' => '用户安全日志当前为只读。',
             'data' => [],
         ]);
     }

@@ -53,6 +53,29 @@ class ModuleCenterControllerTest extends TestCase
             ->assertJsonPath('data.0.status', 'installed');
     }
 
+    public function test_module_menu_sync_creates_system_module_management_entry(): void
+    {
+        $this->artisan('system:module-menu:sync')
+            ->expectsOutputToContain('synced=1')
+            ->assertExitCode(0);
+
+        $parent = \DB::table('system_menu')
+            ->where('pid', 0)
+            ->where('title', '系统管理')
+            ->where('href', '')
+            ->whereNull('delete_time')
+            ->first();
+
+        $this->assertNotNull($parent);
+        $this->assertDatabaseHas('system_menu', [
+            'pid' => $parent->id,
+            'title' => '模块管理',
+            'href' => 'system/module/index',
+            'status' => 1,
+            'delete_time' => null,
+        ]);
+    }
+
     public function test_detail_renders_module_metadata(): void
     {
         SystemModule::query()->create([
@@ -111,7 +134,7 @@ class ModuleCenterControllerTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('code', 0)
-            ->assertJsonPath('msg', 'Lifecycle actions require POST.');
+            ->assertJsonPath('msg', '模块生命周期操作必须使用 POST 请求。');
 
         $this->assertDatabaseHas('system_module', [
             'name' => 'blog',
@@ -175,7 +198,7 @@ class ModuleCenterControllerTest extends TestCase
 
         $response = $this->getJson('/admin/system/module/approve?name=blog');
 
-        $response->assertOk()->assertJsonPath('msg', 'Lifecycle actions require POST.');
+        $response->assertOk()->assertJsonPath('msg', '模块生命周期操作必须使用 POST 请求。');
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'pending_review']);
     }
 

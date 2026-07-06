@@ -11,7 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
-#[ControllerAnnotation(title: 'Affiliate Commission Management')]
+#[ControllerAnnotation(title: '分销佣金管理')]
 class CommissionController extends AdminController
 {
     private const LIST_COLUMNS = [
@@ -77,7 +77,7 @@ class CommissionController extends AdminController
         return $this;
     }
 
-    #[NodeAnnotation(title: 'Affiliate Commissions', auth: true)]
+    #[NodeAnnotation(title: '分销佣金列表', auth: true)]
     public function index(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -113,7 +113,7 @@ class CommissionController extends AdminController
                 (int) session('admin.id', 0)
             );
 
-            return $this->success('Commission approved.', $result);
+            return $this->success('佣金审核通过。', $result);
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }
@@ -128,7 +128,7 @@ class CommissionController extends AdminController
                 (int) session('admin.id', 0)
             );
 
-            return $this->success('Commission rejected.', $result);
+            return $this->success('佣金审核拒绝。', $result);
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }
@@ -142,7 +142,7 @@ class CommissionController extends AdminController
                 (int) session('admin.id', 0)
             );
 
-            return $this->success('Commissions approved.', $result);
+            return $this->success('佣金批量审核通过。', $result);
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }
@@ -157,7 +157,7 @@ class CommissionController extends AdminController
                 (int) session('admin.id', 0)
             );
 
-            return $this->success('Commissions rejected.', $result);
+            return $this->success('佣金批量审核拒绝。', $result);
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }
@@ -167,7 +167,7 @@ class CommissionController extends AdminController
     {
         return response()->json([
             'code' => 1,
-            'msg' => 'Commission stats.',
+            'msg' => '佣金统计。',
             'data' => app(AffiliateService::class)->stats(),
             'url' => '',
             'wait' => 3,
@@ -202,7 +202,7 @@ class CommissionController extends AdminController
 
     public function export(): View|bool
     {
-        abort(403, 'Commission export is disabled in Phase 5.');
+        abort(403, '佣金导出功能已禁用。');
     }
 
     private function sanitizeTableWhere(array $where): array
@@ -229,7 +229,7 @@ class CommissionController extends AdminController
     {
         return response()->json([
             'code' => 0,
-            'msg' => 'Commission action is not allowed.',
+            'msg' => '佣金记录不允许执行该操作。',
             'data' => [],
         ]);
     }

@@ -11,7 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
-#[ControllerAnnotation(title: 'User Balance Management')]
+#[ControllerAnnotation(title: '用户余额管理')]
 class BalanceController extends AdminController
 {
     private const LIST_COLUMNS = [
@@ -78,7 +78,7 @@ class BalanceController extends AdminController
         return $this;
     }
 
-    #[NodeAnnotation(title: 'User Balance Ledger', auth: true)]
+    #[NodeAnnotation(title: '用户余额流水', auth: true)]
     public function index(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -116,7 +116,7 @@ class BalanceController extends AdminController
                 (int) session('admin.id', 0)
             );
 
-            return $this->success('Balance adjusted.', $result);
+            return $this->success('余额调整成功。', $result);
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }
@@ -149,7 +149,7 @@ class BalanceController extends AdminController
 
     public function export(): View|bool
     {
-        abort(403, 'Balance export is disabled in Phase 5.');
+        abort(403, '余额导出功能已禁用。');
     }
 
     private function sanitizeTableWhere(array $where): array
@@ -176,7 +176,7 @@ class BalanceController extends AdminController
     {
         return response()->json([
             'code' => 0,
-            'msg' => 'Balance action is not allowed.',
+            'msg' => '余额流水不允许执行该操作。',
             'data' => [],
         ]);
     }

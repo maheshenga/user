@@ -11,7 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
-#[ControllerAnnotation(title: 'User Withdrawal Management')]
+#[ControllerAnnotation(title: '用户提现管理')]
 class WithdrawalController extends AdminController
 {
     private const LIST_COLUMNS = [
@@ -88,7 +88,7 @@ class WithdrawalController extends AdminController
         return $this;
     }
 
-    #[NodeAnnotation(title: 'Withdrawals', auth: true)]
+    #[NodeAnnotation(title: '提现审核', auth: true)]
     public function index(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -119,7 +119,7 @@ class WithdrawalController extends AdminController
     public function approve(): JsonResponse
     {
         try {
-            return $this->success('Withdrawal approved.', app(WithdrawalService::class)->approve(
+            return $this->success('提现已通过。', app(WithdrawalService::class)->approve(
                 (int) request()->input('id', 0),
                 (int) session('admin.id', 0)
             ));
@@ -131,7 +131,7 @@ class WithdrawalController extends AdminController
     public function reject(): JsonResponse
     {
         try {
-            return $this->success('Withdrawal rejected.', app(WithdrawalService::class)->reject(
+            return $this->success('提现已拒绝。', app(WithdrawalService::class)->reject(
                 (int) request()->input('id', 0),
                 (string) request()->input('reason', ''),
                 (int) session('admin.id', 0)
@@ -149,7 +149,7 @@ class WithdrawalController extends AdminController
                 $proof = [];
             }
 
-            return $this->success('Withdrawal payout recorded.', app(WithdrawalService::class)->markPaid(
+            return $this->success('提现打款已记录。', app(WithdrawalService::class)->markPaid(
                 (int) request()->input('id', 0),
                 [
                     'method' => request()->input('method', ''),
@@ -166,7 +166,7 @@ class WithdrawalController extends AdminController
     public function payoutFail(): JsonResponse
     {
         try {
-            return $this->success('Withdrawal payout failure recorded.', app(WithdrawalService::class)->markPayoutFailed(
+            return $this->success('提现打款失败已记录。', app(WithdrawalService::class)->markPayoutFailed(
                 (int) request()->input('id', 0),
                 (string) request()->input('error', ''),
                 (int) session('admin.id', 0)
@@ -180,7 +180,7 @@ class WithdrawalController extends AdminController
     {
         return response()->json([
             'code' => 1,
-            'msg' => 'Withdrawal stats.',
+            'msg' => '提现统计。',
             'data' => app(WithdrawalService::class)->stats(),
             'url' => '',
             'wait' => 3,
@@ -196,7 +196,7 @@ class WithdrawalController extends AdminController
 
     public function export(): View|bool
     {
-        abort(403, 'Withdrawal export is disabled in Phase 6.');
+        abort(403, '提现导出已禁用。');
     }
 
     private function sanitizeTableWhere(array $where): array
@@ -223,7 +223,7 @@ class WithdrawalController extends AdminController
     {
         return response()->json([
             'code' => 0,
-            'msg' => 'Withdrawal action is not allowed.',
+            'msg' => '不允许执行该提现操作。',
             'data' => [],
         ]);
     }

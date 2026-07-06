@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
-#[ControllerAnnotation(title: 'Activation Code Management')]
+#[ControllerAnnotation(title: '激活码管理')]
 class ActivationCodeController extends AdminController
 {
     private const CODE_LIST_COLUMNS = [
@@ -113,7 +113,7 @@ class ActivationCodeController extends AdminController
         return $this;
     }
 
-    #[NodeAnnotation(title: 'Activation Codes', auth: true)]
+    #[NodeAnnotation(title: '激活码列表', auth: true)]
     public function index(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -141,7 +141,7 @@ class ActivationCodeController extends AdminController
         ]);
     }
 
-    #[NodeAnnotation(title: 'Activation Code Redemptions', auth: true)]
+    #[NodeAnnotation(title: '激活码兑换记录', auth: true)]
     public function redemptions(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -174,7 +174,7 @@ class ActivationCodeController extends AdminController
         try {
             $batch = app(ActivationCodeService::class)->createBatch(request()->all(), session('admin.id'));
 
-            return $this->success('Activation code batch saved.', $batch);
+            return $this->success('激活码批次已保存。', $batch);
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }
@@ -189,7 +189,7 @@ class ActivationCodeController extends AdminController
                 session('admin.id')
             );
 
-            return $this->success('Activation codes generated.', $result);
+            return $this->success('激活码已生成。', $result);
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }
@@ -242,7 +242,7 @@ class ActivationCodeController extends AdminController
 
         return response()->json([
             'code' => 1,
-            'msg' => 'Activation code export generated.',
+            'msg' => '激活码导出已生成。',
             'data' => [
                 'rows' => $rows,
             ],
@@ -257,7 +257,7 @@ class ActivationCodeController extends AdminController
         $id = (int) request()->input('id', 0);
         $code = ActivationCode::query()->find($id);
         if ($code === null) {
-            return $this->error('Activation code not found.');
+            return $this->error('激活码不存在。');
         }
 
         $code->forceFill([
@@ -265,7 +265,7 @@ class ActivationCodeController extends AdminController
             'update_time' => time(),
         ])->save();
 
-        return $this->success('Activation code updated.', ['id' => (int) $code->id, 'status' => $status]);
+        return $this->success('激活码已更新。', ['id' => (int) $code->id, 'status' => $status]);
     }
 
     private function sanitizeTableWhere(array $where, array $allowedColumns): array
@@ -292,7 +292,7 @@ class ActivationCodeController extends AdminController
     {
         return response()->json([
             'code' => 0,
-            'msg' => 'Activation code action is not allowed.',
+            'msg' => '激活码不允许执行该操作。',
             'data' => [],
         ]);
     }

@@ -28,6 +28,7 @@ class DeployAcceptanceScriptTest extends TestCase
         $this->assertSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('DRY-RUN env APP_KEY present', $output);
         $this->assertStringContainsString('artisan migrate --force', $output);
+        $this->assertStringContainsString('artisan system:module-menu:sync', $output);
         $this->assertStringContainsString('DRY-RUN user portal smoke', $output);
         $this->assertStringContainsString('DRY-RUN user admin smoke', $output);
         $this->assertStringContainsString('scripts/user-portal-smoke.php', str_replace('\\', '/', $output));
@@ -64,6 +65,7 @@ class DeployAcceptanceScriptTest extends TestCase
         $this->assertSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('PASS artisan migrate --force', $output);
         $this->assertStringContainsString('PASS artisan user:ops-menu:sync', $output);
+        $this->assertStringContainsString('PASS artisan system:module-menu:sync', $output);
         $this->assertStringContainsString('PASS user portal smoke', $output);
         $this->assertStringContainsString('PASS user admin smoke', $output);
         $this->assertStringContainsString('OK deployment acceptance passed', $output);
@@ -72,14 +74,16 @@ class DeployAcceptanceScriptTest extends TestCase
         $this->assertSame(['migrate', '--force'], array_slice($commands[0], 1));
         $this->assertSame('artisan', $commands[1][0] ?? null);
         $this->assertSame(['user:ops-menu:sync'], array_slice($commands[1], 1));
-        $this->assertStringEndsWith('scripts/user-portal-smoke.php', str_replace('\\', '/', $commands[2][0] ?? ''));
-        $this->assertContains('--base-url=http://127.0.0.1:8000', $commands[2]);
-        $this->assertContains('--email=smoke@example.test', $commands[2]);
-        $this->assertContains('--password=secret123', $commands[2]);
-        $this->assertStringEndsWith('scripts/user-admin-smoke.php', str_replace('\\', '/', $commands[3][0] ?? ''));
-        $this->assertContains('--admin-prefix=staff', $commands[3]);
-        $this->assertContains('--username=root', $commands[3]);
-        $this->assertContains('--password=topsecret', $commands[3]);
+        $this->assertSame('artisan', $commands[2][0] ?? null);
+        $this->assertSame(['system:module-menu:sync'], array_slice($commands[2], 1));
+        $this->assertStringEndsWith('scripts/user-portal-smoke.php', str_replace('\\', '/', $commands[3][0] ?? ''));
+        $this->assertContains('--base-url=http://127.0.0.1:8000', $commands[3]);
+        $this->assertContains('--email=smoke@example.test', $commands[3]);
+        $this->assertContains('--password=secret123', $commands[3]);
+        $this->assertStringEndsWith('scripts/user-admin-smoke.php', str_replace('\\', '/', $commands[4][0] ?? ''));
+        $this->assertContains('--admin-prefix=staff', $commands[4]);
+        $this->assertContains('--username=root', $commands[4]);
+        $this->assertContains('--password=topsecret', $commands[4]);
     }
 
     public function test_deploy_acceptance_surfaces_child_command_failure_with_observed_exit_code(): void

@@ -11,7 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
-#[ControllerAnnotation(title: 'User Risk Event Management')]
+#[ControllerAnnotation(title: '用户风控事件管理')]
 class RiskEventController extends AdminController
 {
     private const LIST_COLUMNS = [
@@ -79,7 +79,7 @@ class RiskEventController extends AdminController
         return $this;
     }
 
-    #[NodeAnnotation(title: 'Risk Events', auth: true)]
+    #[NodeAnnotation(title: '风控事件', auth: true)]
     public function index(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -116,7 +116,7 @@ class RiskEventController extends AdminController
                 (int) session('admin.id', 0)
             );
 
-            return $this->success('Risk event reviewed.', $result);
+            return $this->success('风控事件已审核。', $result);
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }
@@ -130,7 +130,7 @@ class RiskEventController extends AdminController
 
     public function export(): View|bool
     {
-        abort(403, 'Risk event export is disabled in Phase 6.');
+        abort(403, '风控事件导出已禁用。');
     }
 
     private function sanitizeTableWhere(array $where): array
@@ -157,7 +157,7 @@ class RiskEventController extends AdminController
     {
         return response()->json([
             'code' => 0,
-            'msg' => 'Risk event action is not allowed.',
+            'msg' => '不允许执行该风控事件操作。',
             'data' => [],
         ]);
     }

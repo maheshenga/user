@@ -1,28 +1,28 @@
 @extends('user.portal.layout')
 
 @section('content')
-    <h1 class="page-title">Register</h1>
+    <h1 class="page-title">注册</h1>
     <section class="panel">
         <form data-portal-form data-endpoint="/user/register" data-register-login-endpoint="/user/login" data-success-redirect="/u/dashboard">
             <label>
-                Mobile
+                手机号
                 <input type="text" name="mobile" autocomplete="tel">
             </label>
             <label>
-                Email
+                邮箱
                 <input type="email" name="email" autocomplete="email">
             </label>
             <label>
-                Password
+                密码
                 <input type="password" name="password" autocomplete="new-password" required>
             </label>
             <label>
-                Invite Code
+                邀请码
                 <input type="text" name="invite_code">
             </label>
-            <button type="submit">Register</button>
+            <button type="submit">注册</button>
             <div class="status" data-form-status></div>
         </form>
-        <p class="muted">Already registered? <a href="/u/login">Login</a>.</p>
+        <p class="muted">已有账号？<a href="/u/login">去登录</a>。</p>
     </section>
 @endsection

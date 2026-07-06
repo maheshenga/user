@@ -9,7 +9,7 @@ use App\Models\VipPlan;
 use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 
-#[ControllerAnnotation(title: 'VIP Plan Management')]
+#[ControllerAnnotation(title: 'VIP套餐管理')]
 class VipPlanController extends AdminController
 {
     private const LIST_COLUMNS = [
@@ -84,7 +84,7 @@ class VipPlanController extends AdminController
         return $this;
     }
 
-    #[NodeAnnotation(title: 'VIP Plans', auth: true)]
+    #[NodeAnnotation(title: 'VIP套餐列表', auth: true)]
     public function index(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -120,7 +120,7 @@ class VipPlanController extends AdminController
 
         $plan = VipPlan::query()->create($this->writePayload(true));
 
-        return $this->success('VIP plan saved.', ['id' => (int) $plan->id]);
+        return $this->success('VIP套餐已保存。', ['id' => (int) $plan->id]);
     }
 
     public function edit(): View|JsonResponse
@@ -128,7 +128,7 @@ class VipPlanController extends AdminController
         $id = (int) request()->input('id', 0);
         $plan = VipPlan::query()->find($id);
         if ($plan === null) {
-            return $this->error('VIP plan not found.');
+            return $this->error('VIP套餐不存在。');
         }
 
         if (! request()->ajax() && ! request()->expectsJson() && request()->method() !== 'POST') {
@@ -137,7 +137,7 @@ class VipPlanController extends AdminController
 
         $plan->forceFill($this->writePayload(false))->save();
 
-        return $this->success('VIP plan saved.', ['id' => (int) $plan->id]);
+        return $this->success('VIP套餐已保存。', ['id' => (int) $plan->id]);
     }
 
     public function modify(): JsonResponse
@@ -150,7 +150,7 @@ class VipPlanController extends AdminController
 
         $plan = VipPlan::query()->find($id);
         if ($plan === null) {
-            return $this->error('VIP plan not found.');
+            return $this->error('VIP套餐不存在。');
         }
 
         $plan->forceFill([
@@ -158,7 +158,7 @@ class VipPlanController extends AdminController
             'update_time' => time(),
         ])->save();
 
-        return $this->success('VIP plan saved.', ['id' => (int) $plan->id]);
+        return $this->success('VIP套餐已保存。', ['id' => (int) $plan->id]);
     }
 
     public function delete(): JsonResponse
@@ -173,7 +173,7 @@ class VipPlanController extends AdminController
 
     public function export(): View|bool
     {
-        abort(403, 'VIP plan export is disabled in Phase 4.');
+        abort(403, 'VIP套餐导出功能已禁用。');
     }
 
     private function writePayload(bool $isCreate): array
@@ -235,7 +235,7 @@ class VipPlanController extends AdminController
     {
         return response()->json([
             'code' => 0,
-            'msg' => 'VIP plan action is not allowed.',
+            'msg' => 'VIP套餐不允许执行该操作。',
             'data' => [],
         ]);
     }

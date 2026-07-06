@@ -72,14 +72,14 @@ define(["jquery", "easy-admin"], function ($, ea) {
                     {field: 'title', minWidth: 160, title: '标题'},
                     {field: 'version', width: 110, title: '版本', search: false},
                     {field: 'status', width: 110, title: '状态', search: 'select', selectList: {
-                        discovered: 'discovered',
-                        pending_review: 'pending_review',
-                        approved: 'approved',
-                        rejected: 'rejected',
-                        installed: 'installed',
-                        enabled: 'enabled',
-                        disabled: 'disabled',
-                        uninstalled: 'uninstalled'
+                        discovered: '已发现',
+                        pending_review: '待审核',
+                        approved: '已审核',
+                        rejected: '已拒绝',
+                        installed: '已安装',
+                        enabled: '已启用',
+                        disabled: '已禁用',
+                        uninstalled: '已卸载'
                     }},
                     {field: 'admin_prefix', minWidth: 120, title: '后台前缀'},
                     {field: 'vendor', minWidth: 120, title: '厂商'},
@@ -102,10 +102,10 @@ define(["jquery", "easy-admin"], function ($, ea) {
                                 '<a class="layui-btn layui-btn-danger layui-btn-xs" data-module-action="' + init.uninstall_url + '" data-module-name="' + name + '">卸载</a>'
                             ];
                             if (d.status === 'pending_review' || d.status === 'rejected') {
-                                buttons.push('<a class="layui-btn layui-btn-xs" data-module-action="' + init.approve_url + '" data-module-name="' + name + '">Approve</a>');
+                                buttons.push('<a class="layui-btn layui-btn-xs" data-module-action="' + init.approve_url + '" data-module-name="' + name + '">审核通过</a>');
                             }
                             if (d.status === 'pending_review' || d.status === 'approved') {
-                                buttons.push('<a class="layui-btn layui-btn-danger layui-btn-xs" data-module-reject="' + init.reject_url + '" data-module-name="' + name + '">Reject</a>');
+                                buttons.push('<a class="layui-btn layui-btn-danger layui-btn-xs" data-module-reject="' + init.reject_url + '" data-module-name="' + name + '">审核拒绝</a>');
                             }
                             return buttons.join(' ');
                         }
@@ -120,7 +120,7 @@ define(["jquery", "easy-admin"], function ($, ea) {
             $('body').on('click', '[data-module-reject]', function () {
                 var url = $(this).data('module-reject');
                 var name = $(this).data('module-name');
-                layui.layer.prompt({title: 'Reject reason', formType: 2}, function (value, index) {
+                layui.layer.prompt({title: '拒绝原因', formType: 2}, function (value, index) {
                     layui.layer.close(index);
                     ea.request.post({
                         url: ea.url(moduleUrl(url, name)),
@@ -145,7 +145,7 @@ define(["jquery", "easy-admin"], function ($, ea) {
                     {field: 'action', width: 110, title: '动作'},
                     {field: 'old_state', width: 110, title: '原状态', search: false},
                     {field: 'new_state', width: 110, title: '新状态', search: false},
-                    {field: 'result', width: 100, title: '结果', search: 'select', selectList: {success: 'success', failed: 'failed'}},
+                    {field: 'result', width: 100, title: '结果', search: 'select', selectList: {success: '成功', failed: '失败'}},
                     {field: 'error_message', minWidth: 220, title: '错误', search: false},
                     {field: 'finished_at', minWidth: 160, title: '完成时间', search: false}
                 ]]

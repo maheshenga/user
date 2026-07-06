@@ -128,3 +128,17 @@ Artisan::command('user:ops-menu:sync', function (): int {
 
     return Command::SUCCESS;
 })->purpose('Synchronize EasyAdmin menu entries for user operations');
+
+Artisan::command('system:module-menu:sync', function (): int {
+    try {
+        $result = app(\App\Modules\ModuleCenterMenuService::class)->sync();
+    } catch (\RuntimeException $exception) {
+        $this->error($exception->getMessage());
+
+        return Command::FAILURE;
+    }
+
+    $this->info('parent_id='.$result['parent_id'].' synced='.$result['synced']);
+
+    return Command::SUCCESS;
+})->purpose('Synchronize EasyAdmin menu entry for module management');

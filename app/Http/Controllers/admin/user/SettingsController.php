@@ -39,7 +39,7 @@ class SettingsController extends AdminController
 
             TriggerService::updateSysConfig();
 
-            return $this->success('Saved');
+            return $this->success('保存成功');
         } catch (InvalidArgumentException $exception) {
             return $this->error($exception->getMessage());
         }

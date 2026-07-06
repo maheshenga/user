@@ -10,7 +10,7 @@ use App\User\NotificationOutboxMaintenanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 
-#[ControllerAnnotation(title: 'User Notification Outbox')]
+#[ControllerAnnotation(title: '用户通知队列')]
 class NotificationOutboxController extends AdminController
 {
     private const LIST_COLUMNS = [
@@ -46,7 +46,7 @@ class NotificationOutboxController extends AdminController
         $this->model = new UserNotificationOutbox();
     }
 
-    #[NodeAnnotation(title: 'Notification Outbox', auth: true)]
+    #[NodeAnnotation(title: '通知队列', auth: true)]
     public function index(): View|JsonResponse
     {
         if (! request()->ajax() && ! request()->expectsJson()) {
@@ -76,7 +76,7 @@ class NotificationOutboxController extends AdminController
     {
         return response()->json([
             'code' => 1,
-            'msg' => 'Notification outbox stats.',
+            'msg' => '通知队列统计。',
             'data' => app(NotificationOutboxMaintenanceService::class)->summary(),
             'url' => '',
             'wait' => 3,
@@ -92,7 +92,7 @@ class NotificationOutboxController extends AdminController
 
     public function export(): View|bool
     {
-        abort(403, 'Notification outbox export is disabled.');
+        abort(403, '通知队列导出已禁用。');
     }
 
     private function sanitizeTableWhere(array $where): array
@@ -119,7 +119,7 @@ class NotificationOutboxController extends AdminController
     {
         return response()->json([
             'code' => 0,
-            'msg' => 'Notification outbox action is not allowed.',
+            'msg' => '不允许执行该通知队列操作。',
             'data' => [],
         ]);
     }

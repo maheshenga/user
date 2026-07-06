@@ -24,6 +24,7 @@ class UserPortalPageTest extends TestCase
     {
         $this->get('/u/login')
             ->assertOk()
+            ->assertSee('登录')
             ->assertSee('data-portal-form', false)
             ->assertSee('data-endpoint="/user/login"', false)
             ->assertSee('name="account"', false)
@@ -34,6 +35,7 @@ class UserPortalPageTest extends TestCase
     {
         $this->get('/u/register')
             ->assertOk()
+            ->assertSee('注册')
             ->assertSee('data-endpoint="/user/register"', false)
             ->assertSee('name="mobile"', false)
             ->assertSee('name="email"', false)
@@ -45,11 +47,13 @@ class UserPortalPageTest extends TestCase
     {
         $this->get('/u/forgot-password')
             ->assertOk()
+            ->assertSee('找回密码')
             ->assertSee('data-endpoint="/user/password/forgot"', false)
             ->assertSee('name="account"', false);
 
         $this->get('/u/reset-password')
             ->assertOk()
+            ->assertSee('重置密码')
             ->assertSee('data-endpoint="/user/password/reset"', false)
             ->assertSee('name="account"', false)
             ->assertSee('name="password"', false)
@@ -61,6 +65,7 @@ class UserPortalPageTest extends TestCase
     {
         $this->get('/u/dashboard')
             ->assertOk()
+            ->assertSee('控制台')
             ->assertSee('data-user-session', false)
             ->assertSee('data-dashboard-endpoints', false)
             ->assertSee('data-session="/user/session"', false)
@@ -125,10 +130,10 @@ const vip = window.UserPortalDashboardRenderers.render('vip', {
     vip_expires_at: '2026-08-01 00:00:00',
     record_count: 1,
 });
-assertRow(vip, 'VIP Level', '2');
-assertRow(vip, 'Status', 'active');
-assertRow(vip, 'Expired At', '2026-08-01 00:00:00');
-assertRow(vip, 'Active Records', '1');
+assertRow(vip, 'VIP 等级', '2');
+assertRow(vip, '状态', '有效');
+assertRow(vip, '到期时间', '2026-08-01 00:00:00');
+assertRow(vip, '有效记录数', '1');
 
 const ledger = window.UserPortalDashboardRenderers.render('ledger', [{
     amount: '12.34',
@@ -136,21 +141,21 @@ const ledger = window.UserPortalDashboardRenderers.render('ledger', [{
     remark: '<bonus>',
     create_time: '2026-07-06 09:00:00',
 }]);
-assertRow(ledger, 'Amount', '12.34');
-assertRow(ledger, 'Type', 'commission');
-assertRow(ledger, 'Reason', '&lt;bonus&gt;');
-assertRow(ledger, 'Time', '2026-07-06 09:00:00');
+assertRow(ledger, '金额', '12.34');
+assertRow(ledger, '类型', 'commission');
+assertRow(ledger, '原因', '&lt;bonus&gt;');
+assertRow(ledger, '时间', '2026-07-06 09:00:00');
 assert(!ledger.includes('<bonus>'));
-assert(!ledger.includes('No balance ledger records.'));
+assert(!ledger.includes('暂无余额流水记录。'));
 
 const invite = window.UserPortalDashboardRenderers.render('invite', {
     invite_code: { code: 'ABC123' },
     direct_count: 3,
     second_level_count: 2,
 });
-assertRow(invite, 'Invite Code', 'ABC123');
-assertRow(invite, 'Level 1 Total', '3');
-assertRow(invite, 'Level 2 Total', '2');
+assertRow(invite, '邀请码', 'ABC123');
+assertRow(invite, '一级人数', '3');
+assertRow(invite, '二级人数', '2');
 
 const inviteRecords = window.UserPortalDashboardRenderers.render('inviteRecords', [{
     email: 'friend@example.com',
@@ -158,11 +163,11 @@ const inviteRecords = window.UserPortalDashboardRenderers.render('inviteRecords'
     level_path: '1/2',
     create_time: '2026-07-06 09:01:00',
 }]);
-assertRow(inviteRecords, 'User', 'friend@example.com');
-assertRow(inviteRecords, 'Status', 'active');
-assertRow(inviteRecords, 'Path', '1/2');
-assertRow(inviteRecords, 'Registered At', '2026-07-06 09:01:00');
-assert(!inviteRecords.includes('No invite records.'));
+assertRow(inviteRecords, '用户', 'friend@example.com');
+assertRow(inviteRecords, '状态', 'active');
+assertRow(inviteRecords, '层级路径', '1/2');
+assertRow(inviteRecords, '注册时间', '2026-07-06 09:01:00');
+assert(!inviteRecords.includes('暂无邀请记录。'));
 
 const withdrawals = window.UserPortalDashboardRenderers.render('withdrawals', [{
     withdrawal_no: 'WD202607060001',
@@ -172,10 +177,10 @@ const withdrawals = window.UserPortalDashboardRenderers.render('withdrawals', [{
     payout_transaction_id: 'TX-1',
     paid_at: '2026-07-06 09:02:00',
 }]);
-assertRow(withdrawals, 'No.', 'WD202607060001');
-assertRow(withdrawals, 'Account', 'ACCT-1');
-assertRow(withdrawals, 'Payout Transaction', 'TX-1');
-assertRow(withdrawals, 'Paid At', '2026-07-06 09:02:00');
+assertRow(withdrawals, '单号', 'WD202607060001');
+assertRow(withdrawals, '账号', 'ACCT-1');
+assertRow(withdrawals, '打款流水号', 'TX-1');
+assertRow(withdrawals, '打款时间', '2026-07-06 09:02:00');
 assert(!withdrawals.includes('Requested At'));
 JS;
 
