@@ -61,6 +61,33 @@
             font-size: 22px;
             font-weight: 700;
         }
+        .auth-shell {
+            max-width: 520px;
+        }
+        .auth-card {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .auth-intro {
+            margin: -6px 0 18px;
+            color: var(--muted);
+        }
+        .form-tip {
+            display: block;
+            margin-top: 5px;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 400;
+        }
+        .form-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
         .panel {
             background: var(--panel);
             border: 1px solid var(--line);
@@ -99,6 +126,10 @@
             font: inherit;
             font-weight: 700;
             cursor: pointer;
+        }
+        button[disabled] {
+            cursor: not-allowed;
+            opacity: 0.7;
         }
         button.secondary { background: #475467; }
         .status {

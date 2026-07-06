@@ -11,8 +11,20 @@
     }
 
     function setFormBusy(form, busy) {
-        form.querySelectorAll('button, input[type="submit"]').forEach((element) => {
-            element.disabled = busy;
+        form.querySelectorAll('button, input[type="submit"]').forEach((button) => {
+            if (button.tagName === 'BUTTON') {
+                if (!button.dataset.originalText) {
+                    button.dataset.originalText = button.textContent;
+                }
+
+                if (busy) {
+                    button.textContent = form.dataset.loadingText || button.dataset.originalText;
+                } else {
+                    button.textContent = button.dataset.originalText;
+                }
+            }
+
+            button.disabled = busy;
         });
     }
 
