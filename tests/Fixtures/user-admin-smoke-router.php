@@ -235,6 +235,37 @@ if ($method === 'GET' && $path === '/admin/user/dashboard/index' && $isJsonReque
     return;
 }
 
+if ($method === 'POST' && $path === '/admin/user/account/modify') {
+    $payload = $input();
+    $field = (string) ($payload['field'] ?? '');
+    $value = (string) ($payload['value'] ?? '');
+
+    if ($field !== 'status') {
+        $json([
+            'code' => 0,
+            'msg' => '用户账号管理仅允许修改账号状态。',
+            '__token__' => 'fixture-admin-token-refreshed',
+        ]);
+        return;
+    }
+
+    if (! in_array($value, ['pending', 'active', 'disabled', 'frozen'], true)) {
+        $json([
+            'code' => 0,
+            'msg' => '账号状态值无效。',
+            '__token__' => 'fixture-admin-token-refreshed',
+        ]);
+        return;
+    }
+
+    $json([
+        'code' => 1,
+        'msg' => '保存成功',
+        '__token__' => 'fixture-admin-token-refreshed',
+    ]);
+    return;
+}
+
 $userOpsPagePaths = array_values(array_filter(array_map(
     static fn (array $child): ?string => parse_url($child['href'], PHP_URL_PATH) ?: null,
     $userOpsChildren('')

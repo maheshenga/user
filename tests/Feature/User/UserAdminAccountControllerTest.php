@@ -314,6 +314,20 @@ class UserAdminAccountControllerTest extends TestCase
         $this->assertStringContainsString('value: status', $script);
     }
 
+    public function test_user_admin_smoke_script_checks_account_status_endpoint_guards(): void
+    {
+        $script = file_get_contents(base_path('scripts/user-admin-smoke.php'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('expectAccountStatusEndpointGuards', $script);
+        $this->assertStringContainsString('adminPath($prefix, \'user/account/modify\')', $script);
+        $this->assertStringContainsString("'field' => 'nickname'", $script);
+        $this->assertStringContainsString("'field' => 'status'", $script);
+        $this->assertStringContainsString("'value' => 'archived'", $script);
+        $this->assertStringContainsString('用户账号管理仅允许修改账号状态', $script);
+        $this->assertStringContainsString('账号状态值无效', $script);
+    }
+
     public function test_admin_user_account_modify_allows_status_updates_only(): void
     {
         $user = UserAccount::query()->create([

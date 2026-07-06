@@ -260,6 +260,22 @@ function expectJsonCode(array $response, int $code, string $label): void
     }
 }
 
+/**
+ * @param array{status:int,body:string,json:?array<string, mixed>} $response
+ */
+function expectJsonMessageContains(array $response, string $needle, string $label): void
+{
+    if ($response['json'] === null) {
+        throw new AdminSmokeFailure("{$label} did not return JSON.");
+    }
+
+    $message = (string) ($response['json']['msg'] ?? '');
+
+    if (! str_contains($message, $needle)) {
+        throw new AdminSmokeFailure("{$label} returned message {$message}; expected to contain {$needle}.");
+    }
+}
+
 function expectBodyContains(string $body, string $needle, string $label): void
 {
     if (! str_contains($body, $needle)) {
@@ -464,6 +480,29 @@ function expectAccountStatusScript(array $response, string $label): void
     expectBodyContains($response['body'], 'ea.table.reload(init.table_render_id)', $label);
 }
 
+function expectAccountStatusEndpointGuards(AdminSmokeHttpClient $client, string $prefix): void
+{
+    $label = 'POST /' . $prefix . '/user/account/modify status endpoint guards';
+
+    $response = $client->request('POST', adminPath($prefix, 'user/account/modify'), [
+        'id' => '1',
+        'field' => 'nickname',
+        'value' => 'Smoke Probe',
+    ], ajax: true, jsonAccept: true);
+    expectStatus($response, [200], $label . ' non-status field');
+    expectJsonCode($response, 0, $label . ' non-status field');
+    expectJsonMessageContains($response, '用户账号管理仅允许修改账号状态', $label . ' non-status field');
+
+    $response = $client->request('POST', adminPath($prefix, 'user/account/modify'), [
+        'id' => '1',
+        'field' => 'status',
+        'value' => 'archived',
+    ], ajax: true, jsonAccept: true);
+    expectStatus($response, [200], $label . ' invalid status');
+    expectJsonCode($response, 0, $label . ' invalid status');
+    expectJsonMessageContains($response, '账号状态值无效', $label . ' invalid status');
+}
+
 function pass(string $message): void
 {
     fwrite(STDOUT, "PASS {$message}\n");
@@ -526,6 +565,9 @@ function runAdminSmoke(): void
     $response = $client->request('GET', '/static/admin/js/user/account.js');
     expectAccountStatusScript($response, 'GET /static/admin/js/user/account.js');
     pass('GET /static/admin/js/user/account.js status actions');
+
+    expectAccountStatusEndpointGuards($client, $prefix);
+    pass('POST /' . $prefix . '/user/account/modify status endpoint guards');
 
     fwrite(STDOUT, "OK user admin smoke passed\n");
 }

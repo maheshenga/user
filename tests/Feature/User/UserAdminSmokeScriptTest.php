@@ -30,6 +30,7 @@ class UserAdminSmokeScriptTest extends TestCase
         $this->assertStringContainsString('PASS GET /admin/ajax/initAdmin menu contains 用户运营', $output);
         $this->assertStringContainsString('PASS GET /admin/user/settings/index', $output);
         $this->assertStringContainsString('PASS GET /admin/user/activation-code/redemptions', $output);
+        $this->assertStringContainsString('PASS POST /admin/user/account/modify status endpoint guards', $output);
     }
 
     public function test_user_admin_smoke_script_accepts_space_separated_option_values(): void
