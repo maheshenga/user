@@ -20,6 +20,102 @@
         return JSON.stringify(payload, null, 2);
     }
 
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function valueOrDash(value) {
+        if (value === null || value === undefined || value === '') {
+            return '-';
+        }
+        return escapeHtml(value);
+    }
+
+    function row(label, value) {
+        return `<div class="summary-row"><span>${escapeHtml(label)}</span><strong>${valueOrDash(value)}</strong></div>`;
+    }
+
+    function rawFallback(data) {
+        return `<details class="raw-payload"><summary>Raw data</summary><pre>${escapeHtml(pretty(data))}</pre></details>`;
+    }
+
+    function renderList(items, emptyText, renderer) {
+        if (!Array.isArray(items) || items.length === 0) {
+            return `<div class="empty-state">${escapeHtml(emptyText)}</div>`;
+        }
+
+        return `<div class="summary-list">${items.map(renderer).join('')}</div>`;
+    }
+
+    const renderers = {
+        vip(data) {
+            const user = data.user || data.vip || data;
+            return [
+                row('VIP Level', user.vip_level ?? user.level),
+                row('Status', user.vip_status ?? user.status),
+                row('Started At', user.vip_started_at ?? user.started_at),
+                row('Expired At', user.vip_expired_at ?? user.expired_at),
+                rawFallback(data),
+            ].join('');
+        },
+        balance(data) {
+            return [
+                row('Available', data.available_balance ?? data.available),
+                row('Frozen', data.frozen_balance ?? data.frozen),
+                row('Total Earned', data.total_earned),
+                row('Total Withdrawn', data.total_withdrawn),
+                rawFallback(data),
+            ].join('');
+        },
+        ledger(data) {
+            const rows = data.rows || data.list || data.ledger || [];
+            return renderList(rows, 'No balance ledger records.', (item) => [
+                '<article class="summary-item">',
+                row('Amount', item.amount),
+                row('Type', item.type ?? item.direction),
+                row('Reason', item.reason ?? item.remark),
+                row('Time', item.create_time ?? item.created_at),
+                '</article>',
+            ].join('')) + rawFallback(data);
+        },
+        invite(data) {
+            const code = data.invite_code || data.default_code || data.code || {};
+            return [
+                row('Invite Code', code.code ?? data.code),
+                row('Invite URL', code.url ?? data.invite_url),
+                row('Level 1 Total', data.level1_total ?? data.first_level_total),
+                row('Level 2 Total', data.level2_total ?? data.second_level_total),
+                rawFallback(data),
+            ].join('');
+        },
+        inviteRecords(data) {
+            const rows = data.rows || data.list || data.records || [];
+            return renderList(rows, 'No invite records.', (item) => [
+                '<article class="summary-item">',
+                row('User', item.email ?? item.mobile ?? item.nickname ?? item.user_id),
+                row('Level', item.level),
+                row('Registered At', item.registered_at ?? item.create_time),
+                '</article>',
+            ].join('')) + rawFallback(data);
+        },
+        withdrawals(data) {
+            const rows = data.rows || data.list || data.withdrawals || [];
+            return renderList(rows, 'No withdrawal records.', (item) => [
+                '<article class="summary-item">',
+                row('Amount', item.amount),
+                row('Status', item.status),
+                row('Account', item.account_no ?? item.account?.account_no),
+                row('Requested At', item.create_time ?? item.created_at),
+                '</article>',
+            ].join('')) + rawFallback(data);
+        },
+    };
+
     async function request(endpoint, options) {
         const response = await fetch(endpoint, {
             credentials: 'same-origin',
@@ -112,6 +208,18 @@
         box.textContent = 'Loading...';
         try {
             const result = await request(endpoint);
+            if (Number(result.code) !== 1) {
+                box.textContent = result.msg || 'Request failed.';
+                return;
+            }
+
+            const rendererName = box.dataset.dashboardRender || name;
+            const renderer = renderers[rendererName];
+            if (renderer) {
+                box.innerHTML = renderer(result.data || {});
+                return;
+            }
+
             box.textContent = `${result.msg || ''}\n${pretty(result.data)}`.trim();
         } catch (error) {
             box.textContent = error.message;
