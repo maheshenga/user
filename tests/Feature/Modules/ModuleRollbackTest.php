@@ -457,7 +457,7 @@ class ModuleRollbackTest extends TestCase
             app(ModuleRollbacker::class)->rollback('blog');
             $this->fail('Expected rollback preflight to reject symlink in backup.');
         } catch (RuntimeException $exception) {
-            $this->assertStringContainsString('Refusing to copy symlink', $exception->getMessage());
+            $this->assertStringContainsString('拒绝复制符号链接', $exception->getMessage());
         }
 
         $this->assertTrue(Schema::hasTable('added_preflight_keep'));

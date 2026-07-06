@@ -217,7 +217,7 @@ class ModuleUpgradeTest extends TestCase
             app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
             $this->fail('Expected zip upgrade to reject reserved admin_prefix.');
         } catch (\InvalidArgumentException $exception) {
-            $this->assertStringContainsString('reserved admin_prefix [admin]', $exception->getMessage());
+            $this->assertStringContainsString('保留的后台前缀 [admin]', $exception->getMessage());
         }
 
         $restoredManifest = json_decode(file_get_contents($modulePath.DIRECTORY_SEPARATOR.'module.json') ?: '', true, 512, JSON_THROW_ON_ERROR);
@@ -227,7 +227,7 @@ class ModuleUpgradeTest extends TestCase
         $this->assertDatabaseHas('system_module', [
             'name' => 'blog',
             'version' => '1.0.0',
-            'last_error' => 'Module [blog] cannot use reserved admin_prefix [admin] because it is reserved for built-in admin routes.',
+            'last_error' => '模块 [blog] 不能使用保留的后台前缀 [admin]，该前缀已被内置后台路由占用。',
         ]);
         $this->assertDatabaseHas('system_module_log', [
             'module' => 'blog',
@@ -253,7 +253,7 @@ class ModuleUpgradeTest extends TestCase
             app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
             $this->fail('Expected zip install to reject reserved admin_prefix.');
         } catch (\InvalidArgumentException $exception) {
-            $this->assertStringContainsString('reserved admin_prefix [admin]', $exception->getMessage());
+            $this->assertStringContainsString('保留的后台前缀 [admin]', $exception->getMessage());
         }
 
         $this->assertFileDoesNotExist($this->root.DIRECTORY_SEPARATOR.'Blog');

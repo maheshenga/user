@@ -280,7 +280,7 @@ class ModuleLifecycleTest extends TestCase
                 $this->approveModuleForInstall($name);
 
                 $this->artisan('module:install', ['name' => $name])
-                    ->expectsOutputToContain("reserved admin_prefix [{$prefix}]")
+                    ->expectsOutputToContain("保留的后台前缀 [{$prefix}]")
                     ->assertExitCode(1);
 
                 $this->assertDatabaseMissing('system_module', ['name' => $name, 'status' => 'installed']);
@@ -317,7 +317,7 @@ class ModuleLifecycleTest extends TestCase
         ]);
 
         $this->artisan('module:enable', ['name' => 'dirty_mall'])
-            ->expectsOutputToContain('reserved admin_prefix [mall]')
+            ->expectsOutputToContain('保留的后台前缀 [mall]')
             ->assertExitCode(1);
 
         $this->assertDatabaseHas('system_module', ['name' => 'dirty_mall', 'status' => 'installed']);

@@ -9,7 +9,7 @@ final class ModuleFileStore
     public function backup(string $source, string $module, string $version): string
     {
         if (! is_dir($source)) {
-            throw new RuntimeException("Module directory not found: {$source}");
+            throw new RuntimeException("模块目录不存在：{$source}");
         }
 
         $target = $this->uniqueBackupTarget($module, $version);
@@ -28,34 +28,34 @@ final class ModuleFileStore
     public function replace(string $target, string $source): void
     {
         if (! is_dir($source)) {
-            throw new RuntimeException("Replacement directory not found: {$source}");
+            throw new RuntimeException("替换目录不存在：{$source}");
         }
 
         if ($this->hasDotSegments($target)) {
-            throw new RuntimeException('Replacement target contains dot segments.');
+            throw new RuntimeException('替换目标包含点号路径段。');
         }
 
         if ($this->hasDotSegments($source)) {
-            throw new RuntimeException('Replacement source contains dot segments.');
+            throw new RuntimeException('替换源目录包含点号路径段。');
         }
 
         $normalizedTarget = $this->normalizePath($target);
         $normalizedSource = $this->normalizePath($source);
 
         if ($normalizedTarget === $normalizedSource) {
-            throw new RuntimeException('Replacement target must differ from source.');
+            throw new RuntimeException('替换目标必须不同于源目录。');
         }
 
         if (
             $this->isWithinRoot($normalizedTarget, $normalizedSource)
             || $this->isWithinRoot($normalizedSource, $normalizedTarget)
         ) {
-            throw new RuntimeException('Replacement target must not contain or be contained by source.');
+            throw new RuntimeException('替换目标不能包含源目录，也不能位于源目录内。');
         }
 
         $modulesRoot = $this->modulesRoot();
         if (! $this->isWithinRoot($normalizedTarget, $modulesRoot)) {
-            throw new RuntimeException('Replacement target is outside allowed roots.');
+            throw new RuntimeException('替换目标不在允许的模块目录内。');
         }
 
         $this->assertNoSymlinkAncestors($normalizedTarget, $modulesRoot);
@@ -116,17 +116,17 @@ final class ModuleFileStore
     public function deleteDirectory(string $path): void
     {
         if ($this->hasDotSegments($path)) {
-            throw new RuntimeException('Delete path contains dot segments.');
+            throw new RuntimeException('删除路径包含点号路径段。');
         }
 
         $normalizedPath = $this->normalizePath($path);
         $root = $this->allowedDeleteRoot($normalizedPath);
         if ($root === null) {
-            throw new RuntimeException('Delete path is outside allowed roots.');
+            throw new RuntimeException('删除路径不在允许的模块目录内。');
         }
 
         if ($normalizedPath === $root) {
-            throw new RuntimeException('Delete path cannot be a safe root.');
+            throw new RuntimeException('删除路径不能是安全根目录。');
         }
 
         $this->assertNoSymlinkAncestors($normalizedPath, $root);
@@ -161,31 +161,31 @@ final class ModuleFileStore
         }
 
         if (! @rmdir($path)) {
-            throw new RuntimeException("Unable to remove directory: {$path}");
+            throw new RuntimeException("无法删除目录：{$path}");
         }
     }
 
     private function copyDirectory(string $source, string $target): void
     {
         if (is_link($source) || is_file($source)) {
-            throw new RuntimeException("Expected directory, got file: {$source}");
+            throw new RuntimeException("期望目录，实际是文件：{$source}");
         }
 
         if (! is_dir($source)) {
-            throw new RuntimeException("Source directory not found: {$source}");
+            throw new RuntimeException("源目录不存在：{$source}");
         }
 
         if (file_exists($target) || is_link($target)) {
-            throw new RuntimeException("Target directory already exists: {$target}");
+            throw new RuntimeException("目标目录已存在：{$target}");
         }
 
         if (! mkdir($target, 0777, true) && ! is_dir($target)) {
-            throw new RuntimeException("Unable to create directory: {$target}");
+            throw new RuntimeException("无法创建目录：{$target}");
         }
 
         $entries = scandir($source);
         if ($entries === false) {
-            throw new RuntimeException("Unable to read directory: {$source}");
+            throw new RuntimeException("无法读取目录：{$source}");
         }
 
         foreach ($entries as $entry) {
@@ -197,7 +197,7 @@ final class ModuleFileStore
             $to = $target.DIRECTORY_SEPARATOR.$entry;
 
             if (is_link($from)) {
-                throw new RuntimeException("Refusing to copy symlink: {$from}");
+                throw new RuntimeException("拒绝复制符号链接：{$from}");
             }
 
             if (is_dir($from)) {
@@ -206,7 +206,7 @@ final class ModuleFileStore
             }
 
             if (! copy($from, $to)) {
-                throw new RuntimeException("Unable to copy file: {$from}");
+                throw new RuntimeException("无法复制文件：{$from}");
             }
         }
     }
@@ -267,7 +267,7 @@ final class ModuleFileStore
             return;
         }
 
-        throw new RuntimeException("Unable to delete path: {$path}");
+        throw new RuntimeException("无法删除路径：{$path}");
     }
 
     private function assertNoSymlinkAncestors(string $target, string $root): void
@@ -276,7 +276,7 @@ final class ModuleFileStore
         $target = str_replace('\\', '/', $target);
 
         if (is_link($root)) {
-            throw new RuntimeException('Replacement target contains symlink ancestor.');
+            throw new RuntimeException('替换目标包含符号链接父目录。');
         }
 
         $parent = dirname($target);
@@ -298,7 +298,7 @@ final class ModuleFileStore
             }
 
             if (is_link($current)) {
-                throw new RuntimeException('Replacement target contains symlink ancestor.');
+                throw new RuntimeException('替换目标包含符号链接父目录。');
             }
         }
     }

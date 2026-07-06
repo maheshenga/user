@@ -46,7 +46,7 @@ class ModulePackageTest extends TestCase
         ]);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('unsafe zip entry');
+        $this->expectExceptionMessage('模块 zip 包包含不安全条目');
 
         app(ModuleZipExtractor::class)->extract($zipPath);
     }
@@ -70,7 +70,7 @@ class ModulePackageTest extends TestCase
         $zip->close();
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('module zip is too large');
+        $this->expectExceptionMessage('模块 zip 包过大');
 
         app(ModuleZipExtractor::class)->extract($zipPath);
     }
@@ -194,7 +194,7 @@ class ModulePackageTest extends TestCase
         file_put_contents($source.DIRECTORY_SEPARATOR.'new.txt', 'new');
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Replacement target is outside allowed roots');
+        $this->expectExceptionMessage('替换目标不在允许的模块目录内');
 
         try {
             app(ModuleFileStore::class)->replace($target, $source);
@@ -220,7 +220,7 @@ class ModulePackageTest extends TestCase
         $before = $this->moduleTmpDirectories();
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('unsafe zip entry');
+        $this->expectExceptionMessage('模块 zip 包包含不安全条目');
 
         try {
             app(ModuleZipExtractor::class)->extract($zipPath);
@@ -255,7 +255,7 @@ class ModulePackageTest extends TestCase
         }
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Replacement target contains symlink ancestor');
+        $this->expectExceptionMessage('替换目标包含符号链接父目录');
 
         try {
             app(ModuleFileStore::class)->replace($target, $source);
@@ -293,7 +293,7 @@ class ModulePackageTest extends TestCase
         }
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Replacement target contains dot segments');
+        $this->expectExceptionMessage('替换目标包含点号路径段');
 
         try {
             app(ModuleFileStore::class)->replace($target, $source);
@@ -330,7 +330,7 @@ class ModulePackageTest extends TestCase
         }
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Replacement target contains dot segments');
+        $this->expectExceptionMessage('替换目标包含点号路径段');
 
         try {
             app(ModuleFileStore::class)->replace($target, $source);
@@ -360,7 +360,7 @@ class ModulePackageTest extends TestCase
         $zip->close();
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('unsafe zip entry');
+        $this->expectExceptionMessage('模块 zip 包包含不安全条目');
 
         app(ModuleZipExtractor::class)->extract($zipPath);
     }
@@ -384,7 +384,7 @@ class ModulePackageTest extends TestCase
         }
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Refusing to copy symlink');
+        $this->expectExceptionMessage('拒绝复制符号链接');
 
         app(ModuleFileStore::class)->backup($current, 'blog', '1.0.0');
     }
@@ -412,7 +412,7 @@ class ModulePackageTest extends TestCase
             app(ModuleFileStore::class)->backup($current, 'blog', '1.0.0');
             $this->fail('Expected backup to reject symlink entry.');
         } catch (RuntimeException $exception) {
-            $this->assertStringContainsString('Refusing to copy symlink', $exception->getMessage());
+            $this->assertStringContainsString('拒绝复制符号链接', $exception->getMessage());
         }
 
         $backupRoot = storage_path('modules/backups/blog');
@@ -432,7 +432,7 @@ class ModulePackageTest extends TestCase
         mkdir($target, 0777, true);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Replacement target must not contain or be contained by source');
+        $this->expectExceptionMessage('替换目标不能包含源目录，也不能位于源目录内');
 
         app(ModuleFileStore::class)->replace($target, $source);
     }
@@ -463,7 +463,7 @@ class ModulePackageTest extends TestCase
             app(ModuleFileStore::class)->replace($target, $source);
             $this->fail('Expected replace to reject symlink entry while creating internal backup.');
         } catch (RuntimeException $exception) {
-            $this->assertStringContainsString('Refusing to copy symlink', $exception->getMessage());
+            $this->assertStringContainsString('拒绝复制符号链接', $exception->getMessage());
         }
 
         $tmpEntries = $this->moduleTmpDirectories();
@@ -485,7 +485,7 @@ class ModulePackageTest extends TestCase
         file_put_contents($root.DIRECTORY_SEPARATOR.'keep.txt', 'keep');
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Delete path cannot be a safe root');
+        $this->expectExceptionMessage('删除路径不能是安全根目录');
 
         try {
             app(ModuleFileStore::class)->deleteDirectory($root);
@@ -502,7 +502,7 @@ class ModulePackageTest extends TestCase
         file_put_contents($outside.DIRECTORY_SEPARATOR.'keep.txt', 'keep');
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Delete path is outside allowed roots');
+        $this->expectExceptionMessage('删除路径不在允许的模块目录内');
 
         try {
             app(ModuleFileStore::class)->deleteDirectory($outside);

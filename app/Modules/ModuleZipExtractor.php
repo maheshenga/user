@@ -14,18 +14,18 @@ final class ModuleZipExtractor
     public function extract(string $zipPath): string
     {
         if (! class_exists(ZipArchive::class)) {
-            throw new RuntimeException('ZipArchive extension is required.');
+            throw new RuntimeException('ZipArchive 扩展不可用。');
         }
 
         $target = storage_path('modules/tmp/'.uniqid('module_', true));
         if (! mkdir($target, 0777, true) && ! is_dir($target)) {
-            throw new RuntimeException("Unable to create extraction directory: {$target}");
+            throw new RuntimeException("无法创建模块解压目录：{$target}");
         }
 
         $zip = new ZipArchive();
         if ($zip->open($zipPath) !== true) {
             $this->cleanup($target);
-            throw new RuntimeException('Unable to open module zip.');
+            throw new RuntimeException('无法打开模块 zip 包。');
         }
 
         try {
@@ -34,28 +34,28 @@ final class ModuleZipExtractor
 
                 for ($index = 0; $index < $zip->numFiles; $index++) {
                     if ($index >= self::MAX_ENTRIES) {
-                        throw new RuntimeException('module zip is too large: too many entries');
+                        throw new RuntimeException('模块 zip 包过大：条目数量超过限制。');
                     }
 
                     $rawName = $zip->getNameIndex($index);
                     if ($rawName === false) {
-                        throw new RuntimeException("unsafe zip entry: index {$index}");
+                        throw new RuntimeException("模块 zip 包包含不安全条目：index {$index}");
                     }
 
                     $name = str_replace('\\', '/', $rawName);
                     $totalUncompressedBytes += $this->entryUncompressedSize($zip, $index, $name);
 
                     if ($totalUncompressedBytes > self::MAX_TOTAL_UNCOMPRESSED_BYTES) {
-                        throw new RuntimeException('module zip is too large: total uncompressed size exceeds limit');
+                        throw new RuntimeException('模块 zip 包过大：解压后总大小超过限制。');
                     }
 
                     if ($this->isUnsafeEntry($zip, $index, $name)) {
-                        throw new RuntimeException("unsafe zip entry: {$name}");
+                        throw new RuntimeException("模块 zip 包包含不安全条目：{$name}");
                     }
                 }
 
                 if (! $zip->extractTo($target)) {
-                    throw new RuntimeException('Unable to extract module zip.');
+                    throw new RuntimeException('无法解压模块 zip 包。');
                 }
             } finally {
                 $zip->close();
@@ -72,12 +72,12 @@ final class ModuleZipExtractor
     {
         $stat = $zip->statIndex($index);
         if (! is_array($stat) || ! isset($stat['size'])) {
-            throw new RuntimeException("unsafe zip entry: {$name}");
+            throw new RuntimeException("模块 zip 包包含不安全条目：{$name}");
         }
 
         $size = (int) $stat['size'];
         if ($size > self::MAX_ENTRY_UNCOMPRESSED_BYTES) {
-            throw new RuntimeException('module zip is too large: entry uncompressed size exceeds limit');
+            throw new RuntimeException('模块 zip 包过大：单个条目解压后大小超过限制。');
         }
 
         return $size;
@@ -133,7 +133,7 @@ final class ModuleZipExtractor
             return $target.DIRECTORY_SEPARATOR.$children[0];
         }
 
-        throw new RuntimeException('module.json not found in module zip.');
+        throw new RuntimeException('模块 zip 包中未找到 module.json。');
     }
 
     private function cleanup(string $path): void

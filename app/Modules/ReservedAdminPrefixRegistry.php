@@ -59,8 +59,8 @@ final class ReservedAdminPrefixRegistry
         }
 
         $message = $moduleName === null
-            ? "Reserved admin_prefix [{$prefix}] cannot be used by modules."
-            : "Module [{$moduleName}] cannot use reserved admin_prefix [{$prefix}] because it is reserved for built-in admin routes.";
+            ? "保留的后台前缀 [{$prefix}] 不能被模块使用。"
+            : "模块 [{$moduleName}] 不能使用保留的后台前缀 [{$prefix}]，该前缀已被内置后台路由占用。";
 
         throw new InvalidArgumentException($message);
     }
