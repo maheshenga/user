@@ -262,7 +262,7 @@ if ($method === 'POST' && $path === '/user/activation-code/redeem') {
     if (trim((string) ($payload['code'] ?? '')) === '') {
         $json([
             'code' => 0,
-            'msg' => 'Activation code is required.',
+            'msg' => '激活码不能为空。',
         ]);
         return;
     }

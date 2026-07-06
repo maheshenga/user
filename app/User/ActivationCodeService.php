@@ -23,17 +23,17 @@ final class ActivationCodeService
     {
         $plan = VipPlan::query()->find((int) ($payload['vip_plan_id'] ?? 0));
         if ($plan === null || $plan->status !== 'active') {
-            throw new InvalidArgumentException('VIP plan is not active.');
+            throw new InvalidArgumentException('VIP 套餐未启用。');
         }
 
         $name = $this->normalizeNullableString($payload['name'] ?? null);
         if ($name === null) {
-            throw new InvalidArgumentException('Batch name is required.');
+            throw new InvalidArgumentException('批次名称不能为空。');
         }
 
         $totalCount = max(0, (int) ($payload['total_count'] ?? 0));
         if ($totalCount <= 0) {
-            throw new InvalidArgumentException('Total count must be greater than zero.');
+            throw new InvalidArgumentException('生成总数必须大于 0。');
         }
 
         $now = time();
@@ -63,17 +63,17 @@ final class ActivationCodeService
         return DB::transaction(function () use ($batchId, $count): array {
             $batch = ActivationCodeBatch::query()->lockForUpdate()->find($batchId);
             if ($batch === null || $batch->status !== 'active') {
-                throw new InvalidArgumentException('Activation code batch is not active.');
+                throw new InvalidArgumentException('激活码批次未启用。');
             }
 
             $count = max(0, $count);
             if ($count <= 0) {
-                throw new InvalidArgumentException('Generate count must be greater than zero.');
+                throw new InvalidArgumentException('生成数量必须大于 0。');
             }
 
             $remaining = (int) $batch->total_count - (int) $batch->generated_count;
             if ($count > $remaining) {
-                throw new InvalidArgumentException('Generate count exceeds remaining batch capacity.');
+                throw new InvalidArgumentException('生成数量超过批次剩余容量。');
             }
 
             $codes = [];
@@ -113,7 +113,7 @@ final class ActivationCodeService
     {
         $plainCode = $this->normalizeNullableString($payload['code'] ?? null);
         if ($plainCode === null) {
-            throw new InvalidArgumentException('Activation code is required.');
+            throw new InvalidArgumentException('激活码不能为空。');
         }
 
         $normalized = $this->normalizeCode($plainCode);
@@ -124,9 +124,9 @@ final class ActivationCodeService
                 ->first();
 
             if ($code === null) {
-                $this->writeRedemption(null, null, $userId, null, null, $ip, 'failed', 'Activation code is invalid.');
+                $this->writeRedemption(null, null, $userId, null, null, $ip, 'failed', '激活码无效。');
 
-                return ['error' => 'Activation code is invalid.'];
+                return ['error' => '激活码无效。'];
             }
 
             $batch = ActivationCodeBatch::query()->lockForUpdate()->find($code->batch_id);
@@ -175,27 +175,27 @@ final class ActivationCodeService
     private function redemptionError(ActivationCode $code, ?ActivationCodeBatch $batch, int $userId): ?string
     {
         if ($batch === null || $batch->status !== 'active') {
-            return 'Activation code batch is not active.';
+            return '激活码批次未启用。';
         }
 
         if ($code->status !== 'unused') {
-            return 'Activation code is not usable.';
+            return '激活码当前不可用。';
         }
 
         if ($code->expires_at !== null && Carbon::parse($code->expires_at)->isPast()) {
-            return 'Activation code is expired.';
+            return '激活码已过期。';
         }
 
         if ($batch->expires_at !== null && Carbon::parse($batch->expires_at)->isPast()) {
-            return 'Activation code is expired.';
+            return '激活码已过期。';
         }
 
         if ((int) $code->max_uses > 0 && (int) $code->used_count >= (int) $code->max_uses) {
-            return 'Activation code usage limit reached.';
+            return '激活码使用次数已达上限。';
         }
 
         if ($code->bound_user_id !== null && (int) $code->bound_user_id !== $userId) {
-            return 'Activation code is not bound to this user.';
+            return '激活码不属于当前用户。';
         }
 
         return null;
@@ -234,7 +234,7 @@ final class ActivationCodeService
             }
         }
 
-        throw new InvalidArgumentException('Unable to generate activation code.');
+        throw new InvalidArgumentException('无法生成激活码。');
     }
 
     private function randomAlphaNumeric(int $length): string

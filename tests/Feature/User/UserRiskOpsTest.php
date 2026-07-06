@@ -252,7 +252,7 @@ class UserRiskOpsTest extends TestCase
             ], $user->id, '127.0.0.8');
             $this->fail('Expected invalid activation code to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Activation code is invalid.', $exception->getMessage());
+            $this->assertSame('激活码无效。', $exception->getMessage());
         }
 
         $event = UserRiskEvent::query()->where('event_type', 'activation_code_failed')->firstOrFail();

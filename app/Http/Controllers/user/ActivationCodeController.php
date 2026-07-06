@@ -22,6 +22,10 @@ class ActivationCodeController extends UserApiController
         $payload = request()->only(['code']);
         $validator = Validator::make($payload, [
             'code' => 'required|string|max:80',
+        ], [
+            'code.required' => '激活码不能为空。',
+            'code.string' => '激活码格式不正确。',
+            'code.max' => '激活码不能超过 80 个字符。',
         ]);
 
         if ($validator->fails()) {

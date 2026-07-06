@@ -430,7 +430,7 @@ class UserAffiliateBalanceTest extends TestCase
             ], $buyer->id, '127.0.0.9');
             $this->fail('Expected invalid activation code to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Activation code is invalid.', $exception->getMessage());
+            $this->assertSame('激活码无效。', $exception->getMessage());
         }
 
         $this->assertSame(0, AffiliateCommission::query()->count());

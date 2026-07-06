@@ -265,7 +265,7 @@ class UserVipActivationTest extends TestCase
 
             $this->fail('Expected reused activation code to fail.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('Activation code is not usable.', $exception->getMessage());
+            $this->assertSame('激活码当前不可用。', $exception->getMessage());
         }
 
         $this->assertSame(1, UserVipRecord::query()->where('user_id', $firstUser['user']['id'])->count());
@@ -274,7 +274,7 @@ class UserVipActivationTest extends TestCase
         $this->assertDatabaseHas('activation_code_redemption', [
             'user_id' => $secondUser['user']['id'],
             'result' => 'failed',
-            'error_message' => 'Activation code is not usable.',
+            'error_message' => '激活码当前不可用。',
         ]);
     }
 
@@ -285,10 +285,10 @@ class UserVipActivationTest extends TestCase
         $plan = $this->createVipPlan('Activation VIP', 1, 30);
 
         $cases = [
-            ['status' => 'disabled', 'message' => 'Activation code is not usable.'],
-            ['status' => 'unused', 'expires_at' => Carbon::now()->subMinute(), 'message' => 'Activation code is expired.'],
-            ['status' => 'unused', 'used_count' => 2, 'max_uses' => 2, 'message' => 'Activation code usage limit reached.'],
-            ['status' => 'unused', 'bound_user_id' => $otherUser['user']['id'], 'message' => 'Activation code is not bound to this user.'],
+            ['status' => 'disabled', 'message' => '激活码当前不可用。'],
+            ['status' => 'unused', 'expires_at' => Carbon::now()->subMinute(), 'message' => '激活码已过期。'],
+            ['status' => 'unused', 'used_count' => 2, 'max_uses' => 2, 'message' => '激活码使用次数已达上限。'],
+            ['status' => 'unused', 'bound_user_id' => $otherUser['user']['id'], 'message' => '激活码不属于当前用户。'],
         ];
 
         foreach ($cases as $index => $case) {
@@ -369,7 +369,8 @@ class UserVipActivationTest extends TestCase
 
         $this->postJson('/user/activation-code/redeem', [])
             ->assertOk()
-            ->assertJsonPath('code', 0);
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '激活码不能为空。');
     }
 
     public function test_user_vip_activation_routes_use_install_guard_and_throttle(): void
