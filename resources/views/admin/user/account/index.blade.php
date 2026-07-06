@@ -17,6 +17,7 @@
         </div>
         <table id="currentTable" class="layui-table layui-hide"
                data-auth-detail="{{auths('user/account/detail')}}"
+               data-auth-modify="{{auths('user/account/modify')}}"
                lay-filter="currentTable">
         </table>
         <script type="text/html" id="userStatusTpl">

@@ -273,11 +273,30 @@ class UserAdminAccountControllerTest extends TestCase
         $response->assertSee('账号状态管理');
         $response->assertSee('data-status-endpoint="/admin/user/account/modify"', false);
         $response->assertSee('data-status-values="pending,active,disabled,frozen"', false);
+        $response->assertSee('data-auth-modify="1"', false);
         $response->assertSee('待审核');
         $response->assertSee('正常');
         $response->assertSee('已禁用');
         $response->assertSee('已冻结');
         $response->assertSee('id="userStatusTpl"', false);
+    }
+
+    public function test_admin_user_account_js_wires_status_table_actions(): void
+    {
+        $script = file_get_contents(public_path('static/admin/js/user/account.js'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString("modify_url: 'user/account/modify'", $script);
+        $this->assertStringContainsString("templet: '#userStatusTpl'", $script);
+        $this->assertStringContainsString('data-status-endpoint', $script);
+        $this->assertStringContainsString('data-auth-modify', $script);
+        $this->assertStringContainsString('data-account-status', $script);
+        $this->assertStringContainsString("CONFIG.IS_SUPER_ADMIN === '1'", $script);
+        $this->assertStringContainsString("field: 'status'", $script);
+        $this->assertStringContainsString('value: status', $script);
+        $this->assertStringContainsString('ea.table.reload(init.table_render_id)', $script);
+        $this->assertStringNotContainsString("edit_url: 'user/account/edit'", $script);
+        $this->assertStringNotContainsString("delete_url: 'user/account/delete'", $script);
     }
 
     public function test_admin_user_account_modify_allows_status_updates_only(): void
