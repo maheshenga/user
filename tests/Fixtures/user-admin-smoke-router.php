@@ -147,6 +147,12 @@ if ($method === 'GET' && in_array($path, [
     '/admin/user/risk-event/index',
     '/admin/user/notification-outbox/index',
 ], true)) {
+    if ($mode === 'page-error' && $path === '/admin/user/account/index') {
+        header('Content-Type: text/html; charset=UTF-8');
+        echo '<!doctype html><html><body><div class="system-message error"><h1>No permission</h1></div></body></html>';
+        return;
+    }
+
     $html($path);
     return;
 }

@@ -65,6 +65,18 @@ class UserAdminSmokeScriptTest extends TestCase
         $this->assertStringContainsString('Dashboard metrics missing key: pending_payouts', $output);
     }
 
+    public function test_user_admin_smoke_script_fails_when_admin_page_is_error_shell(): void
+    {
+        $baseUrl = $this->startFixtureServer('page-error');
+
+        $process = $this->runSmokeScript($baseUrl);
+        $output = $process->getOutput() . $process->getErrorOutput();
+
+        $this->assertNotSame(0, $process->getExitCode(), $output);
+        $this->assertStringContainsString('FAIL user admin smoke failed', $output);
+        $this->assertStringContainsString('looks like an EasyAdmin error page', $output);
+    }
+
     private function startFixtureServer(?string $mode = null): string
     {
         $port = $this->getFreePort();

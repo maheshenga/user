@@ -324,6 +324,17 @@ function expectDashboardMetrics(array $payload): void
     }
 }
 
+function expectAdminPageBody(array $response, string $label): void
+{
+    if (str_contains($response['body'], 'system-message error')) {
+        throw new AdminSmokeFailure("{$label} looks like an EasyAdmin error page.");
+    }
+
+    if (str_contains($response['body'], '<title>') && str_contains($response['body'], 'login')) {
+        throw new AdminSmokeFailure("{$label} looks like a login page.");
+    }
+}
+
 function pass(string $message): void
 {
     fwrite(STDOUT, "PASS {$message}\n");
@@ -355,7 +366,7 @@ function runAdminSmoke(): void
     expectJsonCode($response, 1, 'POST /' . $prefix . '/login');
     pass('POST /' . $prefix . '/login');
 
-    $response = $client->request('GET', adminPath($prefix, 'ajax/initAdmin'), jsonAccept: true);
+    $response = $client->request('GET', adminPath($prefix, 'ajax/initAdmin'), ajax: true, jsonAccept: true);
     expectStatus($response, [200], 'GET /' . $prefix . '/ajax/initAdmin');
 
     if ($response['json'] === null) {
@@ -365,7 +376,7 @@ function runAdminSmoke(): void
     expectMenu($response['json']);
     pass('GET /' . $prefix . '/ajax/initAdmin menu contains User Operations');
 
-    $response = $client->request('GET', adminPath($prefix, 'user/dashboard/index'), jsonAccept: true);
+    $response = $client->request('GET', adminPath($prefix, 'user/dashboard/index'), ajax: true, jsonAccept: true);
     expectStatus($response, [200], 'GET /' . $prefix . '/user/dashboard/index JSON');
     expectJsonCode($response, 1, 'GET /' . $prefix . '/user/dashboard/index JSON');
     expectDashboardMetrics($response['json'] ?? []);
@@ -380,6 +391,7 @@ function runAdminSmoke(): void
     ] as $path) {
         $response = $client->request('GET', adminPath($prefix, $path));
         expectStatus($response, [200], 'GET /' . $prefix . '/' . $path);
+        expectAdminPageBody($response, 'GET /' . $prefix . '/' . $path);
         pass('GET /' . $prefix . '/' . $path);
     }
 
