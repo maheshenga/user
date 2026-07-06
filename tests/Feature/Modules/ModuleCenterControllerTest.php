@@ -76,6 +76,22 @@ class ModuleCenterControllerTest extends TestCase
         ]);
     }
 
+    public function test_admin_smoke_script_checks_module_center_visibility_and_actions(): void
+    {
+        $script = file_get_contents(base_path('scripts/user-admin-smoke.php'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('expectModuleCenterMenu', $script);
+        $this->assertStringContainsString('expectModuleCenterPage', $script);
+        $this->assertStringContainsString('expectModuleCenterScript', $script);
+        $this->assertStringContainsString('system/module/index', $script);
+        $this->assertStringContainsString('/static/admin/js/system/module.js', $script);
+        $this->assertStringContainsString('data-module-action', $script);
+        $this->assertStringContainsString('data-module-reject', $script);
+        $this->assertStringContainsString('approve_url', $script);
+        $this->assertStringContainsString('rollback_url', $script);
+    }
+
     public function test_detail_renders_module_metadata(): void
     {
         SystemModule::query()->create([

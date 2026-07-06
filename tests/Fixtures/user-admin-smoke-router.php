@@ -178,6 +178,41 @@ JS;
     return;
 }
 
+if ($method === 'GET' && $path === '/static/admin/js/system/module.js') {
+    header('Content-Type: application/javascript; charset=UTF-8');
+    echo <<<'JS'
+define(["jquery", "easy-admin"], function ($, ea) {
+    var init = {
+        table_elem: '#currentTable',
+        table_render_id: 'currentTableRenderId',
+        index_url: 'system/module/index',
+        discover_url: 'system/module/discover',
+        upload_url: 'system/module/upload',
+        install_url: 'system/module/install',
+        approve_url: 'system/module/approve',
+        reject_url: 'system/module/reject',
+        enable_url: 'system/module/enable',
+        disable_url: 'system/module/disable',
+        uninstall_url: 'system/module/uninstall',
+        upgradeLocal_url: 'system/module/upgradeLocal',
+        rollback_url: 'system/module/rollback'
+    };
+
+    return {
+        index: function () {
+            $('body').on('click', '[data-module-action]', function () {
+                ea.request.post({url: init.approve_url});
+            });
+            $('body').on('click', '[data-module-reject]', function () {
+                ea.request.post({url: init.reject_url});
+            });
+        }
+    };
+});
+JS;
+    return;
+}
+
 if ($method === 'GET' && $path === '/admin/ajax/initAdmin') {
     $menuInfo = [];
 
@@ -199,6 +234,14 @@ if ($method === 'GET' && $path === '/admin/ajax/initAdmin') {
                 ],
             ];
         }
+
+        $menuInfo[] = [
+            'title' => '系统管理',
+            'href' => '',
+            'child' => [
+                ['title' => '模块管理', 'href' => '/admin/system/module/index'],
+            ],
+        ];
     }
 
     $json([
@@ -270,6 +313,26 @@ $userOpsPagePaths = array_values(array_filter(array_map(
     static fn (array $child): ?string => parse_url($child['href'], PHP_URL_PATH) ?: null,
     $userOpsChildren('')
 )));
+
+if ($method === 'GET' && $path === '/admin/system/module/index') {
+    header('Content-Type: text/html; charset=UTF-8');
+    echo <<<'HTML'
+<!doctype html>
+<html>
+<head>
+    <meta name="csrf-token" content="fixture-admin-token">
+    <title>模块中心</title>
+</head>
+<body>
+<main>
+    <h1>模块中心</h1>
+    <table id="currentTable" lay-filter="currentTable"></table>
+</main>
+</body>
+</html>
+HTML;
+    return;
+}
 
 if ($method === 'GET' && in_array($path, $userOpsPagePaths, true)) {
     if ($mode === 'page-error' && $path === '/admin/user/account/index') {

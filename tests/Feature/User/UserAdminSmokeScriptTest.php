@@ -31,6 +31,9 @@ class UserAdminSmokeScriptTest extends TestCase
         $this->assertStringContainsString('PASS GET /admin/user/settings/index', $output);
         $this->assertStringContainsString('PASS GET /admin/user/activation-code/redemptions', $output);
         $this->assertStringContainsString('PASS POST /admin/user/account/modify status endpoint guards', $output);
+        $this->assertStringContainsString('PASS GET /admin/ajax/initAdmin menu contains 模块管理', $output);
+        $this->assertStringContainsString('PASS GET /admin/system/module/index module center page', $output);
+        $this->assertStringContainsString('PASS GET /static/admin/js/system/module.js module actions', $output);
     }
 
     public function test_user_admin_smoke_operator_guide_documents_command_and_scope(): void

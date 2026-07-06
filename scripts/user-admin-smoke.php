@@ -325,6 +325,22 @@ function expectMenu(array $payload, string $adminPrefix): void
 }
 
 /**
+ * @param array<string, mixed> $payload
+ */
+function expectModuleCenterMenu(array $payload, string $adminPrefix): void
+{
+    $systemMenu = findMenuByTitles($payload['menuInfo'] ?? [], ['系统管理', 'System']);
+
+    if ($systemMenu === null) {
+        throw new AdminSmokeFailure('Menu response missing 系统管理.');
+    }
+
+    if (! menuContainsHref($systemMenu, 'system/module/index', $adminPrefix)) {
+        throw new AdminSmokeFailure('Menu response missing system/module/index under 系统管理.');
+    }
+}
+
+/**
  * @param mixed $node
  * @param array<int, string> $titles
  * @return array<string, mixed>|null
@@ -480,6 +496,43 @@ function expectAccountStatusScript(array $response, string $label): void
     expectBodyContains($response['body'], 'ea.table.reload(init.table_render_id)', $label);
 }
 
+/**
+ * @param array{status:int,body:string,json:?array<string, mixed>} $response
+ */
+function expectModuleCenterPage(array $response, string $label): void
+{
+    expectAdminPageBody($response, $label);
+    expectBodyContains($response['body'], '模块中心', $label);
+    expectBodyContains($response['body'], 'id="currentTable"', $label);
+    expectBodyContains($response['body'], 'lay-filter="currentTable"', $label);
+}
+
+/**
+ * @param array{status:int,body:string,json:?array<string, mixed>} $response
+ */
+function expectModuleCenterScript(array $response, string $label): void
+{
+    expectStatus($response, [200], $label);
+
+    foreach ([
+        "index_url: 'system/module/index'",
+        "discover_url: 'system/module/discover'",
+        "upload_url: 'system/module/upload'",
+        "install_url: 'system/module/install'",
+        "approve_url: 'system/module/approve'",
+        "reject_url: 'system/module/reject'",
+        "enable_url: 'system/module/enable'",
+        "disable_url: 'system/module/disable'",
+        "uninstall_url: 'system/module/uninstall'",
+        "upgradeLocal_url: 'system/module/upgradeLocal'",
+        "rollback_url: 'system/module/rollback'",
+        'data-module-action',
+        'data-module-reject',
+    ] as $needle) {
+        expectBodyContains($response['body'], $needle, $label);
+    }
+}
+
 function expectAccountStatusEndpointGuards(AdminSmokeHttpClient $client, string $prefix): void
 {
     $label = 'POST /' . $prefix . '/user/account/modify status endpoint guards';
@@ -544,6 +597,8 @@ function runAdminSmoke(): void
 
     expectMenu($response['json'], $prefix);
     pass('GET /' . $prefix . '/ajax/initAdmin menu contains 用户运营');
+    expectModuleCenterMenu($response['json'], $prefix);
+    pass('GET /' . $prefix . '/ajax/initAdmin menu contains 模块管理');
 
     $response = $client->request('GET', adminPath($prefix, 'user/dashboard/index'), ajax: true, jsonAccept: true);
     expectStatus($response, [200], 'GET /' . $prefix . '/user/dashboard/index JSON');
@@ -568,6 +623,14 @@ function runAdminSmoke(): void
 
     expectAccountStatusEndpointGuards($client, $prefix);
     pass('POST /' . $prefix . '/user/account/modify status endpoint guards');
+
+    $response = $client->request('GET', adminPath($prefix, 'system/module/index'));
+    expectModuleCenterPage($response, 'GET /' . $prefix . '/system/module/index module center page');
+    pass('GET /' . $prefix . '/system/module/index module center page');
+
+    $response = $client->request('GET', '/static/admin/js/system/module.js');
+    expectModuleCenterScript($response, 'GET /static/admin/js/system/module.js');
+    pass('GET /static/admin/js/system/module.js module actions');
 
     fwrite(STDOUT, "OK user admin smoke passed\n");
 }
