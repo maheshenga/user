@@ -12,6 +12,10 @@ use InvalidArgumentException;
 
 final class InviteService
 {
+    public function __construct(private readonly UserOpsSettings $settings)
+    {
+    }
+
     public function createDefaultCode(UserAccount $user): UserInviteCode
     {
         $existing = UserInviteCode::query()
@@ -24,6 +28,7 @@ final class InviteService
         }
 
         $now = time();
+        $expiresDays = $this->settings->inviteDefaultExpiresDays();
 
         for ($attempt = 0; $attempt < 10; $attempt++) {
             $code = $this->generateCode();
@@ -37,8 +42,9 @@ final class InviteService
                 'code' => $code,
                 'type' => 'user',
                 'status' => InviteCodeStatus::ACTIVE,
-                'max_uses' => 0,
+                'max_uses' => $this->settings->inviteDefaultMaxUses(),
                 'used_count' => 0,
+                'expires_at' => $expiresDays > 0 ? Carbon::now()->addDays($expiresDays) : null,
                 'create_time' => $now,
                 'update_time' => $now,
             ]);

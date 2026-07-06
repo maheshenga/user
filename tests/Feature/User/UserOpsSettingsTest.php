@@ -6,10 +6,16 @@ use App\Http\Middleware\CheckAuth;
 use App\Http\Middleware\CheckInstall;
 use App\Http\Middleware\RateLimiting;
 use App\Http\Middleware\SystemLog;
+use App\Models\UserAccount;
+use App\User\InviteService;
+use App\User\PasswordResetService;
+use App\User\RiskService;
+use App\User\WithdrawalService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use InvalidArgumentException;
 use Tests\Concerns\CreatesModuleTestSchema;
 use Tests\TestCase;
 
@@ -148,6 +154,83 @@ class UserOpsSettingsTest extends TestCase
         ]);
     }
 
+    public function test_invite_default_code_uses_configured_limits(): void
+    {
+        $this->saveUserOpsConfig([
+            'invite_default_max_uses' => '2',
+            'invite_default_expires_days' => '10',
+        ]);
+
+        $user = $this->createUserAccount(['email' => 'invite-settings@example.com']);
+        $code = app(InviteService::class)->createDefaultCode($user);
+
+        $this->assertSame(2, (int) $code->max_uses);
+        $this->assertNotNull($code->expires_at);
+    }
+
+    public function test_password_reset_uses_configured_expiry(): void
+    {
+        $this->saveUserOpsConfig(['password_reset_expires_minutes' => '45']);
+        $this->createUserAccount(['email' => 'reset-settings@example.com']);
+
+        $result = app(PasswordResetService::class)->requestReset([
+            'account' => 'reset-settings@example.com',
+        ], '127.0.0.1');
+
+        $this->assertSame(2700, $result['expires_in']);
+    }
+
+    public function test_risk_service_uses_configured_activation_failure_threshold(): void
+    {
+        $this->saveUserOpsConfig([
+            'risk_activation_failure_threshold' => '2',
+            'risk_activation_failure_window_minutes' => '10',
+        ]);
+
+        $user = $this->createUserAccount(['email' => 'risk-settings@example.com']);
+
+        app(RiskService::class)->recordActivationFailure((int) $user->id, '127.0.0.1', 'bad');
+        $second = app(RiskService::class)->recordActivationFailure((int) $user->id, '127.0.0.1', 'bad');
+
+        $this->assertSame('medium', $second['severity']);
+    }
+
+    public function test_withdrawal_amount_policy_uses_configured_min_and_max(): void
+    {
+        $this->saveUserOpsConfig([
+            'withdrawal_min_amount' => '10.00',
+            'withdrawal_max_amount' => '100.00',
+        ]);
+
+        $user = $this->createUserAccount([
+            'email' => 'withdraw-settings@example.com',
+            'available_balance' => '50.00',
+        ]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Withdrawal amount must be at least 10.00.');
+
+        app(WithdrawalService::class)->request((int) $user->id, '5.00', ['account' => 'bank'], '127.0.0.1');
+    }
+
+    public function test_withdrawal_amount_policy_rejects_configured_max(): void
+    {
+        $this->saveUserOpsConfig([
+            'withdrawal_min_amount' => '10.00',
+            'withdrawal_max_amount' => '100.00',
+        ]);
+
+        $user = $this->createUserAccount([
+            'email' => 'withdraw-max-settings@example.com',
+            'available_balance' => '150.00',
+        ]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Withdrawal amount must be at most 100.00.');
+
+        app(WithdrawalService::class)->request((int) $user->id, '120.00', ['account' => 'bank'], '127.0.0.1');
+    }
+
     private function createSystemConfigTable(): void
     {
         if (! Schema::hasTable('system_config')) {
@@ -166,5 +249,38 @@ class UserOpsSettingsTest extends TestCase
             ['group' => 'site', 'name' => 'editor_type', 'value' => 'textarea'],
             ['group' => 'site', 'name' => 'iframe_open_top', 'value' => '0'],
         ]);
+    }
+
+    private function saveUserOpsConfig(array $values): void
+    {
+        foreach ($values as $name => $value) {
+            DB::table('system_config')->updateOrInsert([
+                'group' => 'user_ops',
+                'name' => $name,
+            ], [
+                'value' => (string) $value,
+            ]);
+        }
+
+        Cache::flush();
+    }
+
+    private function createUserAccount(array $overrides = []): UserAccount
+    {
+        $now = time();
+
+        return UserAccount::query()->create(array_merge([
+            'mobile' => null,
+            'email' => 'user-'.uniqid('', true).'@example.com',
+            'nickname' => '',
+            'password' => 'secret123',
+            'status' => 'active',
+            'vip_level' => 0,
+            'available_balance' => '0.00',
+            'frozen_balance' => '0.00',
+            'register_ip' => '127.0.0.1',
+            'create_time' => $now,
+            'update_time' => $now,
+        ], $overrides));
     }
 }

@@ -14,7 +14,8 @@ final class PasswordResetService
     public function __construct(
         private readonly UserSecurityLogService $securityLogs,
         private readonly PasswordResetNotificationService $notifications,
-        private readonly UserPasswordHasher $passwords
+        private readonly UserPasswordHasher $passwords,
+        private readonly UserOpsSettings $settings
     ) {
     }
 
@@ -33,6 +34,7 @@ final class PasswordResetService
         $token = Str::random(40);
         $code = (string) random_int(100000, 999999);
         $now = time();
+        $expiresMinutes = $this->settings->passwordResetExpiresMinutes();
 
         $reset = UserPasswordReset::query()->create([
             'user_id' => $user->id,
@@ -40,7 +42,7 @@ final class PasswordResetService
             'account' => $account,
             'token_hash' => $this->hashSecret($token),
             'code_hash' => $this->hashSecret($code),
-            'expires_at' => Carbon::now()->addMinutes(30),
+            'expires_at' => Carbon::now()->addMinutes($expiresMinutes),
             'request_ip' => $ip,
             'attempt_count' => 0,
             'create_time' => $now,
@@ -58,7 +60,7 @@ final class PasswordResetService
             'account_type' => $accountType,
             'account' => $account,
             'delivery' => $delivery,
-            'expires_in' => 1800,
+            'expires_in' => $expiresMinutes * 60,
         ];
     }
 

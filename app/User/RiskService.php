@@ -10,6 +10,10 @@ use InvalidArgumentException;
 
 final class RiskService
 {
+    public function __construct(private readonly UserOpsSettings $settings)
+    {
+    }
+
     public function evaluateInviteRegistration(int $userId): array
     {
         $relation = UserInviteRelation::query()
@@ -26,8 +30,8 @@ final class RiskService
             return [];
         }
 
-        $threshold = (int) config('user.risk.invite_burst_threshold', 5);
-        $since = time() - 86400;
+        $threshold = $this->settings->riskInviteBurstThreshold();
+        $since = time() - ($this->settings->riskInviteBurstWindowHours() * 3600);
         $siblingUserIds = UserInviteRelation::query()
             ->where('parent_user_id', $relation->parent_user_id)
             ->where('status', 'active')
@@ -73,14 +77,15 @@ final class RiskService
             ->where('category', 'activation_code')
             ->where('event_type', 'activation_code_failed')
             ->where('ip', $ip)
-            ->where('create_time', '>=', $now - 600)
+            ->where('create_time', '>=', $now - ($this->settings->riskActivationFailureWindowMinutes() * 60))
             ->count();
+        $threshold = $this->settings->riskActivationFailureThreshold();
 
         $event = UserRiskEvent::query()->create([
             'user_id' => $userId,
             'category' => 'activation_code',
             'event_type' => 'activation_code_failed',
-            'severity' => $recentCount + 1 >= 5 ? 'medium' : 'low',
+            'severity' => $recentCount + 1 >= $threshold ? 'medium' : 'low',
             'source_type' => 'activation_code_redemption',
             'source_id' => null,
             'ip' => $ip,
@@ -88,6 +93,7 @@ final class RiskService
             'detail_json' => [
                 'reason' => $reason,
                 'recent_failure_count' => $recentCount + 1,
+                'threshold' => $threshold,
             ],
             'create_time' => $now,
             'update_time' => $now,

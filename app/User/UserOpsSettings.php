@@ -2,7 +2,9 @@
 
 namespace App\User;
 
+use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
+use Throwable;
 
 final class UserOpsSettings
 {
@@ -121,7 +123,15 @@ final class UserOpsSettings
 
     private function stringValue(string $key): string
     {
-        $value = sysconfig(self::GROUP, $key);
+        try {
+            if (! Schema::hasTable('system_config')) {
+                return self::DEFAULTS[$key];
+            }
+
+            $value = sysconfig(self::GROUP, $key);
+        } catch (Throwable) {
+            return self::DEFAULTS[$key];
+        }
 
         return is_string($value) && trim($value) !== '' ? trim($value) : self::DEFAULTS[$key];
     }

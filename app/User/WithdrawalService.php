@@ -9,13 +9,17 @@ use InvalidArgumentException;
 
 final class WithdrawalService
 {
-    public function __construct(private readonly BalanceLedgerService $balanceLedger)
-    {
+    public function __construct(
+        private readonly BalanceLedgerService $balanceLedger,
+        private readonly UserOpsSettings $settings
+    ) {
     }
 
     public function request(int $userId, string|float $amount, array $accountSnapshot, string $ip): array
     {
         $amount = $this->positiveMoney($amount);
+        $this->assertAmountPolicy($amount);
+
         if ($accountSnapshot === []) {
             throw new InvalidArgumentException('Withdrawal account snapshot is required.');
         }
@@ -273,6 +277,24 @@ final class WithdrawalService
     private function money(mixed $amount): string
     {
         return number_format(round((float) $amount, 2), 2, '.', '');
+    }
+
+    private function assertAmountPolicy(string $amount): void
+    {
+        $min = $this->settings->withdrawalMinAmount();
+        if ($this->compare($amount, $min) < 0) {
+            throw new InvalidArgumentException("Withdrawal amount must be at least {$min}.");
+        }
+
+        $max = $this->settings->withdrawalMaxAmount();
+        if ($this->compare($max, '0.00') > 0 && $this->compare($amount, $max) > 0) {
+            throw new InvalidArgumentException("Withdrawal amount must be at most {$max}.");
+        }
+    }
+
+    private function compare(string $left, string $right): int
+    {
+        return ((int) round(((float) $left) * 100)) <=> ((int) round(((float) $right) * 100));
     }
 
     private function withdrawalNo(): string
