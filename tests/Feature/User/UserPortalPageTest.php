@@ -112,14 +112,23 @@ eval(fs.readFileSync('public/static/user/js/portal.js', 'utf8'));
 
 assert(window.UserPortalDashboardRenderers, 'dashboard renderers test API missing');
 
+function assertRow(html, label, value) {
+    assert(
+        html.includes(`<span>${label}</span><strong>${value}</strong>`),
+        `Missing summary row: ${label}=${value}`
+    );
+}
+
 const vip = window.UserPortalDashboardRenderers.render('vip', {
     active: true,
     vip_level: 2,
     vip_expires_at: '2026-08-01 00:00:00',
     record_count: 1,
 });
-assert(vip.includes('active'));
-assert(vip.includes('2026-08-01 00:00:00'));
+assertRow(vip, 'VIP Level', '2');
+assertRow(vip, 'Status', 'active');
+assertRow(vip, 'Expired At', '2026-08-01 00:00:00');
+assertRow(vip, 'Active Records', '1');
 
 const ledger = window.UserPortalDashboardRenderers.render('ledger', [{
     amount: '12.34',
@@ -127,8 +136,10 @@ const ledger = window.UserPortalDashboardRenderers.render('ledger', [{
     remark: '<bonus>',
     create_time: '2026-07-06 09:00:00',
 }]);
-assert(ledger.includes('commission'));
-assert(ledger.includes('&lt;bonus&gt;'));
+assertRow(ledger, 'Amount', '12.34');
+assertRow(ledger, 'Type', 'commission');
+assertRow(ledger, 'Reason', '&lt;bonus&gt;');
+assertRow(ledger, 'Time', '2026-07-06 09:00:00');
 assert(!ledger.includes('<bonus>'));
 assert(!ledger.includes('No balance ledger records.'));
 
@@ -137,9 +148,9 @@ const invite = window.UserPortalDashboardRenderers.render('invite', {
     direct_count: 3,
     second_level_count: 2,
 });
-assert(invite.includes('ABC123'));
-assert(invite.includes('3'));
-assert(invite.includes('2'));
+assertRow(invite, 'Invite Code', 'ABC123');
+assertRow(invite, 'Level 1 Total', '3');
+assertRow(invite, 'Level 2 Total', '2');
 
 const inviteRecords = window.UserPortalDashboardRenderers.render('inviteRecords', [{
     email: 'friend@example.com',
@@ -147,8 +158,10 @@ const inviteRecords = window.UserPortalDashboardRenderers.render('inviteRecords'
     level_path: '1/2',
     create_time: '2026-07-06 09:01:00',
 }]);
-assert(inviteRecords.includes('friend@example.com'));
-assert(inviteRecords.includes('1/2'));
+assertRow(inviteRecords, 'User', 'friend@example.com');
+assertRow(inviteRecords, 'Status', 'active');
+assertRow(inviteRecords, 'Path', '1/2');
+assertRow(inviteRecords, 'Registered At', '2026-07-06 09:01:00');
 assert(!inviteRecords.includes('No invite records.'));
 
 const withdrawals = window.UserPortalDashboardRenderers.render('withdrawals', [{
@@ -159,10 +172,10 @@ const withdrawals = window.UserPortalDashboardRenderers.render('withdrawals', [{
     payout_transaction_id: 'TX-1',
     paid_at: '2026-07-06 09:02:00',
 }]);
-assert(withdrawals.includes('WD202607060001'));
-assert(withdrawals.includes('ACCT-1'));
-assert(withdrawals.includes('TX-1'));
-assert(withdrawals.includes('2026-07-06 09:02:00'));
+assertRow(withdrawals, 'No.', 'WD202607060001');
+assertRow(withdrawals, 'Account', 'ACCT-1');
+assertRow(withdrawals, 'Payout Transaction', 'TX-1');
+assertRow(withdrawals, 'Paid At', '2026-07-06 09:02:00');
 assert(!withdrawals.includes('Requested At'));
 JS;
 
