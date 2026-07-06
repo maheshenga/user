@@ -202,7 +202,7 @@ class UserOpsVisibilityTest extends TestCase
     public function test_user_ops_menu_sync_creates_visible_menu_entries(): void
     {
         $this->artisan('user:ops-menu:sync')
-            ->expectsOutputToContain('synced=13')
+            ->expectsOutputToContain('synced=14')
             ->assertExitCode(0);
 
         $parent = DB::table('system_menu')
@@ -270,6 +270,7 @@ class UserOpsVisibilityTest extends TestCase
             'user/risk-event/index' => 'Risk Events',
             'user/security-log/index' => 'Security Logs',
             'user/notification-outbox/index' => 'Notification Outbox',
+            'user/settings/index' => 'Settings',
         ];
     }
 

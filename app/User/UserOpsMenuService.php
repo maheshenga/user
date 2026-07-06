@@ -25,6 +25,7 @@ class UserOpsMenuService
         ['title' => 'Risk Events', 'href' => 'user/risk-event/index', 'icon' => 'fa fa-warning', 'sort' => 890],
         ['title' => 'Security Logs', 'href' => 'user/security-log/index', 'icon' => 'fa fa-shield', 'sort' => 880],
         ['title' => 'Notification Outbox', 'href' => 'user/notification-outbox/index', 'icon' => 'fa fa-envelope', 'sort' => 870],
+        ['title' => 'Settings', 'href' => 'user/settings/index', 'icon' => 'fa fa-cogs', 'sort' => 860],
     ];
 
     public function sync(): array
