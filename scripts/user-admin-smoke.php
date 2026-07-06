@@ -261,20 +261,61 @@ function expectJsonCode(array $response, int $code, string $label): void
 }
 
 /**
- * @param mixed $value
+ * @param array<string, mixed> $payload
  */
-function containsMenuValue($value, string $needle): bool
+function expectMenu(array $payload, string $adminPrefix): void
 {
-    if (is_string($value)) {
-        return str_contains($value, $needle);
+    $userOpsMenu = findMenuByTitle($payload['menuInfo'] ?? [], 'User Operations');
+
+    if ($userOpsMenu === null) {
+        throw new AdminSmokeFailure('Menu response missing User Operations.');
     }
 
-    if (! is_array($value)) {
+    if (! menuContainsHref($userOpsMenu, 'user/dashboard/index', $adminPrefix)) {
+        throw new AdminSmokeFailure('Menu response missing user/dashboard/index under User Operations.');
+    }
+}
+
+/**
+ * @param mixed $node
+ * @return array<string, mixed>|null
+ */
+function findMenuByTitle($node, string $title): ?array
+{
+    if (! is_array($node)) {
+        return null;
+    }
+
+    if (($node['title'] ?? null) === $title) {
+        return $node;
+    }
+
+    foreach ($node as $child) {
+        $match = findMenuByTitle($child, $title);
+
+        if ($match !== null) {
+            return $match;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @param mixed $node
+ */
+function menuContainsHref($node, string $expectedPath, string $adminPrefix): bool
+{
+    if (! is_array($node)) {
         return false;
     }
 
-    foreach ($value as $item) {
-        if (containsMenuValue($item, $needle)) {
+    if (isset($node['href']) && is_string($node['href']) && normalizeMenuPath($node['href'], $adminPrefix) === $expectedPath) {
+        return true;
+    }
+
+    foreach (($node['child'] ?? []) as $child) {
+        if (menuContainsHref($child, $expectedPath, $adminPrefix)) {
             return true;
         }
     }
@@ -282,18 +323,17 @@ function containsMenuValue($value, string $needle): bool
     return false;
 }
 
-/**
- * @param array<string, mixed> $payload
- */
-function expectMenu(array $payload): void
+function normalizeMenuPath(string $href, string $adminPrefix): string
 {
-    if (! containsMenuValue($payload['menuInfo'] ?? [], 'User Operations')) {
-        throw new AdminSmokeFailure('Menu response missing User Operations.');
+    $path = (string) (parse_url($href, PHP_URL_PATH) ?: $href);
+    $path = trim($path, '/');
+    $prefix = trim($adminPrefix, '/');
+
+    if ($prefix !== '' && str_starts_with($path . '/', $prefix . '/')) {
+        $path = substr($path, strlen($prefix) + 1);
     }
 
-    if (! containsMenuValue($payload['menuInfo'] ?? [], 'user/dashboard/index')) {
-        throw new AdminSmokeFailure('Menu response missing user/dashboard/index.');
-    }
+    return $path;
 }
 
 /**
@@ -326,11 +366,18 @@ function expectDashboardMetrics(array $payload): void
 
 function expectAdminPageBody(array $response, string $label): void
 {
-    if (str_contains($response['body'], 'system-message error')) {
+    $body = strtolower($response['body']);
+
+    if (str_contains($body, 'system-message error')) {
         throw new AdminSmokeFailure("{$label} looks like an EasyAdmin error page.");
     }
 
-    if (str_contains($response['body'], '<title>') && str_contains($response['body'], 'login')) {
+    if (
+        str_contains($body, 'id="loginform"')
+        || str_contains($body, '/static/admin/css/login.css')
+        || (str_contains($body, 'name="username"') && str_contains($body, 'name="password"'))
+        || str_contains($body, '<title>admin login</title>')
+    ) {
         throw new AdminSmokeFailure("{$label} looks like a login page.");
     }
 }
@@ -363,6 +410,7 @@ function runAdminSmoke(): void
         'password' => $options['password'],
         'keep_login' => '1',
     ], ajax: true, jsonAccept: true);
+    expectStatus($response, [200], 'POST /' . $prefix . '/login');
     expectJsonCode($response, 1, 'POST /' . $prefix . '/login');
     pass('POST /' . $prefix . '/login');
 
@@ -373,7 +421,7 @@ function runAdminSmoke(): void
         throw new AdminSmokeFailure('GET /' . $prefix . '/ajax/initAdmin did not return JSON.');
     }
 
-    expectMenu($response['json']);
+    expectMenu($response['json'], $prefix);
     pass('GET /' . $prefix . '/ajax/initAdmin menu contains User Operations');
 
     $response = $client->request('GET', adminPath($prefix, 'user/dashboard/index'), ajax: true, jsonAccept: true);

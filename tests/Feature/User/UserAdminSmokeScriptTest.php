@@ -62,7 +62,19 @@ class UserAdminSmokeScriptTest extends TestCase
 
         $this->assertNotSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('FAIL user admin smoke failed', $output);
-        $this->assertStringContainsString('Menu response missing user/dashboard/index', $output);
+        $this->assertStringContainsString('Menu response missing user/dashboard/index under User Operations', $output);
+    }
+
+    public function test_user_admin_smoke_script_requires_dashboard_link_under_user_operations_menu(): void
+    {
+        $baseUrl = $this->startFixtureServer('dashboard-link-outside-user-ops');
+
+        $process = $this->runSmokeScript($baseUrl);
+        $output = $process->getOutput() . $process->getErrorOutput();
+
+        $this->assertNotSame(0, $process->getExitCode(), $output);
+        $this->assertStringContainsString('FAIL user admin smoke failed', $output);
+        $this->assertStringContainsString('Menu response missing user/dashboard/index under User Operations', $output);
     }
 
     public function test_user_admin_smoke_script_fails_when_dashboard_metric_is_missing(): void
@@ -87,6 +99,18 @@ class UserAdminSmokeScriptTest extends TestCase
         $this->assertNotSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('FAIL user admin smoke failed', $output);
         $this->assertStringContainsString('looks like an EasyAdmin error page', $output);
+    }
+
+    public function test_user_admin_smoke_script_fails_when_admin_page_is_login_shell(): void
+    {
+        $baseUrl = $this->startFixtureServer('login-shell-page');
+
+        $process = $this->runSmokeScript($baseUrl);
+        $output = $process->getOutput() . $process->getErrorOutput();
+
+        $this->assertNotSame(0, $process->getExitCode(), $output);
+        $this->assertStringContainsString('FAIL user admin smoke failed', $output);
+        $this->assertStringContainsString('looks like a login page', $output);
     }
 
     private function startFixtureServer(?string $mode = null): string

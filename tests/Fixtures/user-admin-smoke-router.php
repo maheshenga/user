@@ -116,11 +116,27 @@ if ($method === 'GET' && $path === '/admin/ajax/initAdmin') {
             ];
         }
 
+        if ($mode === 'dashboard-link-outside-user-ops') {
+            $children = [
+                ['title' => 'User Accounts', 'href' => '/admin/user/account/index'],
+            ];
+        }
+
         $menuInfo[] = [
             'title' => 'User Operations',
             'href' => '',
             'child' => $children,
         ];
+
+        if ($mode === 'dashboard-link-outside-user-ops') {
+            $menuInfo[] = [
+                'title' => 'Legacy',
+                'href' => '',
+                'child' => [
+                    ['title' => 'Archived Dashboard', 'href' => '/admin/archived/user/dashboard/index-disabled'],
+                ],
+            ];
+        }
     }
 
     $json([
@@ -167,6 +183,12 @@ if ($method === 'GET' && in_array($path, [
     if ($mode === 'page-error' && $path === '/admin/user/account/index') {
         header('Content-Type: text/html; charset=UTF-8');
         echo '<!doctype html><html><body><div class="system-message error"><h1>No permission</h1></div></body></html>';
+        return;
+    }
+
+    if ($mode === 'login-shell-page' && $path === '/admin/user/account/index') {
+        header('Content-Type: text/html; charset=UTF-8');
+        echo '<!doctype html><html><head><title>Admin Login</title><link rel="stylesheet" href="/static/admin/css/login.css"></head><body><form id="loginForm"><input name="username"><input name="password"></form></body></html>';
         return;
     }
 
