@@ -48,22 +48,22 @@ final class ModuleManifest
             /** @var mixed $decoded */
             $decoded = json_decode(file_get_contents($path) ?: '', true, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
-            throw new InvalidArgumentException($exception->getMessage(), 0, $exception);
+            throw new InvalidArgumentException('module.json 格式无效：'.$exception->getMessage(), 0, $exception);
         }
 
         if (! is_array($decoded)) {
-            throw new InvalidArgumentException('module.json must decode to an object');
+            throw new InvalidArgumentException('module.json 必须是对象。');
         }
 
         foreach (self::REQUIRED as $field) {
             if (! array_key_exists($field, $decoded) || self::isEmpty($decoded[$field])) {
-                throw new InvalidArgumentException("module.json missing required field: {$field}");
+                throw new InvalidArgumentException("module.json 缺少必填字段：{$field}");
             }
         }
 
         foreach (self::SLUG_FIELDS as $field) {
             if (! preg_match('/^[a-z][a-z0-9_]*$/', (string) $decoded[$field])) {
-                throw new InvalidArgumentException("module.json invalid field: {$field}");
+                throw new InvalidArgumentException("module.json 字段格式无效：{$field}");
             }
         }
 
@@ -204,7 +204,7 @@ final class ModuleManifest
         }
 
         if (! self::isWithinRoot($rootPath, $resolvedPath)) {
-            throw new InvalidArgumentException("module.json path escapes module root: {$field}");
+            throw new InvalidArgumentException("module.json 路径不能超出模块目录：{$field}");
         }
 
         return $resolvedPath;

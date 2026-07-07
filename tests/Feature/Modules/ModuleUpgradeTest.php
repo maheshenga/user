@@ -469,7 +469,7 @@ PHP;
             app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
             $this->fail('Expected bad manifest zip to fail.');
         } catch (\InvalidArgumentException $exception) {
-            $this->assertStringContainsString('Syntax error', $exception->getMessage());
+            $this->assertStringContainsString('module.json 格式无效：Syntax error', $exception->getMessage());
         }
 
         $this->assertSame($before, $this->moduleTmpDirectories());

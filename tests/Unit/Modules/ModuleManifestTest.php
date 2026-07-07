@@ -34,7 +34,7 @@ class ModuleManifestTest extends TestCase
                 ModuleManifest::fromFile($path);
                 $this->fail('Expected invalid manifest to throw.');
             } catch (InvalidArgumentException $exception) {
-                $this->assertSame('module.json missing required field: schema_version', $exception->getMessage());
+                $this->assertSame('module.json 缺少必填字段：schema_version', $exception->getMessage());
             }
         } finally {
             @unlink($path);
@@ -69,7 +69,7 @@ class ModuleManifestTest extends TestCase
                 ModuleManifest::fromFile($path);
                 $this->fail('Expected manifest path escape to throw.');
             } catch (InvalidArgumentException $exception) {
-                $this->assertSame('module.json path escapes module root: assets', $exception->getMessage());
+                $this->assertSame('module.json 路径不能超出模块目录：assets', $exception->getMessage());
             }
         } finally {
             @unlink($path);
@@ -100,7 +100,7 @@ class ModuleManifestTest extends TestCase
                 ModuleManifest::fromFile($path);
                 $this->fail('Expected manifest entry path escape to throw.');
             } catch (InvalidArgumentException $exception) {
-                $this->assertSame('module.json path escapes module root: entry', $exception->getMessage());
+                $this->assertSame('module.json 路径不能超出模块目录：entry', $exception->getMessage());
             }
         } finally {
             @unlink($path);
@@ -146,5 +146,69 @@ class ModuleManifestTest extends TestCase
             str_replace('\\', '/', base_path('storage/framework/assets')),
             $manifest->toArray()['assets']
         );
+    }
+
+    public function test_manifest_rejects_invalid_json_with_chinese_message(): void
+    {
+        $path = base_path('storage/framework/testing-invalid-json-module.json');
+        file_put_contents($path, '{');
+
+        try {
+            try {
+                ModuleManifest::fromFile($path);
+                $this->fail('Expected invalid JSON manifest to throw.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame('module.json 格式无效：Syntax error', $exception->getMessage());
+            }
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    public function test_manifest_rejects_non_object_json_with_chinese_message(): void
+    {
+        $path = base_path('storage/framework/testing-non-object-module.json');
+        file_put_contents($path, '"broken"');
+
+        try {
+            try {
+                ModuleManifest::fromFile($path);
+                $this->fail('Expected non-object manifest to throw.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame('module.json 必须是对象。', $exception->getMessage());
+            }
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    /**
+     * @throws JsonException
+     */
+    public function test_manifest_rejects_invalid_slug_fields_with_chinese_message(): void
+    {
+        $path = base_path('storage/framework/testing-invalid-module-slug.json');
+        file_put_contents($path, json_encode([
+            'schema_version' => '1.0',
+            'name' => 'Blog',
+            'title' => 'Blog Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'core_version' => '^8.0',
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'blog',
+        ], JSON_THROW_ON_ERROR));
+
+        try {
+            try {
+                ModuleManifest::fromFile($path);
+                $this->fail('Expected invalid slug manifest to throw.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame('module.json 字段格式无效：name', $exception->getMessage());
+            }
+        } finally {
+            @unlink($path);
+        }
     }
 }
