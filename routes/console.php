@@ -21,7 +21,7 @@ $modulePersistenceTables = static fn (): array => [
 $ensureModulePersistence = function () use ($modulePersistenceTables): bool {
     foreach ($modulePersistenceTables() as $table) {
         if (! Schema::hasTable($table)) {
-            $this->error('Module tables are not installed. Run the module migrations before using module commands.');
+            $this->error('模块数据表未安装，请先运行模块迁移。');
 
             return false;
         }
@@ -58,28 +58,28 @@ Artisan::command('module:discover', function () use ($runModuleCommand) {
 Artisan::command('module:install {name}', function (string $name) use ($runModuleCommand) {
     return $runModuleCommand->call($this, function () use ($name): void {
         app(\App\Modules\ModuleInstaller::class)->install($name);
-        $this->info("Installed module: {$name}");
+        $this->info("模块已安装：{$name}");
     });
 })->purpose('Install a local EasyAdmin8 module');
 
 Artisan::command('module:enable {name}', function (string $name) use ($runModuleCommand) {
     return $runModuleCommand->call($this, function () use ($name): void {
         app(\App\Modules\ModuleInstaller::class)->enable($name);
-        $this->info("Enabled module: {$name}");
+        $this->info("模块已启用：{$name}");
     });
 })->purpose('Enable an installed EasyAdmin8 module');
 
 Artisan::command('module:disable {name}', function (string $name) use ($runModuleCommand) {
     return $runModuleCommand->call($this, function () use ($name): void {
         app(\App\Modules\ModuleInstaller::class)->disable($name);
-        $this->info("Disabled module: {$name}");
+        $this->info("模块已禁用：{$name}");
     });
 })->purpose('Disable an EasyAdmin8 module');
 
 Artisan::command('module:uninstall {name}', function (string $name) use ($runModuleCommand) {
     return $runModuleCommand->call($this, function () use ($name): void {
         app(\App\Modules\ModuleInstaller::class)->uninstallPreserve($name);
-        $this->info("Uninstalled module: {$name}");
+        $this->info("模块已卸载：{$name}");
     });
 })->purpose('Uninstall an EasyAdmin8 module while preserving data');
 

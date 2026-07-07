@@ -126,16 +126,22 @@ class ModuleLifecycleTest extends TestCase
         \Illuminate\Support\Facades\Config::set('modules.path', base_path('tests/Fixtures/modules'));
         $this->approveModuleForInstall('blog');
 
-        $this->artisan('module:install', ['name' => 'blog'])->assertExitCode(0);
+        $this->artisan('module:install', ['name' => 'blog'])
+            ->expectsOutputToContain('模块已安装：blog')
+            ->assertExitCode(0);
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'installed']);
         $this->assertDatabaseHas('system_menu', ['href' => 'blog/post/index']);
         $this->assertDatabaseHas('system_module_log', ['module' => 'blog', 'action' => 'install', 'result' => 'success']);
 
-        $this->artisan('module:enable', ['name' => 'blog'])->assertExitCode(0);
+        $this->artisan('module:enable', ['name' => 'blog'])
+            ->expectsOutputToContain('模块已启用：blog')
+            ->assertExitCode(0);
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'enabled']);
         $this->assertDatabaseHas('system_module_log', ['module' => 'blog', 'action' => 'enable', 'result' => 'success']);
 
-        $this->artisan('module:disable', ['name' => 'blog'])->assertExitCode(0);
+        $this->artisan('module:disable', ['name' => 'blog'])
+            ->expectsOutputToContain('模块已禁用：blog')
+            ->assertExitCode(0);
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'disabled']);
         $this->assertDatabaseHas('system_module_log', ['module' => 'blog', 'action' => 'disable', 'result' => 'success']);
     }
@@ -153,7 +159,7 @@ class ModuleLifecycleTest extends TestCase
         Schema::drop('system_module');
 
         $this->artisan('module:list')
-            ->expectsOutputToContain('Module tables are not installed')
+            ->expectsOutputToContain('模块数据表未安装，请先运行模块迁移。')
             ->assertExitCode(1);
 
         foreach (['discover', 'install', 'enable', 'disable', 'uninstall'] as $command) {
@@ -163,7 +169,7 @@ class ModuleLifecycleTest extends TestCase
             };
 
             $this->artisan("module:{$command}", $parameters)
-                ->expectsOutputToContain('Module tables are not installed')
+                ->expectsOutputToContain('模块数据表未安装，请先运行模块迁移。')
                 ->assertExitCode(1);
         }
     }
@@ -236,7 +242,9 @@ class ModuleLifecycleTest extends TestCase
         $this->artisan('module:install', ['name' => 'blog'])->assertExitCode(0);
         $this->artisan('module:enable', ['name' => 'blog'])->assertExitCode(0);
 
-        $this->artisan('module:uninstall', ['name' => 'blog'])->assertExitCode(0);
+        $this->artisan('module:uninstall', ['name' => 'blog'])
+            ->expectsOutputToContain('模块已卸载：blog')
+            ->assertExitCode(0);
 
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'uninstalled']);
         $this->assertDatabaseHas('system_module_log', ['module' => 'blog', 'action' => 'uninstall', 'result' => 'success']);
