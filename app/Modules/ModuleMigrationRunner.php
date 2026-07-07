@@ -37,7 +37,7 @@ final class ModuleMigrationRunner
                 $instance = require $file;
 
                 if (! is_object($instance) || ! method_exists($instance, 'up')) {
-                    throw new RuntimeException("Module migration [{$migration}] must return an object with up().");
+                    throw new RuntimeException("模块迁移 [{$migration}] 必须返回包含 up() 方法的对象。");
                 }
 
                 try {
@@ -48,7 +48,7 @@ final class ModuleMigrationRunner
                             $instance->down();
                         } catch (Throwable $cleanupException) {
                             throw new RuntimeException(
-                                "Module migration cleanup failed for [{$migration}] after original failure [{$exception->getMessage()}]: {$cleanupException->getMessage()}",
+                                "模块迁移 [{$migration}] 在原始失败 [{$exception->getMessage()}] 后执行清理失败：{$cleanupException->getMessage()}",
                                 0,
                                 $exception
                             );
@@ -82,7 +82,7 @@ final class ModuleMigrationRunner
             $instance = require $file;
 
             if (! is_object($instance) || ! method_exists($instance, 'down')) {
-                throw new RuntimeException('Module rollback blocked by irreversible migration: '.basename($file));
+                throw new RuntimeException('模块回滚被不可逆迁移阻止：'.basename($file));
             }
         }
     }
@@ -99,7 +99,7 @@ final class ModuleMigrationRunner
                 $instance = require $file;
 
                 if (! is_object($instance) || ! method_exists($instance, 'down')) {
-                    throw new RuntimeException('Module rollback blocked by irreversible migration: '.$migration);
+                    throw new RuntimeException('模块回滚被不可逆迁移阻止：'.$migration);
                 }
 
                 $instance->down();
@@ -118,7 +118,7 @@ final class ModuleMigrationRunner
             $instance = require $file;
 
             if (! is_object($instance) || ! method_exists($instance, 'down')) {
-                throw new RuntimeException('Module rollback blocked by irreversible migration: '.basename($file));
+                throw new RuntimeException('模块回滚被不可逆迁移阻止：'.basename($file));
             }
         }
     }
@@ -143,7 +143,7 @@ final class ModuleMigrationRunner
                 $instance = require $file;
 
                 if (! is_object($instance) || ! method_exists($instance, 'down')) {
-                    throw new RuntimeException('Module rollback blocked by irreversible migration: '.$migration);
+                    throw new RuntimeException('模块回滚被不可逆迁移阻止：'.$migration);
                 }
 
                 $instance->down();
@@ -196,7 +196,7 @@ final class ModuleMigrationRunner
         }
 
         if ($path === null || ! is_dir($path)) {
-            throw new RuntimeException('Recorded module migration file is missing: '.(string) $records->first()->migration);
+            throw new RuntimeException('已记录的模块迁移文件缺失：'.(string) $records->first()->migration);
         }
 
         $files = [];
@@ -205,7 +205,7 @@ final class ModuleMigrationRunner
             $file = rtrim($path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$record->migration;
 
             if (! is_file($file)) {
-                throw new RuntimeException('Recorded module migration file is missing: '.$record->migration);
+                throw new RuntimeException('已记录的模块迁移文件缺失：'.$record->migration);
             }
 
             $files[] = $file;
@@ -237,12 +237,12 @@ final class ModuleMigrationRunner
             }
 
             if ($currentPath === null || ! is_dir($currentPath)) {
-                throw new RuntimeException('Recorded module migration file is missing: '.$migration);
+                throw new RuntimeException('已记录的模块迁移文件缺失：'.$migration);
             }
 
             $file = rtrim($currentPath, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$migration;
             if (! is_file($file)) {
-                throw new RuntimeException('Recorded module migration file is missing: '.$migration);
+                throw new RuntimeException('已记录的模块迁移文件缺失：'.$migration);
             }
 
             $files[] = $file;

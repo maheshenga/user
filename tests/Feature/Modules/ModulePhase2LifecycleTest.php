@@ -310,7 +310,7 @@ PHP,
             ]);
 
             $this->expectException(RuntimeException::class);
-            $this->expectExceptionMessage('Recorded module migration file is missing');
+            $this->expectExceptionMessage('已记录的模块迁移文件缺失');
 
             app(\App\Modules\ModuleMigrationRunner::class)->assertReversible($manifest);
         } finally {
@@ -337,9 +337,105 @@ PHP,
             ]);
 
             $this->expectException(RuntimeException::class);
-            $this->expectExceptionMessage('Recorded module migration file is missing');
+            $this->expectExceptionMessage('已记录的模块迁移文件缺失');
 
             app(\App\Modules\ModuleMigrationRunner::class)->rollbackRecorded($manifest);
+        } finally {
+            $this->deleteDirectory($root);
+        }
+    }
+
+    public function test_run_pending_rejects_migration_without_up_method_with_chinese_message(): void
+    {
+        $root = storage_path('framework/testing-phase2-invalid-migration-shape');
+        $manifest = $this->createMigrationModuleFixture(
+            $root,
+            'invalidshape',
+            'invalidshape',
+            [
+                '2026_07_04_000001_invalid.php' => <<<'PHP'
+<?php
+return new class {
+    public function down(): void {}
+};
+PHP,
+            ]
+        );
+
+        try {
+            $this->expectException(RuntimeException::class);
+            $this->expectExceptionMessage('模块迁移 [2026_07_04_000001_invalid.php] 必须返回包含 up() 方法的对象。');
+
+            app(\App\Modules\ModuleMigrationRunner::class)->runPending($manifest);
+        } finally {
+            $this->deleteDirectory($root);
+        }
+    }
+
+    public function test_run_pending_reports_cleanup_failure_with_chinese_message(): void
+    {
+        $root = storage_path('framework/testing-phase2-cleanup-failure');
+        $manifest = $this->createMigrationModuleFixture(
+            $root,
+            'cleanupfails',
+            'cleanupfails',
+            [
+                '2026_07_04_000001_cleanup_fails.php' => <<<'PHP'
+<?php
+return new class {
+    public function up(): void
+    {
+        throw new RuntimeException('up failed');
+    }
+
+    public function down(): void
+    {
+        throw new RuntimeException('down failed');
+    }
+};
+PHP,
+            ]
+        );
+
+        try {
+            $this->expectException(RuntimeException::class);
+            $this->expectExceptionMessage('模块迁移 [2026_07_04_000001_cleanup_fails.php] 在原始失败 [up failed] 后执行清理失败：down failed');
+
+            app(\App\Modules\ModuleMigrationRunner::class)->runPending($manifest);
+        } finally {
+            $this->deleteDirectory($root);
+        }
+    }
+
+    public function test_assert_reversible_rejects_irreversible_migration_with_chinese_message(): void
+    {
+        $root = storage_path('framework/testing-phase2-irreversible-migration');
+        $manifest = $this->createMigrationModuleFixture(
+            $root,
+            'irreversible',
+            'irreversible',
+            [
+                '2026_07_04_000001_irreversible.php' => <<<'PHP'
+<?php
+return new class {
+    public function up(): void {}
+};
+PHP,
+            ]
+        );
+
+        try {
+            SystemModuleMigration::query()->create([
+                'module' => 'irreversible',
+                'migration' => '2026_07_04_000001_irreversible.php',
+                'batch' => 1,
+                'ran_at' => time(),
+            ]);
+
+            $this->expectException(RuntimeException::class);
+            $this->expectExceptionMessage('模块回滚被不可逆迁移阻止：2026_07_04_000001_irreversible.php');
+
+            app(\App\Modules\ModuleMigrationRunner::class)->assertReversible($manifest);
         } finally {
             $this->deleteDirectory($root);
         }

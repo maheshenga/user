@@ -341,7 +341,7 @@ class ModuleRollbackTest extends TestCase
             app(ModuleRollbacker::class)->rollback('blog');
             $this->fail('Expected rollback to require the current migration file.');
         } catch (RuntimeException $exception) {
-            $this->assertStringContainsString('Recorded module migration file is missing: 2026_07_04_000002_missing_current_file.php', $exception->getMessage());
+            $this->assertStringContainsString('已记录的模块迁移文件缺失：2026_07_04_000002_missing_current_file.php', $exception->getMessage());
         }
 
         $this->assertSame('current', file_get_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt'));
