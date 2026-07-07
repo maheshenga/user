@@ -76,6 +76,15 @@ class ModuleCenterControllerTest extends TestCase
         ]);
     }
 
+    public function test_module_menu_sync_reports_missing_system_menu_table_in_chinese(): void
+    {
+        Schema::dropIfExists('system_menu');
+
+        $this->artisan('system:module-menu:sync')
+            ->expectsOutputToContain('系统菜单表不存在，请先完成后台菜单数据表迁移。')
+            ->assertExitCode(1);
+    }
+
     public function test_admin_smoke_script_checks_module_center_visibility_and_actions(): void
     {
         $script = file_get_contents(base_path('scripts/user-admin-smoke.php'));

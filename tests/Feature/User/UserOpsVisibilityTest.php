@@ -226,6 +226,15 @@ class UserOpsVisibilityTest extends TestCase
         }
     }
 
+    public function test_user_ops_menu_sync_reports_missing_system_menu_table_in_chinese(): void
+    {
+        Schema::dropIfExists('system_menu');
+
+        $this->artisan('user:ops-menu:sync')
+            ->expectsOutputToContain('系统菜单表不存在，请先完成后台菜单数据表迁移。')
+            ->assertExitCode(1);
+    }
+
     public function test_user_ops_menu_sync_is_idempotent(): void
     {
         $this->artisan('user:ops-menu:sync')->assertExitCode(0);

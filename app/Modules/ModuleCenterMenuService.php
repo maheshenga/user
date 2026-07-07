@@ -21,7 +21,7 @@ final class ModuleCenterMenuService
     public function sync(): array
     {
         if (! Schema::hasTable('system_menu')) {
-            throw new RuntimeException('The system_menu table does not exist.');
+            throw new RuntimeException('系统菜单表不存在，请先完成后台菜单数据表迁移。');
         }
 
         $now = time();
