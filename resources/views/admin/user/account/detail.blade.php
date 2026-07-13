@@ -24,6 +24,10 @@
                 <td>{{ $user->status }}</td>
             </tr>
             <tr>
+                <th>所属模块</th>
+                <td>{{ $user->source_module ?: 'core' }}</td>
+            </tr>
+            <tr>
                 <th>注册IP</th>
                 <td>{{ $user->register_ip }}</td>
             </tr>

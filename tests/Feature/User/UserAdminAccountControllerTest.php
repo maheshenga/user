@@ -72,6 +72,7 @@ class UserAdminAccountControllerTest extends TestCase
             'password' => 'secret123',
             'nickname' => 'Safe List User',
             'register_channel' => 'internal-import',
+            'source_module' => 'vip_center',
             'register_ip' => '10.0.0.10',
             'last_login_at' => Carbon::create(2026, 7, 5, 10, 30, 0),
             'last_login_ip' => '10.0.0.11',
@@ -92,10 +93,12 @@ class UserAdminAccountControllerTest extends TestCase
             'email',
             'nickname',
             'status',
+            'source_module',
             'vip_level',
             'available_balance',
             'last_login_at',
         ], array_keys($row));
+        $this->assertSame('vip_center', $row['source_module']);
         $this->assertArrayNotHasKey('password', $row);
         $this->assertArrayNotHasKey('register_ip', $row);
         $this->assertArrayNotHasKey('last_login_ip', $row);
@@ -113,6 +116,7 @@ class UserAdminAccountControllerTest extends TestCase
             'password' => 'secret123',
             'nickname' => 'Alpha',
             'status' => 'active',
+            'source_module' => 'core',
             'register_ip' => '10.0.0.20',
             'vip_level' => 1,
         ]);
@@ -122,6 +126,7 @@ class UserAdminAccountControllerTest extends TestCase
             'password' => 'secret123',
             'nickname' => 'Beta',
             'status' => 'pending',
+            'source_module' => 'vip_center',
             'register_ip' => '10.0.0.21',
             'vip_level' => 2,
         ]);
@@ -135,6 +140,17 @@ class UserAdminAccountControllerTest extends TestCase
         $allowed->assertOk()
             ->assertJsonPath('count', 1)
             ->assertJsonPath('data.0.id', $second->id);
+
+        $moduleFiltered = $this->getJson('/admin/user/account/index?'.http_build_query([
+            'filter' => json_encode(['source_module' => 'vip_center']),
+            'op' => json_encode(['source_module' => '=']),
+            'tableOrder' => 'source_module asc',
+        ]));
+
+        $moduleFiltered->assertOk()
+            ->assertJsonPath('count', 1)
+            ->assertJsonPath('data.0.id', $second->id)
+            ->assertJsonPath('data.0.source_module', 'vip_center');
 
         $blocked = $this->getJson('/admin/user/account/index?'.http_build_query([
             'filter' => json_encode(['register_ip' => '10.0.0.20']),
@@ -252,6 +268,7 @@ class UserAdminAccountControllerTest extends TestCase
             'email' => 'admin-detail@example.com',
             'password' => 'secret123',
             'nickname' => 'Detail User',
+            'source_module' => 'invite_portal',
             'register_ip' => '127.0.0.1',
             'available_balance' => 12.34,
             'frozen_balance' => 5.67,
@@ -263,6 +280,7 @@ class UserAdminAccountControllerTest extends TestCase
         $response->assertOk();
         $response->assertSee('admin-detail@example.com');
         $response->assertSee('Detail User');
+        $response->assertSee('invite_portal');
     }
 
     public function test_admin_user_account_index_exposes_status_management_ui_hooks(): void

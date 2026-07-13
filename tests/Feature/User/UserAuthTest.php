@@ -37,6 +37,7 @@ class UserAuthTest extends TestCase
             'email',
             'password',
             'status',
+            'source_module',
             'available_balance',
             'frozen_balance',
             'vip_level',
@@ -121,12 +122,14 @@ class UserAuthTest extends TestCase
         $this->assertSame('13800000001', $result['user']['mobile']);
         $this->assertNull($result['user']['email']);
         $this->assertSame('active', $result['user']['status']);
+        $this->assertSame('core', $result['user']['source_module']);
         $this->assertArrayNotHasKey('password', $result['user']);
 
         $this->assertDatabaseHas('user_account', [
             'mobile' => '13800000001',
             'email' => null,
             'status' => 'active',
+            'source_module' => 'core',
             'register_ip' => '127.0.0.1',
         ]);
 
@@ -190,6 +193,22 @@ class UserAuthTest extends TestCase
         ]);
     }
 
+    public function test_user_registration_tracks_source_module(): void
+    {
+        $result = app(UserAuthService::class)->register([
+            'email' => 'module-register@example.com',
+            'password' => 'secret123',
+            'source_module' => 'vip_center',
+        ], '127.0.0.1');
+
+        $this->assertSame('vip_center', $result['user']['source_module']);
+
+        $this->assertDatabaseHas('user_account', [
+            'email' => 'module-register@example.com',
+            'source_module' => 'vip_center',
+        ]);
+    }
+
     public function test_user_can_login_with_mobile_and_logout(): void
     {
         $service = app(UserAuthService::class);
@@ -246,11 +265,13 @@ class UserAuthTest extends TestCase
         $response = $this->postJson('/user/register', [
             'mobile' => '13800000005',
             'password' => 'secret123',
+            'source_module' => 'invite_portal',
         ]);
 
         $response->assertOk()
             ->assertJsonPath('code', 1)
-            ->assertJsonPath('data.user.mobile', '13800000005');
+            ->assertJsonPath('data.user.mobile', '13800000005')
+            ->assertJsonPath('data.user.source_module', 'invite_portal');
 
         $this->assertArrayNotHasKey('password', $response->json('data.user'));
     }

@@ -19,6 +19,17 @@ define(["jquery", "easy-admin"], function ($, ea) {
         rollback_url: 'system/module/rollback'
     };
 
+    var statusLabels = {
+        discovered: '已发现',
+        pending_review: '待审核',
+        approved: '已审核',
+        rejected: '已拒绝',
+        installed: '已安装',
+        enabled: '已启用',
+        disabled: '已禁用',
+        uninstalled: '已卸载'
+    };
+
     function moduleUrl(url, name) {
         return url + '?name=' + encodeURIComponent(name || '');
     }
@@ -45,6 +56,10 @@ define(["jquery", "easy-admin"], function ($, ea) {
         });
     }
 
+    function statusText(value) {
+        return statusLabels[value] || value || '-';
+    }
+
     return {
         index: function () {
             ea.table.render({
@@ -58,7 +73,7 @@ define(["jquery", "easy-admin"], function ($, ea) {
                     icon: 'fa fa-search',
                     extend: 'data-table="' + init.table_render_id + '"'
                 }, {
-                    text: '上传ZIP',
+                    text: '上传 ZIP',
                     url: init.upload_url,
                     method: 'open',
                     auth: 'upload',
@@ -71,16 +86,16 @@ define(["jquery", "easy-admin"], function ($, ea) {
                     {field: 'name', minWidth: 120, title: '名称'},
                     {field: 'title', minWidth: 160, title: '标题'},
                     {field: 'version', width: 110, title: '版本', search: false},
-                    {field: 'status', width: 110, title: '状态', search: 'select', selectList: {
-                        discovered: '已发现',
-                        pending_review: '待审核',
-                        approved: '已审核',
-                        rejected: '已拒绝',
-                        installed: '已安装',
-                        enabled: '已启用',
-                        disabled: '已禁用',
-                        uninstalled: '已卸载'
-                    }},
+                    {
+                        field: 'status',
+                        width: 110,
+                        title: '状态',
+                        search: 'select',
+                        selectList: statusLabels,
+                        templet: function (d) {
+                            return statusText(d.status);
+                        }
+                    },
                     {field: 'admin_prefix', minWidth: 120, title: '后台前缀'},
                     {field: 'vendor', minWidth: 120, title: '厂商'},
                     {field: 'update_time', minWidth: 160, title: '更新时间', search: false},

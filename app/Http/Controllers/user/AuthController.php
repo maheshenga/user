@@ -15,12 +15,13 @@ class AuthController extends UserApiController
 
     public function register(UserAuthService $auth): JsonResponse
     {
-        $payload = request()->only(['mobile', 'email', 'password', 'invite_code']);
+        $payload = request()->only(['mobile', 'email', 'password', 'invite_code', 'source_module']);
         $validator = Validator::make($payload, [
             'mobile' => 'nullable|string|max:32',
             'email' => 'nullable|email|max:180',
             'password' => 'required|string|min:6|max:72',
             'invite_code' => 'nullable|string|max:40',
+            'source_module' => ['nullable', 'string', 'max:80', 'regex:/^[A-Za-z0-9._-]+$/'],
         ], [
             'mobile.string' => '手机号格式不正确。',
             'mobile.max' => '手机号不能超过 32 个字符。',
@@ -32,6 +33,9 @@ class AuthController extends UserApiController
             'password.max' => '密码不能超过 72 位。',
             'invite_code.string' => '邀请码格式不正确。',
             'invite_code.max' => '邀请码不能超过 40 个字符。',
+            'source_module.string' => '所属模块格式不正确。',
+            'source_module.max' => '所属模块不能超过 80 个字符。',
+            'source_module.regex' => '所属模块只能包含字母、数字、点、横线和下划线。',
         ]);
 
         if ($validator->fails()) {

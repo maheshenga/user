@@ -19,6 +19,7 @@ class AccountController extends AdminController
         'email',
         'nickname',
         'status',
+        'source_module',
         'vip_level',
         'available_balance',
         'last_login_at',
@@ -30,6 +31,7 @@ class AccountController extends AdminController
         'email',
         'nickname',
         'status',
+        'source_module',
         'vip_level',
         'last_login_at',
     ];
@@ -40,6 +42,7 @@ class AccountController extends AdminController
         'email',
         'nickname',
         'status',
+        'source_module',
         'vip_level',
         'available_balance',
         'last_login_at',

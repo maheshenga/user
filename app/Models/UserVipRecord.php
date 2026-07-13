@@ -8,6 +8,8 @@ class UserVipRecord extends BaseModel
 
     protected $guarded = [];
 
+    protected $dateFormat = 'Y-m-d H:i:s';
+
     public static function bootSoftDeletes() {}
 
     protected $casts = [

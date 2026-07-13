@@ -139,6 +139,13 @@ class UserVipActivationTest extends TestCase
         ]);
     }
 
+    public function test_user_vip_record_uses_sql_datetime_format_for_expiry_columns(): void
+    {
+        $record = new UserVipRecord();
+
+        $this->assertSame('Y-m-d H:i:s', $record->getDateFormat());
+    }
+
     public function test_vip_service_extends_active_vip_from_current_expiry_and_upgrades_level(): void
     {
         $user = $this->registerUser('vip-extend@example.com');

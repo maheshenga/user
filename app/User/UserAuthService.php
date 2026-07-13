@@ -24,6 +24,7 @@ final class UserAuthService
         $email = $this->normalizeEmail($payload['email'] ?? null);
         $password = (string) ($payload['password'] ?? '');
         $inviteCode = $this->normalizeNullableString($payload['invite_code'] ?? null);
+        $sourceModule = $this->normalizeSourceModule($payload['source_module'] ?? null);
 
         if ($mobile === null && $email === null) {
             throw new InvalidArgumentException('请填写手机号或邮箱。');
@@ -42,7 +43,7 @@ final class UserAuthService
         }
 
         try {
-            [$user, $defaultInviteCode, $inviteRelation] = DB::transaction(function () use ($mobile, $email, $password, $ip, $inviteCode): array {
+            [$user, $defaultInviteCode, $inviteRelation] = DB::transaction(function () use ($mobile, $email, $password, $ip, $inviteCode, $sourceModule): array {
                 $now = time();
 
                 $user = UserAccount::query()->create([
@@ -51,6 +52,7 @@ final class UserAuthService
                     'password' => $this->passwords->hash($password),
                     'nickname' => $mobile ?? $email,
                     'status' => UserAccountStatus::ACTIVE,
+                    'source_module' => $sourceModule,
                     'register_ip' => $ip,
                     'create_time' => $now,
                     'update_time' => $now,
@@ -153,6 +155,21 @@ final class UserAuthService
         $email = $this->normalizeNullableString($value);
 
         return $email === null ? null : strtolower($email);
+    }
+
+    private function normalizeSourceModule(mixed $value): string
+    {
+        $sourceModule = $this->normalizeNullableString($value);
+        if ($sourceModule === null) {
+            return 'core';
+        }
+
+        $sourceModule = strtolower($sourceModule);
+        if (strlen($sourceModule) > 80 || ! preg_match('/^[a-z0-9._-]+$/', $sourceModule)) {
+            throw new InvalidArgumentException('所属模块只能包含字母、数字、点、横线和下划线。');
+        }
+
+        return $sourceModule;
     }
 
     /**
@@ -269,6 +286,7 @@ final class UserAuthService
             'email' => $user->email,
             'nickname' => $user->nickname,
             'status' => $user->status,
+            'source_module' => $user->source_module ?: 'core',
         ];
     }
 }

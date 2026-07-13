@@ -75,6 +75,7 @@ define(["jquery", "easy-admin"], function ($, ea) {
                     {field: 'email', minWidth: 180, title: '邮箱'},
                     {field: 'nickname', minWidth: 140, title: '昵称'},
                     {field: 'status', width: 110, title: '状态', search: 'select', selectList: statusLabels, templet: '#userStatusTpl'},
+                    {field: 'source_module', minWidth: 130, title: '所属模块', searchOp: '='},
                     {field: 'vip_level', width: 110, title: 'VIP 等级', searchOp: '='},
                     {field: 'available_balance', width: 150, title: '余额', search: false},
                     {field: 'last_login_at', minWidth: 170, title: '最后登录', search: 'datetime'},

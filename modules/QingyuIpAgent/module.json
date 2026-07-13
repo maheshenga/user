@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "name": "qingyu_ip_agent",
+  "title": "轻语IP智能体",
+  "vendor": "internal",
+  "version": "1.2.0",
+  "type": "private",
+  "core_version": "^8.0",
+  "php": ">=8.3",
+  "namespace": "Modules\\QingyuIpAgent",
+  "entry": "src/Providers/QingyuIpAgentServiceProvider.php",
+  "admin_prefix": "qingyu_ip_agent",
+  "controllers": "src/Controllers",
+  "views": "resources/views",
+  "assets": "assets",
+  "migrations": "database/migrations",
+  "seeders": "database/seeders",
+  "permissions": [
+    "menu:write",
+    "node:write"
+  ],
+  "external_domains": [],
+  "dependencies": {},
+  "conflicts": {},
+  "database": {
+    "tables": [
+      "qingyu_ip_agent_settings",
+      "qingyu_ip_agent_operation_logs"
+    ],
+    "preserve_on_uninstall": true
+  },
+  "menus": [
+    {
+      "title": "轻语IP智能体",
+      "icon": "fa fa-magic",
+      "href": "",
+      "children": [
+        {
+          "title": "运营概览",
+          "icon": "fa fa-dashboard",
+          "href": "qingyu_ip_agent/dashboard/index"
+        },
+        {
+          "title": "会员运营",
+          "icon": "fa fa-user",
+          "href": "qingyu_ip_agent/member/index"
+        },
+        {
+          "title": "激活码管理",
+          "icon": "fa fa-ticket",
+          "href": "qingyu_ip_agent/activation-code/index"
+        },
+        {
+          "title": "兑换记录",
+          "icon": "fa fa-history",
+          "href": "qingyu_ip_agent/activation-code/redemptions"
+        },
+        {
+          "title": "模块设置",
+          "icon": "fa fa-cog",
+          "href": "qingyu_ip_agent/setting/index"
+        },
+        {
+          "title": "操作审计",
+          "icon": "fa fa-shield",
+          "href": "qingyu_ip_agent/audit-log/index"
+        }
+      ]
+    }
+  ]
+}
