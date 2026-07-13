@@ -18,6 +18,7 @@ class ClientApiService
         private readonly ActivationCodeService $activationCodes,
         private readonly VipService $vip,
         private readonly VideoParserService $videoParser,
+        private readonly RewriteService $rewrite,
         private readonly AuditLogService $audit
     ) {}
 
@@ -96,6 +97,29 @@ class ClientApiService
             (int) $user['id'],
             $payload,
             fn (): array => $this->videoParser->parse($user, $payload)
+        );
+    }
+
+    public function rewrite(array $payload): array
+    {
+        $user = $this->currentUser();
+        $vip = $this->vip->summary((int) $user['id']);
+        if (! ($vip['active'] ?? false)) {
+            throw new InvalidArgumentException('需要有效的 VIP 会员权限。');
+        }
+
+        $message = trim((string) ($payload['message'] ?? $payload['content'] ?? $payload['text'] ?? ''));
+        $auditPayload = [
+            'message_length' => mb_strlen($message, 'UTF-8'),
+            'provider' => 'module-cloud',
+        ];
+
+        return $this->recorded(
+            'client.rewrite',
+            'user_account',
+            (int) $user['id'],
+            $auditPayload,
+            fn (): array => $this->rewrite->rewrite($message)
         );
     }
 

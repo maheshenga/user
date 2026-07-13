@@ -1,5 +1,11 @@
 # Qingyu IP Agent Changelog
 
+## 1.3.0 - 2026-07-14
+
+- Added a VIP-only desktop rewrite endpoint backed by the server-side cloud LLM configuration.
+- Kept provider credentials on the server and returned only renderer-compatible rewritten content.
+- Added safe audit metadata containing message length instead of raw user copy.
+
 ## 1.1.0 - 2026-07-08
 
 - Clarified that the EasyAdmin8 module center path is lifecycle management only.

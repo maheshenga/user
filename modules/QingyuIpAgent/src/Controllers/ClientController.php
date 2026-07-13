@@ -57,6 +57,13 @@ class ClientController extends Controller
 
     #[MiddlewareAnnotation(ignore: MiddlewareAnnotation::IGNORE_LOGIN)]
     #[MiddlewareAnnotation(ignore: MiddlewareAnnotation::IGNORE_LOG)]
+    public function rewrite(): JsonResponse
+    {
+        return $this->runClientAction(fn (ClientApiService $service): array => $service->rewrite(request()->all()));
+    }
+
+    #[MiddlewareAnnotation(ignore: MiddlewareAnnotation::IGNORE_LOGIN)]
+    #[MiddlewareAnnotation(ignore: MiddlewareAnnotation::IGNORE_LOG)]
     public function sampleAudio(): BinaryFileResponse
     {
         $file = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'assets'.DIRECTORY_SEPARATOR.'audio'.DIRECTORY_SEPARATOR.'local-member-sample.mp3';

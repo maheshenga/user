@@ -18,6 +18,7 @@ use App\Http\Middleware\RateLimiting;
 use App\Http\Middleware\SystemLog;
 use App\User\UserAuthService;
 use Modules\QingyuIpAgent\Services\AuditLogService;
+use Modules\QingyuIpAgent\Services\RewriteService;
 use Tests\Concerns\CreatesModuleTestSchema;
 use Tests\TestCase;
 
@@ -49,7 +50,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $this->assertSame('qingyu_ip_agent', $manifest->name());
         $this->assertSame('轻语IP智能体', $manifest->title());
         $this->assertSame('qingyu_ip_agent', $manifest->adminPrefix());
-        $this->assertSame('1.2.0', $manifest->version());
+        $this->assertSame('1.3.0', $manifest->version());
         $this->assertSame('private', $manifest->type());
         $this->assertContains('menu:write', $manifest->permissions());
         $this->assertContains('node:write', $manifest->permissions());
@@ -447,6 +448,91 @@ class QingyuIpAgentModuleTest extends TestCase
             ->assertJsonPath('code', 0)
             ->assertJsonPath('msg', '链接有效，但平台未返回可提取的文案，请稍后重试或粘贴完整分享文本。');
         Http::assertNotSent(fn ($request): bool => str_contains($request->url(), '127.0.0.1'));
+    }
+
+    public function test_qingyu_ip_agent_client_route_rewrites_copy_through_server_side_cloud_provider(): void
+    {
+        $this->withoutMiddleware([
+            CheckInstall::class,
+            RateLimiting::class,
+            SystemLog::class,
+            CheckAuth::class,
+        ]);
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+
+        Config::set('qingyu_ip_agent.llm.base_url', 'https://dashscope.example.test/compatible-mode/v1');
+        Config::set('qingyu_ip_agent.llm.api_key', 'test-provider-key');
+        Config::set('qingyu_ip_agent.llm.model', 'test-rewrite-model');
+        Config::set('qingyu_ip_agent.llm.timeout', 30);
+        Config::set('qingyu_ip_agent.llm.allowed_hosts', ['dashscope.example.test']);
+
+        $registered = app(UserAuthService::class)->register([
+            'email' => 'desktop-rewrite@example.com',
+            'password' => 'secret123',
+            'source_module' => 'qingyu_ip_agent',
+        ], '127.0.0.1');
+        $user = $registered['user'];
+        DB::table('user_account')->where('id', $user['id'])->update([
+            'vip_level' => 1,
+            'vip_expires_at' => now()->addDays(30),
+            'update_time' => time(),
+        ]);
+        session(['user' => $user]);
+
+        Http::fake([
+            'https://dashscope.example.test/compatible-mode/v1/chat/completions' => Http::response([
+                'choices' => [[
+                    'message' => ['content' => '这是服务端云模型返回的改写文案。'],
+                ]],
+            ], 200),
+        ]);
+
+        $response = $this->postJson('/admin/qingyu_ip_agent/client/rewrite', [
+            'message' => '请把这段短视频口播文案改写得更有记忆点。',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.content', '这是服务端云模型返回的改写文案。')
+            ->assertJsonPath('data.text', '这是服务端云模型返回的改写文案。')
+            ->assertJsonPath('data.provider', 'module-cloud');
+        $this->assertDatabaseHas('qingyu_ip_agent_operation_logs', [
+            'action' => 'client.rewrite',
+            'result' => 'success',
+        ]);
+        $auditPayload = (string) DB::table('qingyu_ip_agent_operation_logs')
+            ->where('action', 'client.rewrite')
+            ->value('masked_payload_json');
+        $this->assertStringContainsString('message_length', $auditPayload);
+        $this->assertStringNotContainsString('请把这段短视频口播文案改写得更有记忆点。', $auditPayload);
+        Http::assertSent(function ($request): bool {
+            return $request->url() === 'https://dashscope.example.test/compatible-mode/v1/chat/completions'
+                && $request->hasHeader('Authorization', 'Bearer test-provider-key')
+                && $request['model'] === 'test-rewrite-model';
+        });
+    }
+
+    public function test_qingyu_ip_agent_rewrite_service_rejects_undeclared_provider_hosts(): void
+    {
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+        app(ModuleAutoloader::class)->register(app(ModuleManager::class)->manifest('qingyu_ip_agent'));
+
+        Config::set('qingyu_ip_agent.llm.base_url', 'https://unapproved.example.test/v1');
+        Config::set('qingyu_ip_agent.llm.api_key', 'test-provider-key');
+        Config::set('qingyu_ip_agent.llm.model', 'test-rewrite-model');
+        Config::set('qingyu_ip_agent.llm.allowed_hosts', ['dashscope.aliyuncs.com']);
+        Http::fake();
+
+        try {
+            app(RewriteService::class)->rewrite('测试文案');
+            $this->fail('Expected an invalid provider URL exception.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('云端改写服务地址无效。', $exception->getMessage());
+        }
+
+        Http::assertNothingSent();
     }
 
     public function test_qingyu_ip_agent_client_route_streams_the_bundled_sample_audio(): void
