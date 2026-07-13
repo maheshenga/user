@@ -7,6 +7,7 @@ use App\Http\Services\annotation\ControllerAnnotation;
 use App\Http\Services\annotation\MiddlewareAnnotation;
 use Illuminate\Http\JsonResponse;
 use Modules\QingyuIpAgent\Services\ClientApiService;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
 #[ControllerAnnotation(title: '轻语桌面端接入', auth: false)]
@@ -52,6 +53,19 @@ class ClientController extends Controller
     public function parseContent(): JsonResponse
     {
         return $this->runClientAction(fn (ClientApiService $service): array => $service->parseContent(request()->all()));
+    }
+
+    #[MiddlewareAnnotation(ignore: MiddlewareAnnotation::IGNORE_LOGIN)]
+    #[MiddlewareAnnotation(ignore: MiddlewareAnnotation::IGNORE_LOG)]
+    public function sampleAudio(): BinaryFileResponse
+    {
+        $file = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'assets'.DIRECTORY_SEPARATOR.'audio'.DIRECTORY_SEPARATOR.'local-member-sample.mp3';
+        abort_unless(is_file($file), 404);
+
+        return response()->file($file, [
+            'Content-Type' => 'audio/mpeg',
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
     }
 
     #[MiddlewareAnnotation(ignore: MiddlewareAnnotation::IGNORE_LOGIN)]

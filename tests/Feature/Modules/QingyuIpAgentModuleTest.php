@@ -429,6 +429,23 @@ class QingyuIpAgentModuleTest extends TestCase
         Http::assertNotSent(fn ($request): bool => str_contains($request->url(), '127.0.0.1'));
     }
 
+    public function test_qingyu_ip_agent_client_route_streams_the_bundled_sample_audio(): void
+    {
+        $this->withoutMiddleware([
+            CheckInstall::class,
+            RateLimiting::class,
+            SystemLog::class,
+            CheckAuth::class,
+        ]);
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+
+        $response = $this->get('/admin/qingyu_ip_agent/client/sampleAudio');
+
+        $response->assertOk()->assertHeader('content-type', 'audio/mpeg');
+        $this->assertGreaterThan(1024, $response->baseResponse->getFile()->getSize());
+    }
+
     private function createSystemConfigTable(): void
     {
         if (! Schema::hasTable('system_config')) {
