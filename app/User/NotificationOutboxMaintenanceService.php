@@ -8,7 +8,7 @@ final class NotificationOutboxMaintenanceService
 {
     public function summary(): array
     {
-        $now = now()->timestamp;
+        $now = now();
         $rows = UserNotificationOutbox::query()
             ->selectRaw('status, COUNT(*) as total')
             ->groupBy('status')
@@ -22,8 +22,8 @@ final class NotificationOutboxMaintenanceService
 
         $retryable = UserNotificationOutbox::query()
             ->where('status', 'pending')
-            ->where(function ($query): void {
-                $query->whereNull('available_at')->orWhere('available_at', '<=', now()->timestamp);
+            ->where(function ($query) use ($now): void {
+                $query->whereNull('available_at')->orWhere('available_at', '<=', $now);
             })
             ->count();
 

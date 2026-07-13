@@ -34,7 +34,7 @@ class AuditLogService
             'target_id' => $targetId,
             'masked_payload_json' => json_encode($this->maskPayload($payload), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'result' => $result,
-            'error_message' => $errorMessage,
+            'error_message' => $this->truncateErrorMessage($errorMessage),
             'ip' => request()->ip(),
             'user_agent' => substr((string) request()->userAgent(), 0, 500),
             'create_time' => time(),
@@ -94,6 +94,11 @@ class AuditLogService
         }
 
         return '******';
+    }
+
+    private function truncateErrorMessage(?string $errorMessage): ?string
+    {
+        return $errorMessage === null ? null : mb_substr($errorMessage, 0, 500, 'UTF-8');
     }
 
     private function maskMobile(string $value): string

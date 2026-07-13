@@ -5,6 +5,9 @@ namespace App\Models;
 final class UserNotificationOutbox extends BaseModel
 {
     protected $table = 'user_notification_outbox';
+
+    protected $dateFormat = 'Y-m-d H:i:s';
+
     protected $guarded = [];
 
     public static function bootSoftDeletes() {}

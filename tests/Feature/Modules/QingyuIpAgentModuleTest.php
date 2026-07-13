@@ -140,6 +140,26 @@ class QingyuIpAgentModuleTest extends TestCase
         $this->assertStringContainsString('visible', $payload);
     }
 
+    public function test_qingyu_ip_agent_audit_log_truncates_multibyte_errors_to_column_limit(): void
+    {
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleAutoloader::class)->register(app(ModuleManager::class)->manifest('qingyu_ip_agent'));
+
+        app(AuditLogService::class)->record(
+            action: 'client.password-reset',
+            targetType: 'user',
+            targetId: 12,
+            payload: [],
+            result: 'failed',
+            errorMessage: str_repeat("\u{9519}\u{8BEF}", 300)
+        );
+
+        $error = (string) DB::table('qingyu_ip_agent_operation_logs')->value('error_message');
+
+        $this->assertSame(500, mb_strlen($error, 'UTF-8'));
+        $this->assertStringStartsWith("\u{9519}\u{8BEF}", $error);
+    }
+
     public function test_qingyu_ip_agent_admin_can_create_activation_batches_and_generate_codes(): void
     {
         $this->withoutMiddleware([

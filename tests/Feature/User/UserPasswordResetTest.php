@@ -55,6 +55,8 @@ class UserPasswordResetTest extends TestCase
 
         $this->assertSame(0, UserPasswordReset::query()->count());
         $this->assertSame(0, UserSecurityLog::query()->count());
+        $this->assertSame('Y-m-d H:i:s', (new UserPasswordReset())->getDateFormat());
+        $this->assertSame('Y-m-d H:i:s', (new UserNotificationOutbox())->getDateFormat());
     }
 
     public function test_request_reset_by_email_creates_hashes_without_plaintext(): void

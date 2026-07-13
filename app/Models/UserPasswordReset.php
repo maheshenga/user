@@ -6,6 +6,8 @@ class UserPasswordReset extends BaseModel
 {
     protected $table = 'user_password_reset';
 
+    protected $dateFormat = 'Y-m-d H:i:s';
+
     protected $guarded = [];
 
     public static function bootSoftDeletes() {}
