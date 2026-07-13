@@ -49,6 +49,13 @@ class ClientController extends Controller
 
     #[MiddlewareAnnotation(ignore: MiddlewareAnnotation::IGNORE_LOGIN)]
     #[MiddlewareAnnotation(ignore: MiddlewareAnnotation::IGNORE_LOG)]
+    public function parseContent(): JsonResponse
+    {
+        return $this->runClientAction(fn (ClientApiService $service): array => $service->parseContent(request()->all()));
+    }
+
+    #[MiddlewareAnnotation(ignore: MiddlewareAnnotation::IGNORE_LOGIN)]
+    #[MiddlewareAnnotation(ignore: MiddlewareAnnotation::IGNORE_LOG)]
     public function sendResetCode(): JsonResponse
     {
         return $this->runClientAction(fn (ClientApiService $service): array => $service->sendResetCode(request()->all(), request()->ip()));

@@ -17,6 +17,7 @@ class ClientApiService
         private readonly PasswordResetService $passwords,
         private readonly ActivationCodeService $activationCodes,
         private readonly VipService $vip,
+        private readonly VideoParserService $videoParser,
         private readonly AuditLogService $audit
     ) {}
 
@@ -83,6 +84,19 @@ class ClientApiService
 
             return $this->userPayload($this->currentUser()) + ['activation' => $result, 'vip' => $this->vip->summary((int) $user['id'])];
         });
+    }
+
+    public function parseContent(array $payload): array
+    {
+        $user = $this->currentUser();
+
+        return $this->recorded(
+            'client.video.parse',
+            'user_account',
+            (int) $user['id'],
+            $payload,
+            fn (): array => $this->videoParser->parse($user, $payload)
+        );
     }
 
     public function sendResetCode(array $payload, string $ip): array

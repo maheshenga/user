@@ -10,6 +10,7 @@ use App\Models\VipPlan;
 use App\User\ActivationCodeService;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use App\Http\Middleware\CheckAuth;
 use App\Http\Middleware\CheckInstall;
@@ -328,6 +329,104 @@ class QingyuIpAgentModuleTest extends TestCase
             ->where('action', 'client.activate')
             ->value('masked_payload_json');
         $this->assertStringNotContainsString($plainCode, $payload);
+    }
+
+    public function test_qingyu_ip_agent_client_route_extracts_douyin_caption_for_vip_member(): void
+    {
+        $this->withoutMiddleware([
+            CheckInstall::class,
+            RateLimiting::class,
+            SystemLog::class,
+            CheckAuth::class,
+        ]);
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+
+        $registered = app(UserAuthService::class)->register([
+            'email' => 'desktop-parser@example.com',
+            'password' => 'secret123',
+            'source_module' => 'qingyu_ip_agent',
+        ], '127.0.0.1');
+        $user = $registered['user'];
+        DB::table('user_account')->where('id', $user['id'])->update([
+            'vip_level' => 1,
+            'vip_expires_at' => now()->addDays(30),
+            'update_time' => time(),
+        ]);
+        session(['user' => $user]);
+
+        $url = 'https://www.douyin.com/jingxuan?modal_id=7639590279997132072';
+        $caption = '这是一条来自抖音精选页面的测试文案 #轻语IP';
+        $routerData = json_encode([
+            'loaderData' => [
+                'video_(id)/page' => [
+                    'videoInfoRes' => [
+                        'item_list' => [[
+                            'aweme_id' => '7639590279997132072',
+                            'desc' => $caption,
+                            'author' => ['nickname' => '测试作者'],
+                        ]],
+                    ],
+                ],
+            ],
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        Http::fake([
+            $url => Http::response('<html><head><title>测试视频 - 抖音</title></head><body><script>window._ROUTER_DATA = '.$routerData.'</script></body></html>', 200),
+        ]);
+
+        $response = $this->postJson('/admin/qingyu_ip_agent/client/parseContent', [
+            'url' => $url,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.content', $caption)
+            ->assertJsonPath('data.videoInfo.platform', 'douyin')
+            ->assertJsonPath('data.videoInfo.author', '测试作者')
+            ->assertJsonPath('data.videoInfo.source', 'douyin_router');
+        $this->assertDatabaseHas('qingyu_ip_agent_operation_logs', [
+            'action' => 'client.video.parse',
+            'result' => 'success',
+        ]);
+        Http::assertSent(fn ($request): bool => $request->url() === $url);
+    }
+
+    public function test_qingyu_ip_agent_video_parser_does_not_follow_redirects_outside_supported_hosts(): void
+    {
+        $this->withoutMiddleware([
+            CheckInstall::class,
+            RateLimiting::class,
+            SystemLog::class,
+            CheckAuth::class,
+        ]);
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+
+        $registered = app(UserAuthService::class)->register([
+            'email' => 'desktop-parser-redirect@example.com',
+            'password' => 'secret123',
+            'source_module' => 'qingyu_ip_agent',
+        ], '127.0.0.1');
+        $user = $registered['user'];
+        DB::table('user_account')->where('id', $user['id'])->update([
+            'vip_level' => 1,
+            'vip_expires_at' => now()->addDays(30),
+            'update_time' => time(),
+        ]);
+        session(['user' => $user]);
+
+        $url = 'https://www.douyin.com/jingxuan?modal_id=7639590279997132072';
+        Http::fake([
+            $url => Http::response('', 302, ['Location' => 'http://127.0.0.1/internal']),
+            '*' => Http::response('', 404),
+        ]);
+
+        $response = $this->postJson('/admin/qingyu_ip_agent/client/parseContent', ['url' => $url]);
+
+        $response->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '链接有效，但平台未返回可提取的文案，请稍后重试或粘贴完整分享文本。');
+        Http::assertNotSent(fn ($request): bool => str_contains($request->url(), '127.0.0.1'));
     }
 
     private function createSystemConfigTable(): void
