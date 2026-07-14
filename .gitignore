@@ -24,4 +24,3 @@ yarn-error.log
 /.worktrees
 /.codegraph
 config/install/lock/install.lock
-composer.lock
