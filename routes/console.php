@@ -116,7 +116,7 @@ Artisan::command('module:release-adopt-enabled {--admin-id=}', function () use (
         }
 
         $rows = SystemModule::query()
-            ->where('status', 'enabled')
+            ->whereIn('status', ['installed', 'enabled', 'disabled'])
             ->whereNull('active_release_id')
             ->orderBy('name')
             ->get();
@@ -132,7 +132,7 @@ Artisan::command('module:release-adopt-enabled {--admin-id=}', function () use (
 
         $this->info('adopted='.$rows->count());
     });
-})->purpose('Adopt enabled legacy modules into immutable release history with an administrator identity');
+})->purpose('Adopt runnable legacy modules into immutable release history with an administrator identity');
 
 Artisan::command('system:module-health', function (): int {
     $requiredTables = [

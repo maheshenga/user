@@ -373,6 +373,83 @@ PHP;
         app(ModuleUpgrader::class)->upgradeLocal('blog', 7);
     }
 
+    public function test_production_does_not_load_enabled_legacy_module_without_an_active_release(): void
+    {
+        $path = $this->writeModule('Blog', $this->manifest());
+        SystemModule::query()->create([
+            'name' => 'blog',
+            'title' => 'Blog',
+            'vendor' => 'tests',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'enabled',
+            'path' => $path,
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'blog',
+            'config_json' => $this->manifest(),
+        ]);
+        $this->app['env'] = 'production';
+
+        $this->assertArrayNotHasKey('blog', app(ModuleManager::class)->enabled());
+        $this->assertStringContainsString(
+            '不可变制品',
+            (string) SystemModule::query()->where('name', 'blog')->value('last_error')
+        );
+    }
+
+    public function test_production_rejects_enabling_a_legacy_module_without_an_active_release(): void
+    {
+        $path = $this->writeModule('Blog', $this->manifest());
+        SystemModule::query()->create([
+            'name' => 'blog',
+            'title' => 'Blog',
+            'vendor' => 'tests',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'disabled',
+            'path' => $path,
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'blog',
+            'config_json' => $this->manifest(),
+        ]);
+        $this->app['env'] = 'production';
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('不可变制品');
+
+        app(ModuleInstaller::class)->enable('blog', 7);
+    }
+
+    public function test_release_adoption_includes_disabled_legacy_modules(): void
+    {
+        $path = $this->writeModule('Blog', $this->manifest());
+        SystemModule::query()->create([
+            'name' => 'blog',
+            'title' => 'Blog',
+            'vendor' => 'tests',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'disabled',
+            'path' => $path,
+            'namespace' => 'Modules\\Blog',
+            'admin_prefix' => 'blog',
+            'config_json' => $this->manifest(),
+        ]);
+
+        $this->artisan('module:release-adopt-enabled', ['--admin-id' => 7])->assertExitCode(0);
+
+        $module = SystemModule::query()->where('name', 'blog')->firstOrFail();
+        $this->assertSame('disabled', $module->status);
+        $this->assertNotNull($module->active_release_id);
+        $this->assertSame(
+            'active',
+            SystemModuleRelease::query()->findOrFail($module->active_release_id)->status
+        );
+    }
+
     public function test_tampered_active_release_is_not_loaded(): void
     {
         $path = $this->writeModule('Blog', $this->manifest());

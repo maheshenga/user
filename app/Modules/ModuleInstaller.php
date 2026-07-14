@@ -5,6 +5,7 @@ namespace App\Modules;
 use App\User\UserApiTokenService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 use Throwable;
 
@@ -72,6 +73,13 @@ final class ModuleInstaller
 
             if (! in_array($module->status, ['installed', 'disabled'], true)) {
                 throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$module->status}] 不允许启用。");
+            }
+            if (
+                app()->environment('production')
+                && Schema::hasTable('system_module_release')
+                && $module->active_release_id === null
+            ) {
+                throw new InvalidArgumentException("模块 [{$name}] 必须先纳入已审核的不可变制品才能启用。");
             }
 
             $manifest = ModuleManifest::fromFile(

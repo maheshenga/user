@@ -90,14 +90,18 @@ final class ModuleManager
 
     private function manifestFromRow(SystemModule $module, bool $forceIntegrityCheck = false): ?ModuleManifest
     {
-        if ($module->active_release_id !== null) {
-            try {
+        try {
+            if ($module->active_release_id === null) {
+                if (app()->environment('production') && Schema::hasTable('system_module_release')) {
+                    throw new InvalidArgumentException("模块 [{$module->name}] 未绑定已审核的不可变制品。");
+                }
+            } else {
                 $this->assertActiveReleaseIntegrity($module, $forceIntegrityCheck);
-            } catch (Throwable $exception) {
-                $this->repository->setLastError((string) $module->name, $exception->getMessage());
-
-                return null;
             }
+        } catch (Throwable $exception) {
+            $this->repository->setLastError((string) $module->name, $exception->getMessage());
+
+            return null;
         }
 
         $manifestPath = rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json';
