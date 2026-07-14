@@ -2,8 +2,15 @@
 
 namespace App\Models;
 
-class UserAccount extends BaseModel
+use Illuminate\Auth\Authenticatable;
+use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
+use Laravel\Sanctum\Contracts\HasApiTokens as HasApiTokensContract;
+use Laravel\Sanctum\HasApiTokens;
+
+class UserAccount extends BaseModel implements AuthenticatableContract, HasApiTokensContract
 {
+    use Authenticatable, HasApiTokens;
+
     protected $table = 'user_account';
 
     protected $guarded = [];
