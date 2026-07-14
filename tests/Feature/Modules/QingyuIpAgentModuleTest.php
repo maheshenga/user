@@ -7,6 +7,7 @@ use App\Modules\ModuleInstaller;
 use App\Modules\ModuleManager;
 use App\Modules\ModuleRepository;
 use App\Models\VipPlan;
+use App\Providers\AppServiceProvider;
 use App\User\ActivationCodeService;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -104,6 +105,21 @@ class QingyuIpAgentModuleTest extends TestCase
             'name' => 'qingyu_ip_agent',
             'status' => 'enabled',
         ]);
+    }
+
+    public function test_enabled_module_entry_provider_registers_module_config(): void
+    {
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+
+        $this->assertNull(Config::get('qingyu_ip_agent.llm.allowed_hosts'));
+
+        (new AppServiceProvider(app()))->boot();
+
+        $this->assertSame(
+            ['dashscope.aliyuncs.com'],
+            Config::get('qingyu_ip_agent.llm.allowed_hosts')
+        );
     }
 
     public function test_qingyu_ip_agent_audit_log_masks_sensitive_payloads(): void

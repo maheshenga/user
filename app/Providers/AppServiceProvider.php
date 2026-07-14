@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Modules\ModuleServiceProviderRegistrar;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -19,6 +20,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (class_exists(ModuleServiceProviderRegistrar::class)) {
+            app(ModuleServiceProviderRegistrar::class)->registerEnabled();
+        }
+
         if (class_exists(\App\Modules\ModuleViewRegistrar::class)) {
             app(\App\Modules\ModuleViewRegistrar::class)->registerEnabled();
         }
