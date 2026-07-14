@@ -9,6 +9,7 @@ use App\User\NotificationOutboxMaintenanceService;
 use App\User\PasswordResetService;
 use App\User\UserAuthService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -140,11 +141,15 @@ class UserPasswordResetNotificationTest extends TestCase
         $outbox = UserNotificationOutbox::query()->firstOrFail();
         $this->assertSame('sent', $outbox->status);
         $this->assertNotNull($outbox->sent_at);
+        $this->assertArrayNotHasKey('token', $outbox->payload_json);
+        $this->assertArrayNotHasKey('code', $outbox->payload_json);
+        $this->assertArrayHasKey('password_reset_id', $outbox->payload_json);
         Mail::assertSentCount(1);
     }
 
-    public function test_dispatcher_marks_sms_log_driver_sent_without_external_provider(): void
+    public function test_dispatcher_keeps_sms_pending_without_logging_secret_when_provider_is_missing(): void
     {
+        Log::spy();
         app(UserAuthService::class)->register([
             'mobile' => '13920008888',
             'password' => 'old-password',
@@ -156,11 +161,17 @@ class UserPasswordResetNotificationTest extends TestCase
 
         $result = app(NotificationOutboxDispatcher::class)->sendPending(10);
 
-        $this->assertSame(1, $result['sent']);
+        $this->assertSame(0, $result['sent']);
+        $this->assertSame(1, $result['failed']);
         $this->assertDatabaseHas('user_notification_outbox', [
             'channel' => 'sms',
-            'status' => 'sent',
+            'status' => 'pending',
         ]);
+        $this->assertStringContainsString(
+            'SMS provider is not configured',
+            (string) UserNotificationOutbox::query()->firstOrFail()->last_error
+        );
+        Log::shouldNotHaveReceived('info');
     }
 
     public function test_notification_send_command_dispatches_pending_rows(): void

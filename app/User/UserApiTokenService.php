@@ -137,6 +137,14 @@ final class UserApiTokenService
         });
     }
 
+    public function revokeAll(UserAccount $user): void
+    {
+        DB::transaction(function () use ($user): void {
+            $this->revoke($user, null);
+            $user->tokens()->delete();
+        });
+    }
+
     /**
      * @param  array<int, string>  $abilities
      * @return array<string, mixed>

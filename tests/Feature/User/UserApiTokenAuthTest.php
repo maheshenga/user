@@ -8,9 +8,10 @@ use App\Models\UserApiSession;
 use App\User\UserApiException;
 use App\User\UserApiTokenService;
 use App\User\UserAuthService;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class UserApiTokenAuthTest extends TestCase
@@ -24,7 +25,7 @@ class UserApiTokenAuthTest extends TestCase
 
     public function test_token_storage_schema_and_module_policy_are_available(): void
     {
-        $this->assertTrue(class_exists(\Laravel\Sanctum\Sanctum::class));
+        $this->assertTrue(class_exists(Sanctum::class));
         $this->assertTrue(method_exists(UserAccount::class, 'createToken'));
 
         $this->assertTrue(Schema::hasTable('personal_access_tokens'));
@@ -347,6 +348,29 @@ class UserApiTokenAuthTest extends TestCase
             ->assertJsonPath('code', 'ability_denied');
     }
 
+    public function test_disabled_user_is_rejected_and_all_api_sessions_are_revoked(): void
+    {
+        $user = $this->registeredUser('api-disabled@example.com');
+        $tokens = app(UserApiTokenService::class)->issue(
+            $user,
+            'qingyu_ip_agent',
+            ['device_id' => 'api-disabled-device'],
+            '127.0.0.12',
+            'Disabled API Test'
+        );
+        $user->update(['status' => 'disabled']);
+
+        $this->withToken($tokens['access_token'])
+            ->getJson('/api/v1/auth/profile')
+            ->assertForbidden()
+            ->assertJsonPath('code', 'account_unavailable');
+
+        $this->assertNull(PersonalAccessToken::findToken($tokens['access_token']));
+        $this->assertNotNull(UserApiSession::query()->firstOrFail()->revoked_at);
+        $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $tokens['refresh_token']])
+            ->assertUnauthorized();
+    }
+
     public function test_api_auth_routes_are_rate_limited_and_protected_as_expected(): void
     {
         foreach ([
@@ -369,6 +393,7 @@ class UserApiTokenAuthTest extends TestCase
         );
         $this->assertNotNull($profile, '/api/v1/auth/profile route must exist.');
         $this->assertContains('auth:sanctum', $profile->gatherMiddleware());
+        $this->assertContains('api.active', $profile->gatherMiddleware());
         $this->assertContains('api.ability:profile:read', $profile->gatherMiddleware());
     }
 

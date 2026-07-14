@@ -14,6 +14,7 @@ Route::prefix('api/v1/modules/qingyu-ip-agent')
 
         Route::middleware([
             'auth:sanctum',
+            'api.active',
             'throttle:60,1',
             'api.ability:module:qingyu_ip_agent',
         ])->group(function (): void {

@@ -88,9 +88,11 @@ Protected routes require both the module scope and their operation scope. Future
 
 ## Desktop Behavior
 
-The desktop client sends bearer tokens instead of Cookie and `X-CSRF-TOKEN` headers. Registration and login persist the returned access/refresh bundle. Protected requests retry once after a 401 by rotating the refresh token. A second 401, refresh failure, or revoked session clears the encrypted token bundle and returns the server's real message.
+The desktop client sends bearer tokens instead of Cookie and `X-CSRF-TOKEN` headers. Registration and login persist the returned access/refresh bundle. Protected requests retry once after a 401 by rotating the refresh token. A second 401, an explicitly rejected refresh token, or a revoked session clears the encrypted token bundle and returns the server's real message. Network, rate-limit, and server failures preserve the encrypted state so users are not logged out by transient outages.
 
 Only authentication expiry is retried. Validation, duplicate account, VIP, rate-limit, and provider errors are returned directly. This prevents duplicate registration and hides no actionable error behind a generic message.
+
+The main process removes the server access and refresh tokens before returning authentication responses to the renderer. The encrypted state may retain a device ID after logout so the physical device remains stable, but no usable credential remains.
 
 ## Security Boundaries
 
@@ -101,6 +103,9 @@ Only authentication expiry is retried. Validation, duplicate account, VIP, rate-
 - Password verification and login lockout continue through `UserAuthService`.
 - VIP and account status are read from the database for every protected operation.
 - Token abilities are enforced server-side and are not trusted from client input.
+- Disabled users are rejected on every protected route and all of their device sessions are revoked.
+- A successful password reset revokes every access and refresh token for the account.
+- Password reset requests use a non-enumerating public response; reset secrets are never logged and are removed from the notification outbox immediately after delivery.
 
 ## Migration And Rollback
 
@@ -117,4 +122,3 @@ Rollback restores the previous desktop shim. The token tables are additive and d
 - Backend feature tests cover token issuance, no-CSRF registration, scoped access, rotation, reuse revocation, logout, disabled users, and Qingyu routes.
 - Desktop tests cover endpoint mapping, encrypted token persistence, refresh decisions, one retry, and error propagation.
 - Production smoke testing uses a unique test account and verifies an actual API request path without exposing secrets.
-

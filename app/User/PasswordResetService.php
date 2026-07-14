@@ -15,9 +15,9 @@ final class PasswordResetService
         private readonly UserSecurityLogService $securityLogs,
         private readonly PasswordResetNotificationService $notifications,
         private readonly UserPasswordHasher $passwords,
-        private readonly UserOpsSettings $settings
-    ) {
-    }
+        private readonly UserOpsSettings $settings,
+        private readonly UserApiTokenService $apiTokens
+    ) {}
 
     public function requestReset(array $payload, string $ip): array
     {
@@ -26,16 +26,22 @@ final class PasswordResetService
             throw new InvalidArgumentException('请填写账号。');
         }
 
+        $expiresMinutes = $this->settings->passwordResetExpiresMinutes();
+        $response = [
+            'accepted' => true,
+            'account_type' => $accountType,
+            'account' => $account,
+            'delivery' => $this->notifications->publicDelivery($accountType, $account),
+            'expires_in' => $expiresMinutes * 60,
+        ];
         $user = UserAccount::query()->where($accountType, $account)->first();
         if ($user === null) {
-            return ['accepted' => true];
+            return $response;
         }
 
         $token = Str::random(40);
         $code = (string) random_int(100000, 999999);
         $now = time();
-        $expiresMinutes = $this->settings->passwordResetExpiresMinutes();
-
         $reset = UserPasswordReset::query()->create([
             'user_id' => $user->id,
             'account_type' => $accountType,
@@ -53,15 +59,9 @@ final class PasswordResetService
             'account_type' => $accountType,
             'account' => $account,
         ]);
-        $delivery = $this->notifications->queue($user, $reset, $token, $code);
+        $this->notifications->queue($user, $reset, $token, $code);
 
-        return [
-            'accepted' => true,
-            'account_type' => $accountType,
-            'account' => $account,
-            'delivery' => $delivery,
-            'expires_in' => $expiresMinutes * 60,
-        ];
+        return $response;
     }
 
     public function resetPassword(array $payload, string $ip): array
@@ -131,6 +131,8 @@ final class PasswordResetService
                 'used_at' => now(),
                 'update_time' => $now,
             ])->save();
+
+            $this->apiTokens->revokeAll($user);
 
             if ((int) session('user.id') === (int) $user->id) {
                 session()->forget('user');

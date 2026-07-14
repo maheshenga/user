@@ -13,7 +13,7 @@ Route::prefix('auth')->middleware(CheckInstall::class)->group(function (): void 
         Route::post('/password/reset', [AuthController::class, 'resetPassword']);
     });
 
-    Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function (): void {
+    Route::middleware(['auth:sanctum', 'api.active', 'throttle:60,1'])->group(function (): void {
         Route::get('/profile', [AuthController::class, 'profile'])->middleware('api.ability:profile:read');
         Route::post('/logout', [AuthController::class, 'logout']);
     });

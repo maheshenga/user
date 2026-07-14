@@ -2,13 +2,14 @@
 
 namespace Tests\Feature\User;
 
+use App\Http\Middleware\CheckInstall;
 use App\Models\UserAccount;
 use App\Models\UserNotificationOutbox;
 use App\Models\UserPasswordReset;
 use App\Models\UserSecurityLog;
 use App\User\PasswordResetService;
+use App\User\UserApiTokenService;
 use App\User\UserAuthService;
-use App\Http\Middleware\CheckInstall;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
+use Laravel\Sanctum\PersonalAccessToken;
 use Tests\TestCase;
 
 class UserPasswordResetTest extends TestCase
@@ -55,8 +57,8 @@ class UserPasswordResetTest extends TestCase
 
         $this->assertSame(0, UserPasswordReset::query()->count());
         $this->assertSame(0, UserSecurityLog::query()->count());
-        $this->assertSame('Y-m-d H:i:s', (new UserPasswordReset())->getDateFormat());
-        $this->assertSame('Y-m-d H:i:s', (new UserNotificationOutbox())->getDateFormat());
+        $this->assertSame('Y-m-d H:i:s', (new UserPasswordReset)->getDateFormat());
+        $this->assertSame('Y-m-d H:i:s', (new UserNotificationOutbox)->getDateFormat());
     }
 
     public function test_request_reset_by_email_creates_hashes_without_plaintext(): void
@@ -74,6 +76,7 @@ class UserPasswordResetTest extends TestCase
         $this->assertSame('email', $result['account_type']);
         $this->assertSame('reset@example.com', $result['account']);
         $this->assertSame('email', $result['delivery']['channel']);
+        $this->assertArrayNotHasKey('notification_id', $result['delivery']);
         $this->assertArrayNotHasKey('token', $result);
         $this->assertArrayNotHasKey('code', $result);
 
@@ -98,7 +101,16 @@ class UserPasswordResetTest extends TestCase
             'account' => 'missing@example.com',
         ], '127.0.0.2');
 
-        $this->assertSame(['accepted' => true], $result);
+        $this->assertSame([
+            'accepted' => true,
+            'account_type' => 'email',
+            'account' => 'missing@example.com',
+            'delivery' => [
+                'channel' => 'email',
+                'recipient_mask' => 'm***@example.com',
+            ],
+            'expires_in' => 1800,
+        ], $result);
         $this->assertSame(0, UserPasswordReset::query()->count());
         $this->assertSame(0, UserNotificationOutbox::query()->count());
     }
@@ -110,6 +122,14 @@ class UserPasswordResetTest extends TestCase
             'password' => 'old-password',
         ], '127.0.0.1');
         $this->withSession(['user' => ['id' => $registered['user']['id']]]);
+        $user = UserAccount::query()->findOrFail($registered['user']['id']);
+        $tokens = app(UserApiTokenService::class)->issue(
+            $user,
+            'qingyu_ip_agent',
+            ['device_id' => 'password-reset-device'],
+            '127.0.0.1',
+            'Password Reset Test'
+        );
 
         $reset = app(PasswordResetService::class)->requestReset([
             'account' => '13920000001',
@@ -128,6 +148,9 @@ class UserPasswordResetTest extends TestCase
         $user = UserAccount::query()->findOrFail($registered['user']['id']);
         $this->assertTrue(Hash::check('new-password', $user->password));
         $this->assertNotNull(UserPasswordReset::query()->firstOrFail()->used_at);
+        $this->assertNull(PersonalAccessToken::findToken($tokens['access_token']));
+        $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $tokens['refresh_token']])
+            ->assertUnauthorized();
         $this->assertDatabaseHas('user_security_log', [
             'user_id' => $registered['user']['id'],
             'event' => 'password_reset_completed',

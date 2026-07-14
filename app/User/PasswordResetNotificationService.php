@@ -10,9 +10,10 @@ final class PasswordResetNotificationService
 {
     public function queue(UserAccount $user, UserPasswordReset $reset, string $token, string $code): array
     {
-        $channel = $reset->account_type === 'email' ? 'email' : 'sms';
         $recipient = (string) $reset->account;
-        $mask = $channel === 'email' ? $this->maskEmail($recipient) : $this->maskMobile($recipient);
+        $delivery = $this->publicDelivery((string) $reset->account_type, $recipient);
+        $channel = $delivery['channel'];
+        $mask = $delivery['recipient_mask'];
         $subject = $channel === 'email' ? 'Reset your EasyAdmin8 password' : 'EasyAdmin8 password reset code';
         $now = time();
 
@@ -37,10 +38,21 @@ final class PasswordResetNotificationService
             'update_time' => $now,
         ]);
 
+        return ['notification_id' => (int) $outbox->id] + $delivery;
+    }
+
+    /**
+     * @return array{channel:string,recipient_mask:string}
+     */
+    public function publicDelivery(string $accountType, string $account): array
+    {
+        $channel = $accountType === 'email' ? 'email' : 'sms';
+
         return [
-            'notification_id' => (int) $outbox->id,
             'channel' => $channel,
-            'recipient_mask' => $mask,
+            'recipient_mask' => $channel === 'email'
+                ? $this->maskEmail($account)
+                : $this->maskMobile($account),
         ];
     }
 

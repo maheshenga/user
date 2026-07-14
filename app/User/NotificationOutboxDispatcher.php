@@ -4,7 +4,6 @@ namespace App\User;
 
 use App\Mail\UserPasswordResetMail;
 use App\Models\UserNotificationOutbox;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use InvalidArgumentException;
 use Throwable;
@@ -29,10 +28,13 @@ final class NotificationOutboxDispatcher
         foreach ($rows as $row) {
             try {
                 $this->sendOne($row);
+                $payload = $row->payload_json;
+                unset($payload['token'], $payload['code']);
                 $row->forceFill([
                     'status' => 'sent',
                     'sent_at' => now(),
                     'last_error' => null,
+                    'payload_json' => $payload,
                     'attempt_count' => ((int) $row->attempt_count) + 1,
                     'update_time' => time(),
                 ])->save();
@@ -64,13 +66,7 @@ final class NotificationOutboxDispatcher
         }
 
         if ($row->channel === 'sms') {
-            Log::info('Password reset SMS notification queued through log driver.', [
-                'notification_id' => $row->id,
-                'recipient_mask' => $row->recipient_mask,
-                'code' => $payload['code'] ?? null,
-            ]);
-
-            return;
+            throw new InvalidArgumentException('SMS provider is not configured.');
         }
 
         throw new InvalidArgumentException('Unsupported notification channel.');

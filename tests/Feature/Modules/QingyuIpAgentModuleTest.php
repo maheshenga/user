@@ -2,24 +2,26 @@
 
 namespace Tests\Feature\Modules;
 
-use App\Modules\ModuleAutoloader;
-use App\Modules\ModuleInstaller;
-use App\Modules\ModuleManager;
-use App\Modules\ModuleRepository;
-use App\Models\UserAccount;
-use App\Models\VipPlan;
-use App\Providers\AppServiceProvider;
-use App\User\ActivationCodeService;
-use App\User\UserApiTokenService;
-use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Schema;
 use App\Http\Middleware\CheckAuth;
 use App\Http\Middleware\CheckInstall;
 use App\Http\Middleware\RateLimiting;
 use App\Http\Middleware\SystemLog;
+use App\Models\UserAccount;
+use App\Models\VipPlan;
+use App\Modules\ModuleAutoloader;
+use App\Modules\ModuleInstaller;
+use App\Modules\ModuleManager;
+use App\Modules\ModuleRepository;
+use App\Modules\ModuleViewRegistrar;
+use App\Providers\AppServiceProvider;
+use App\User\ActivationCodeService;
+use App\User\UserApiTokenService;
 use App\User\UserAuthService;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
+use Laravel\Sanctum\PersonalAccessToken;
 use Modules\QingyuIpAgent\Services\AuditLogService;
 use Modules\QingyuIpAgent\Services\RewriteService;
 use Tests\Concerns\CreatesModuleTestSchema;
@@ -156,6 +158,21 @@ class QingyuIpAgentModuleTest extends TestCase
                 'code' => 'missing-code',
             ])->assertForbidden()
             ->assertJsonPath('code', 'ability_denied');
+
+        $disabledToken = $account->createToken(
+            'disabled-module-user',
+            ['module:qingyu_ip_agent', 'activation:redeem'],
+            now()->addMinutes(15)
+        );
+        $account->update(['status' => 'disabled']);
+        $this->app['auth']->forgetGuards();
+
+        $this->withToken($disabledToken->plainTextToken)
+            ->postJson('/api/v1/modules/qingyu-ip-agent/activation-codes/redeem', [
+                'code' => 'missing-code',
+            ])->assertForbidden()
+            ->assertJsonPath('code', 'account_unavailable');
+        $this->assertNull(PersonalAccessToken::findToken($disabledToken->plainTextToken));
     }
 
     public function test_versioned_qingyu_api_redeems_activation_code_with_scoped_token(): void
@@ -195,7 +212,7 @@ class QingyuIpAgentModuleTest extends TestCase
         ], 1);
         $generated = app(ActivationCodeService::class)->generateCodes((int) $batch['id'], 1, 1);
 
-        $tokenable = \Laravel\Sanctum\PersonalAccessToken::findToken($tokens['access_token'])->tokenable;
+        $tokenable = PersonalAccessToken::findToken($tokens['access_token'])->tokenable;
         $this->assertInstanceOf(UserAccount::class, $tokenable);
         $this->assertSame('active', $tokenable->status);
         $this->assertNotNull($tokenable->fresh());
@@ -278,7 +295,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $this->withSession(['admin.id' => 1, 'admin.expire_time' => true]);
         $this->installApprovedModule('qingyu_ip_agent', 1);
         app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
-        app(\App\Modules\ModuleViewRegistrar::class)->registerEnabled();
+        app(ModuleViewRegistrar::class)->registerEnabled();
 
         $plan = VipPlan::query()->create([
             'name' => 'Module VIP',
@@ -334,7 +351,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $this->withSession(['admin.id' => 1, 'admin.expire_time' => true]);
         $this->installApprovedModule('qingyu_ip_agent', 1);
         app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
-        app(\App\Modules\ModuleViewRegistrar::class)->registerEnabled();
+        app(ModuleViewRegistrar::class)->registerEnabled();
 
         $response = $this->get('/admin/qingyu_ip_agent/dashboard/index');
 
