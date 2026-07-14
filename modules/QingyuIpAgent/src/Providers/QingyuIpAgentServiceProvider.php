@@ -16,5 +16,8 @@ class QingyuIpAgentServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->loadRoutesFrom(
+            dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'api.php'
+        );
     }
 }

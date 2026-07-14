@@ -67,6 +67,11 @@ class ClientApiService
         return $this->userPayload($user);
     }
 
+    public function profileForUser(UserAccount $account): array
+    {
+        return $this->userPayload($this->userFromAccount($account));
+    }
+
     public function logout(): array
     {
         $this->auth->logout();
@@ -78,18 +83,44 @@ class ClientApiService
     {
         $user = $this->currentUser();
 
+        return $this->activateForUserPayload($user, $payload, $ip);
+    }
+
+    public function activateForUser(UserAccount $account, array $payload, string $ip): array
+    {
+        return $this->activateForUserPayload($this->userFromAccount($account), $payload, $ip);
+    }
+
+    private function activateForUserPayload(array $user, array $payload, string $ip): array
+    {
+
         return $this->recorded('client.activate', 'user_account', (int) $user['id'], $payload, function () use ($payload, $user, $ip): array {
             $result = $this->activationCodes->redeem([
                 'code' => $payload['code'] ?? $payload['activationCode'] ?? null,
             ], (int) $user['id'], $ip);
+            $account = UserAccount::query()->find((int) $user['id']);
+            if ($account === null) {
+                throw new InvalidArgumentException('请先登录。');
+            }
 
-            return $this->userPayload($this->currentUser()) + ['activation' => $result, 'vip' => $this->vip->summary((int) $user['id'])];
+            return $this->userPayload($this->userFromAccount($account)) + ['activation' => $result, 'vip' => $this->vip->summary((int) $user['id'])];
         });
     }
 
     public function parseContent(array $payload): array
     {
         $user = $this->currentUser();
+
+        return $this->parseContentForUserPayload($user, $payload);
+    }
+
+    public function parseContentForUser(UserAccount $account, array $payload): array
+    {
+        return $this->parseContentForUserPayload($this->userFromAccount($account), $payload);
+    }
+
+    private function parseContentForUserPayload(array $user, array $payload): array
+    {
 
         return $this->recorded(
             'client.video.parse',
@@ -103,6 +134,17 @@ class ClientApiService
     public function rewrite(array $payload): array
     {
         $user = $this->currentUser();
+
+        return $this->rewriteForUserPayload($user, $payload);
+    }
+
+    public function rewriteForUser(UserAccount $account, array $payload): array
+    {
+        return $this->rewriteForUserPayload($this->userFromAccount($account), $payload);
+    }
+
+    private function rewriteForUserPayload(array $user, array $payload): array
+    {
         $vip = $this->vip->summary((int) $user['id']);
         if (! ($vip['active'] ?? false)) {
             throw new InvalidArgumentException('需要有效的 VIP 会员权限。');
@@ -173,6 +215,23 @@ class ClientApiService
         session(['user' => $user]);
 
         return $user;
+    }
+
+    private function userFromAccount(UserAccount $account): array
+    {
+        $account = $account->fresh();
+        if ($account === null || ! in_array((string) $account->status, ['active'], true)) {
+            throw new InvalidArgumentException('请先登录。');
+        }
+
+        return [
+            'id' => (int) $account->id,
+            'mobile' => $account->mobile,
+            'email' => $account->email,
+            'nickname' => $account->nickname,
+            'status' => $account->status,
+            'source_module' => $account->source_module ?: 'core',
+        ];
     }
 
     private function userPayload(array $user): array

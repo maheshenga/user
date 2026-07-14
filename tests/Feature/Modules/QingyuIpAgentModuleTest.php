@@ -6,9 +6,11 @@ use App\Modules\ModuleAutoloader;
 use App\Modules\ModuleInstaller;
 use App\Modules\ModuleManager;
 use App\Modules\ModuleRepository;
+use App\Models\UserAccount;
 use App\Models\VipPlan;
 use App\Providers\AppServiceProvider;
 use App\User\ActivationCodeService;
+use App\User\UserApiTokenService;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -51,7 +53,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $this->assertSame('qingyu_ip_agent', $manifest->name());
         $this->assertSame('轻语IP智能体', $manifest->title());
         $this->assertSame('qingyu_ip_agent', $manifest->adminPrefix());
-        $this->assertSame('1.3.0', $manifest->version());
+        $this->assertSame('1.4.0', $manifest->version());
         $this->assertSame('private', $manifest->type());
         $this->assertContains('menu:write', $manifest->permissions());
         $this->assertContains('node:write', $manifest->permissions());
@@ -120,6 +122,94 @@ class QingyuIpAgentModuleTest extends TestCase
             ['dashscope.aliyuncs.com'],
             Config::get('qingyu_ip_agent.llm.allowed_hosts')
         );
+    }
+
+    public function test_versioned_qingyu_api_exposes_public_bootstrap_and_scoped_protected_routes(): void
+    {
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+        (new AppServiceProvider(app()))->boot();
+
+        $this->getJson('/api/v1/modules/qingyu-ip-agent/bootstrap')
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.module', 'qingyu_ip_agent');
+
+        $this->postJson('/api/v1/modules/qingyu-ip-agent/activation-codes/redeem', [
+            'code' => 'missing-code',
+        ])->assertUnauthorized();
+
+        $user = app(UserAuthService::class)->register([
+            'email' => 'module-scope@example.com',
+            'password' => 'secret123',
+            'source_module' => 'qingyu_ip_agent',
+        ], '127.0.0.1');
+        $account = UserAccount::query()->findOrFail((int) $user['user']['id']);
+        $wrongScope = $account->createToken(
+            'wrong-module-scope',
+            ['activation:redeem'],
+            now()->addMinutes(15)
+        );
+
+        $this->withToken($wrongScope->plainTextToken)
+            ->postJson('/api/v1/modules/qingyu-ip-agent/activation-codes/redeem', [
+                'code' => 'missing-code',
+            ])->assertForbidden()
+            ->assertJsonPath('code', 'ability_denied');
+    }
+
+    public function test_versioned_qingyu_api_redeems_activation_code_with_scoped_token(): void
+    {
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+        (new AppServiceProvider(app()))->boot();
+
+        $registered = app(UserAuthService::class)->register([
+            'email' => 'api-activate@example.com',
+            'password' => 'secret123',
+            'source_module' => 'qingyu_ip_agent',
+        ], '127.0.0.1');
+        $account = UserAccount::query()->findOrFail((int) $registered['user']['id']);
+        $tokens = app(UserApiTokenService::class)->issue(
+            $account,
+            'qingyu_ip_agent',
+            ['device_id' => 'module-api-device', 'device_name' => 'Module API Desktop'],
+            '127.0.0.1',
+            'Module API Feature Test'
+        );
+
+        $plan = VipPlan::query()->create([
+            'name' => 'Module API VIP',
+            'level' => 3,
+            'duration_days' => 7,
+            'price' => 29,
+            'status' => 'active',
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+        $batch = app(ActivationCodeService::class)->createBatch([
+            'name' => 'Module API Codes',
+            'vip_plan_id' => $plan->id,
+            'total_count' => 1,
+            'status' => 'active',
+        ], 1);
+        $generated = app(ActivationCodeService::class)->generateCodes((int) $batch['id'], 1, 1);
+
+        $tokenable = \Laravel\Sanctum\PersonalAccessToken::findToken($tokens['access_token'])->tokenable;
+        $this->assertInstanceOf(UserAccount::class, $tokenable);
+        $this->assertSame('active', $tokenable->status);
+        $this->assertNotNull($tokenable->fresh());
+
+        $response = $this->withToken($tokens['access_token'])
+            ->postJson('/api/v1/modules/qingyu-ip-agent/activation-codes/redeem', [
+                'code' => $generated['codes'][0],
+            ]);
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.userInfo.email', 'api-activate@example.com')
+            ->assertJsonPath('data.userInfo.is_vip', 1)
+            ->assertJsonPath('data.vip.vip_level', 3);
     }
 
     public function test_qingyu_ip_agent_audit_log_masks_sensitive_payloads(): void
