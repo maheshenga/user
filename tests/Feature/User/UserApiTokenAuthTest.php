@@ -9,6 +9,7 @@ use App\User\UserApiException;
 use App\User\UserApiTokenService;
 use App\User\UserAuthService;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Route;
 use Laravel\Sanctum\PersonalAccessToken;
 use Tests\TestCase;
 
@@ -211,6 +212,164 @@ class UserApiTokenAuthTest extends TestCase
         $this->assertNotNull(UserApiSession::query()->firstOrFail()->revoked_at);
         $this->assertNull(PersonalAccessToken::query()->find($access->id));
         $this->assertSame(0, UserApiRefreshToken::query()->whereNull('revoked_at')->count());
+    }
+
+    public function test_api_registration_is_csrf_free_and_returns_token_bundle(): void
+    {
+        $response = $this->postJson('/api/v1/auth/register', [
+            'email' => 'api-register@example.com',
+            'password' => 'secret123',
+            'module' => 'qingyu_ip_agent',
+            'device_id' => 'api-register-device',
+            'device_name' => 'API Register Desktop',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.user.email', 'api-register@example.com')
+            ->assertJsonPath('data.user.source_module', 'qingyu_ip_agent')
+            ->assertJsonPath('data.tokens.token_type', 'Bearer');
+
+        $this->assertIsString($response->json('data.tokens.access_token'));
+        $this->assertIsString($response->json('data.tokens.refresh_token'));
+        $response->assertSessionMissing('user');
+    }
+
+    public function test_api_login_and_profile_use_bearer_auth_without_web_session(): void
+    {
+        $this->registeredUser('api-login@example.com');
+
+        $login = $this->postJson('/api/v1/auth/login', [
+            'account' => 'api-login@example.com',
+            'password' => 'secret123',
+            'module' => 'qingyu_ip_agent',
+            'device_id' => 'api-login-device',
+            'device_name' => 'API Login Desktop',
+        ]);
+
+        $login->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.userInfo.email', 'api-login@example.com');
+        $login->assertSessionMissing('user');
+
+        $this->getJson('/api/v1/auth/profile')->assertUnauthorized();
+
+        $this->withToken($login->json('data.tokens.access_token'))
+            ->getJson('/api/v1/auth/profile')
+            ->assertOk()
+            ->assertJsonPath('data.user.email', 'api-login@example.com')
+            ->assertJsonPath('data.userInfo.is_vip', 0);
+    }
+
+    public function test_api_refresh_rotates_tokens_and_rejects_old_access_token(): void
+    {
+        $registration = $this->postJson('/api/v1/auth/register', [
+            'email' => 'api-refresh@example.com',
+            'password' => 'secret123',
+            'module' => 'qingyu_ip_agent',
+            'device_id' => 'api-refresh-device',
+        ])->assertCreated();
+        $oldAccess = $registration->json('data.tokens.access_token');
+        $oldRefresh = $registration->json('data.tokens.refresh_token');
+
+        $refresh = $this->postJson('/api/v1/auth/refresh', [
+            'refresh_token' => $oldRefresh,
+        ]);
+
+        $refresh->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.tokens.token_type', 'Bearer');
+        $this->assertNotSame($oldAccess, $refresh->json('data.tokens.access_token'));
+        $this->assertNotSame($oldRefresh, $refresh->json('data.tokens.refresh_token'));
+
+        $this->withToken($oldAccess)->getJson('/api/v1/auth/profile')->assertUnauthorized();
+        $this->withToken($refresh->json('data.tokens.access_token'))
+            ->getJson('/api/v1/auth/profile')
+            ->assertOk();
+    }
+
+    public function test_api_logout_revokes_the_current_access_and_refresh_session(): void
+    {
+        $registration = $this->postJson('/api/v1/auth/register', [
+            'email' => 'api-logout@example.com',
+            'password' => 'secret123',
+            'module' => 'qingyu_ip_agent',
+            'device_id' => 'api-logout-device',
+        ])->assertCreated();
+        $access = $registration->json('data.tokens.access_token');
+        $refresh = $registration->json('data.tokens.refresh_token');
+        $accessModel = PersonalAccessToken::findToken($access);
+
+        $this->withToken($access)
+            ->postJson('/api/v1/auth/logout')
+            ->assertOk()
+            ->assertJsonPath('data.logged_out', true);
+
+        $this->assertNull(PersonalAccessToken::query()->find($accessModel->id));
+        $this->app['auth']->forgetGuards();
+        $this->withToken($access)->getJson('/api/v1/auth/profile')->assertUnauthorized();
+        $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $refresh])
+            ->assertUnauthorized();
+    }
+
+    public function test_api_returns_specific_statuses_for_duplicate_and_bad_credentials(): void
+    {
+        $payload = [
+            'email' => 'api-errors@example.com',
+            'password' => 'secret123',
+            'module' => 'qingyu_ip_agent',
+            'device_id' => 'api-errors-device',
+        ];
+        $this->postJson('/api/v1/auth/register', $payload)->assertCreated();
+
+        $this->postJson('/api/v1/auth/register', $payload)
+            ->assertConflict()
+            ->assertJsonPath('code', 'account_exists');
+
+        $this->postJson('/api/v1/auth/login', [
+            'account' => 'api-errors@example.com',
+            'password' => 'wrong-password',
+            'module' => 'qingyu_ip_agent',
+            'device_id' => 'api-errors-login',
+        ])->assertUnauthorized()
+            ->assertJsonPath('code', 'invalid_credentials');
+    }
+
+    public function test_api_profile_rejects_token_without_profile_scope(): void
+    {
+        $user = $this->registeredUser('api-scope@example.com');
+        $token = $user->createToken('wrong-scope', ['vip:read'], now()->addMinutes(15));
+
+        $this->withToken($token->plainTextToken)
+            ->getJson('/api/v1/auth/profile')
+            ->assertForbidden()
+            ->assertJsonPath('code', 'ability_denied');
+    }
+
+    public function test_api_auth_routes_are_rate_limited_and_protected_as_expected(): void
+    {
+        foreach ([
+            ['POST', '/api/v1/auth/register'],
+            ['POST', '/api/v1/auth/login'],
+            ['POST', '/api/v1/auth/refresh'],
+        ] as [$method, $path]) {
+            $route = collect(Route::getRoutes())->first(
+                fn ($route): bool => in_array($method, $route->methods(), true) && '/'.$route->uri() === $path
+            );
+            $this->assertNotNull($route, "{$path} route must exist.");
+            $this->assertTrue(
+                collect($route->gatherMiddleware())->contains(fn (string $name): bool => str_starts_with($name, 'throttle:')),
+                "{$path} must be rate limited."
+            );
+        }
+
+        $profile = collect(Route::getRoutes())->first(
+            fn ($route): bool => in_array('GET', $route->methods(), true) && $route->uri() === 'api/v1/auth/profile'
+        );
+        $this->assertNotNull($profile, '/api/v1/auth/profile route must exist.');
+        $this->assertContains('auth:sanctum', $profile->gatherMiddleware());
+        $this->assertContains('api.ability:profile:read', $profile->gatherMiddleware());
     }
 
     private function registeredUser(string $email): UserAccount
