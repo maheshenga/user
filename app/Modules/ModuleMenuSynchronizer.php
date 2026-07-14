@@ -8,13 +8,22 @@ use InvalidArgumentException;
 
 final class ModuleMenuSynchronizer
 {
-    public function sync(ModuleManifest $manifest): void
+    public function sync(ModuleManifest $manifest, bool $adoptLegacy = false): void
     {
-        DB::transaction(function () use ($manifest): void {
+        DB::transaction(function () use ($manifest, $adoptLegacy): void {
             $seen = [];
             foreach ($manifest->menus() as $index => $menu) {
                 if (is_array($menu)) {
-                    $this->syncNode($manifest->name(), $menu, 0, 'root', (int) $index, $seen);
+                    $this->syncNode(
+                        $manifest->name(),
+                        $manifest->adminPrefix(),
+                        $adoptLegacy,
+                        $menu,
+                        0,
+                        'root',
+                        (int) $index,
+                        $seen
+                    );
                 }
             }
 
@@ -50,6 +59,8 @@ final class ModuleMenuSynchronizer
      */
     private function syncNode(
         string $module,
+        string $adminPrefix,
+        bool $adoptLegacy,
         array $menu,
         int $parentId,
         string $parentKey,
@@ -87,11 +98,19 @@ final class ModuleMenuSynchronizer
             ->first();
 
         if ($mapping === null) {
-            if ($href !== '' && DB::table('system_menu')->where('href', $href)->exists()) {
-                throw new InvalidArgumentException("模块 [{$module}] 菜单地址 [{$href}] 已被其他菜单占用。");
+            $menuId = $adoptLegacy
+                ? $this->legacyMenuId($module, $adminPrefix, $href, $parentId, $title)
+                : null;
+            if ($menuId === null) {
+                if ($href !== '' && DB::table('system_menu')->where('href', $href)->exists()) {
+                    throw new InvalidArgumentException("模块 [{$module}] 菜单地址 [{$href}] 已被其他菜单占用。");
+                }
+
+                $menuId = (int) DB::table('system_menu')->insertGetId($payload + ['create_time' => time()]);
+            } else {
+                DB::table('system_menu')->where('id', $menuId)->update($payload);
             }
 
-            $menuId = (int) DB::table('system_menu')->insertGetId($payload + ['create_time' => time()]);
             $mapping = SystemModuleMenu::query()->create([
                 'module' => $module,
                 'menu_id' => $menuId,
@@ -116,9 +135,71 @@ final class ModuleMenuSynchronizer
         $children = is_array($menu['children'] ?? null) ? $menu['children'] : [];
         foreach ($children as $childIndex => $child) {
             if (is_array($child)) {
-                $this->syncNode($module, $child, $menuId, $menuKey, (int) $childIndex, $seen);
+                $this->syncNode(
+                    $module,
+                    $adminPrefix,
+                    $adoptLegacy,
+                    $child,
+                    $menuId,
+                    $menuKey,
+                    (int) $childIndex,
+                    $seen
+                );
             }
         }
+    }
+
+    private function legacyMenuId(
+        string $module,
+        string $adminPrefix,
+        string $href,
+        int $parentId,
+        string $title
+    ): ?int {
+        if ($href !== '') {
+            if (! str_starts_with($href, $adminPrefix.'/')) {
+                return null;
+            }
+
+            $ids = DB::table('system_menu')
+                ->where('pid', $parentId)
+                ->where('href', $href)
+                ->pluck('id');
+        } elseif ($parentId === 0) {
+            $ids = DB::table('system_menu')
+                ->where('pid', 0)
+                ->where(function ($query): void {
+                    $query->whereNull('href')->orWhere('href', '');
+                })
+                ->pluck('id')
+                ->filter(fn (mixed $id): bool => DB::table('system_menu')
+                    ->where('pid', (int) $id)
+                    ->where('href', 'like', $adminPrefix.'/%')
+                    ->exists())
+                ->values();
+        } else {
+            $ids = DB::table('system_menu')
+                ->where('pid', $parentId)
+                ->where('title', $title)
+                ->where(function ($query): void {
+                    $query->whereNull('href')->orWhere('href', '');
+                })
+                ->pluck('id');
+        }
+
+        if ($ids->isEmpty()) {
+            return null;
+        }
+        if ($ids->count() !== 1) {
+            throw new InvalidArgumentException("模块 [{$module}] 旧菜单归属不唯一，必须人工处理。");
+        }
+
+        $menuId = (int) $ids->first();
+        if (SystemModuleMenu::query()->where('menu_id', $menuId)->exists()) {
+            throw new InvalidArgumentException("模块 [{$module}] 旧菜单已归属于其他模块。");
+        }
+
+        return $menuId;
     }
 
     private function menuKey(string $key): string

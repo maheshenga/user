@@ -193,7 +193,10 @@ final class ModuleReleaseManager
                 $oldVersion,
                 $actorId
             ): void {
-                $this->menus->sync($manifest);
+                $this->menus->sync(
+                    $manifest,
+                    $oldReleaseId === null && in_array($oldStatus, ['installed', 'enabled', 'disabled'], true)
+                );
                 if ($oldReleaseId !== null) {
                     SystemModuleRelease::query()->whereKey($oldReleaseId)->update(['status' => 'superseded']);
                 }

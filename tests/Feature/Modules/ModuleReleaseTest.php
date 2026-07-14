@@ -601,6 +601,87 @@ PHP);
         $this->assertSame(1, (int) DB::table('system_menu')->where('id', $ownedMenuId)->value('status'));
     }
 
+    public function test_legacy_adoption_claims_only_the_existing_module_menu_tree(): void
+    {
+        $rootId = (int) DB::table('system_menu')->insertGetId([
+            'pid' => 0,
+            'title' => '旧版博客',
+            'icon' => '',
+            'href' => '',
+            'target' => '_self',
+            'sort' => 0,
+            'status' => 1,
+            'create_time' => time(),
+        ]);
+        $childId = (int) DB::table('system_menu')->insertGetId([
+            'pid' => $rootId,
+            'title' => '旧版文章',
+            'icon' => '',
+            'href' => 'blog/post/index',
+            'target' => '_self',
+            'sort' => 0,
+            'status' => 1,
+            'create_time' => time(),
+        ]);
+        $path = $this->writeModule('Blog', $this->manifest(menus: [[
+            'title' => '博客运营',
+            'children' => [[
+                'title' => '文章管理',
+                'href' => 'blog/post/index',
+            ]],
+        ]]));
+        $manifest = ModuleManifest::fromFile($path.DIRECTORY_SEPARATOR.'module.json');
+
+        app(ModuleMenuSynchronizer::class)->sync($manifest, true);
+
+        $this->assertSame(2, DB::table('system_menu')->count());
+        $this->assertSame(
+            [$rootId, $childId],
+            DB::table('system_module_menu')->where('module', 'blog')->orderBy('menu_id')->pluck('menu_id')->map(fn ($id): int => (int) $id)->all()
+        );
+        $this->assertSame('博客运营', DB::table('system_menu')->where('id', $rootId)->value('title'));
+        $this->assertSame('文章管理', DB::table('system_menu')->where('id', $childId)->value('title'));
+    }
+
+    public function test_schema_migrations_are_not_wrapped_when_the_database_does_not_support_them(): void
+    {
+        $path = $this->writeModule('Blog', $this->manifest());
+        $migrationDir = $path.DIRECTORY_SEPARATOR.'database'.DIRECTORY_SEPARATOR.'migrations';
+        mkdir($migrationDir, 0777, true);
+        file_put_contents($migrationDir.DIRECTORY_SEPARATOR.'2026_07_14_000020_schema_transaction.php', <<<'PHP'
+<?php
+return new class {
+    public function up(): void
+    {
+        if (\Illuminate\Support\Facades\DB::transactionLevel() !== 0) {
+            throw new \RuntimeException('Schema migration was wrapped in a transaction.');
+        }
+        \Illuminate\Support\Facades\Schema::create('module_schema_transaction_test', fn ($table) => $table->id());
+    }
+    public function down(): void
+    {
+        if (\Illuminate\Support\Facades\DB::transactionLevel() !== 0) {
+            throw new \RuntimeException('Schema rollback was wrapped in a transaction.');
+        }
+        \Illuminate\Support\Facades\Schema::dropIfExists('module_schema_transaction_test');
+    }
+};
+PHP);
+        $manifest = ModuleManifest::fromFile($path.DIRECTORY_SEPARATOR.'module.json');
+        $migrations = app(ModuleMigrationRunner::class);
+
+        $batch = $migrations->runPending($manifest);
+
+        $this->assertNotNull($batch);
+        $this->assertTrue(Schema::hasTable('module_schema_transaction_test'));
+        $migrations->rollbackRecorded($manifest, $batch);
+        $this->assertFalse(Schema::hasTable('module_schema_transaction_test'));
+        $this->assertDatabaseMissing('system_module_migration', [
+            'module' => 'blog',
+            'migration' => '2026_07_14_000020_schema_transaction.php',
+        ]);
+    }
+
     public function test_module_lifecycle_hides_and_restores_owned_menus(): void
     {
         $path = $this->writeModule('Blog', $this->manifest(menus: [[

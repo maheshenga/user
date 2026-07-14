@@ -54,7 +54,7 @@ final class ModuleMigrationRunner
     {
         $migration = basename($file);
 
-        return DB::transaction(function () use ($manifest, $migration, $batch, $file): bool {
+        return $this->runMigrationOperation(function () use ($manifest, $migration, $batch, $file): bool {
             if (SystemModuleMigration::query()->where('module', $manifest->name())->where('migration', $migration)->exists()) {
                 return false;
             }
@@ -112,7 +112,7 @@ final class ModuleMigrationRunner
     {
         foreach (array_reverse($files) as $file) {
             $migration = basename($file);
-            DB::transaction(function () use ($manifest, $file, $migration): void {
+            $this->runMigrationOperation(function () use ($manifest, $file, $migration): void {
                 $instance = require $file;
                 if (! is_object($instance) || ! method_exists($instance, 'down')) {
                     throw new RuntimeException("模块迁移补偿被不可逆迁移阻止：{$migration}");
@@ -142,7 +142,7 @@ final class ModuleMigrationRunner
     {
         foreach (array_reverse($this->recordedFiles($manifest, $batch)) as $file) {
             $migration = basename($file);
-            DB::transaction(function () use ($manifest, $migration, $file): void {
+            $this->runMigrationOperation(function () use ($manifest, $migration, $file): void {
                 if (! SystemModuleMigration::query()->where('module', $manifest->name())->where('migration', $migration)->exists()) {
                     return;
                 }
@@ -183,7 +183,7 @@ final class ModuleMigrationRunner
     {
         $files = array_reverse($this->recordedMissingFiles($current, $target));
 
-        DB::transaction(function () use ($current, $files): void {
+        $this->runMigrationOperation(function () use ($current, $files): void {
             foreach ($files as $file) {
                 $migration = basename($file);
 
@@ -205,6 +205,16 @@ final class ModuleMigrationRunner
                     ->delete();
             }
         });
+    }
+
+    private function runMigrationOperation(callable $operation): mixed
+    {
+        $connection = DB::connection();
+        if ($connection->getSchemaGrammar()->supportsSchemaTransactions()) {
+            return $connection->transaction($operation);
+        }
+
+        return $operation();
     }
 
     private function nextBatch(string $module): int
