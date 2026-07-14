@@ -44,7 +44,7 @@ final class UserOpsDashboardService
             'retryable_notifications' => UserNotificationOutbox::query()
                 ->where('status', 'pending')
                 ->where(function ($query): void {
-                    $query->whereNull('available_at')->orWhere('available_at', '<=', now()->timestamp);
+                    $query->whereNull('available_at')->orWhere('available_at', '<=', now());
                 })
                 ->count(),
             'risk_events' => UserRiskEvent::query()->count(),
