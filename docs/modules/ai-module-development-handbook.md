@@ -1135,6 +1135,7 @@ AI 完成任何调用宿主用户域能力的模块后，必须逐项确认：
 - 模块制品是受信任的进程内 PHP 代码，不是沙箱。管理员必须审核文件访问、网络访问、命令执行、反射、动态包含和依赖代码。
 - 禁用或卸载模块会隐藏其托管菜单并撤销该模块全部 API 设备会话；业务数据保留。
 - 生产环境中的 `installed`、`enabled`、`disabled` 旧模块必须先运行 `module:release-adopt-enabled --admin-id={管理员ID}` 纳入不可变发布历史；未绑定活动制品的模块不能启用或加载。
+- EasyAdmin 动态后台路由包含运行时闭包，不兼容 Laravel 路由序列化；部署时必须执行 `php artisan route:clear`，禁止执行 `route:cache`。`config:cache` 和 `view:cache` 可以继续使用。
 
 ### 24.2 module.json API 声明
 

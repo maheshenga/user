@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ForceApiJsonResponse;
 use App\Http\Middleware\RequireActiveApiModule;
 use App\Http\Middleware\RequireActiveApiUser;
 use App\Http\Middleware\RequireApiAbility;
@@ -16,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->api(prepend: [ForceApiJsonResponse::class]);
         $middleware->alias([
             'api.ability' => RequireApiAbility::class,
             'api.active' => RequireActiveApiUser::class,

@@ -563,6 +563,14 @@ class UserApiTokenAuthTest extends TestCase
         $this->assertContains('api.ability:profile:read', $profile->gatherMiddleware());
     }
 
+    public function test_unauthenticated_api_requests_force_json_without_an_accept_header(): void
+    {
+        $this->get('/api/v1/auth/profile')
+            ->assertStatus(401)
+            ->assertHeader('content-type', 'application/json')
+            ->assertJson(['message' => 'Unauthenticated.']);
+    }
+
     private function registeredUser(string $email): UserAccount
     {
         app(UserAuthService::class)->register([

@@ -142,6 +142,11 @@ class QingyuIpAgentModuleTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.module', 'qingyu_ip_agent');
 
+        $this->post('/api/v1/modules/qingyu-ip-agent/content/parse')
+            ->assertStatus(401)
+            ->assertHeader('content-type', 'application/json')
+            ->assertJson(['message' => 'Unauthenticated.']);
+
         $this->postJson('/api/v1/modules/qingyu-ip-agent/activation-codes/redeem', [
             'code' => 'missing-code',
         ])->assertUnauthorized();
