@@ -86,6 +86,16 @@ final class UserAuthService
 
     public function login(array $payload, string $ip): array
     {
+        $result = $this->authenticate($payload, $ip);
+
+        session()->regenerate();
+        session(['user' => $result['user']]);
+
+        return $result;
+    }
+
+    public function authenticate(array $payload, string $ip): array
+    {
         $password = (string) ($payload['password'] ?? '');
         [$loginType, $account] = $this->loginTypeAndAccount($payload['account'] ?? null);
 
@@ -125,9 +135,6 @@ final class UserAuthService
 
         $user->refresh();
         $publicUser = $this->publicUser($user);
-
-        session()->regenerate();
-        session(['user' => $publicUser]);
 
         return [
             'user' => $publicUser,
