@@ -29,11 +29,14 @@ class AuditLogService
     ): void {
         QingyuIpAgentOperationLog::query()->create([
             'admin_id' => $this->adminId(),
+            'request_id' => request()->attributes->get('module_request_id'),
             'action' => $action,
             'target_type' => $targetType,
             'target_id' => $targetId,
             'masked_payload_json' => json_encode($this->maskPayload($payload), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'result' => $result,
+            'error_code' => $this->errorCode($result),
+            'duration_ms' => $this->durationMs(),
             'error_message' => $this->truncateErrorMessage($errorMessage),
             'ip' => request()->ip(),
             'user_agent' => substr((string) request()->userAgent(), 0, 500),
@@ -67,6 +70,7 @@ class AuditLogService
             $lowerKey = strtolower((string) $key);
             if (is_array($value)) {
                 $masked[$key] = $this->maskPayload($value);
+
                 continue;
             }
 
@@ -129,5 +133,30 @@ class AuditLogService
         $adminId = session('admin.id');
 
         return $adminId === null ? null : (int) $adminId;
+    }
+
+    private function durationMs(): ?int
+    {
+        $startedAt = request()->attributes->get('module_request_started_at');
+
+        return is_numeric($startedAt) ? max(0, (int) round((microtime(true) - (float) $startedAt) * 1000)) : null;
+    }
+
+    private function errorCode(string $result): ?string
+    {
+        $explicit = request()->attributes->get('module_error_code');
+        if (is_string($explicit) && $explicit !== '') {
+            return $explicit;
+        }
+        if ($result !== 'failed') {
+            return null;
+        }
+
+        return match ((string) request()->attributes->get('module_operation')) {
+            'activation.redeem' => 'activation_invalid',
+            'content.parse' => 'content_parse_failed',
+            'content.rewrite' => 'content_rewrite_failed',
+            default => 'module_request_failed',
+        };
     }
 }

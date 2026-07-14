@@ -10,6 +10,8 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 final class UserApiTokenService
 {
+    public function __construct(private readonly ModuleApiPolicy $modulePolicy) {}
+
     /**
      * @param  array{device_id?: mixed, device_name?: mixed}  $device
      * @return array<string, mixed>
@@ -21,6 +23,7 @@ final class UserApiTokenService
         string $ip,
         string $userAgent
     ): array {
+        $this->modulePolicy->assertUserAccess($module, $user);
         $abilities = $this->moduleAbilities($module);
         $deviceId = $this->requiredDeviceValue($device['device_id'] ?? null, '设备标识不能为空。', 128);
         $deviceName = $this->optionalDeviceName($device['device_name'] ?? null);
@@ -105,6 +108,14 @@ final class UserApiTokenService
                 return ['error' => new UserApiException('账号当前不可登录。', 403, 'account_unavailable')];
             }
 
+            try {
+                $this->modulePolicy->assertUserAccess((string) $session->module, $user);
+            } catch (UserApiException $exception) {
+                $this->revokeSessionRecords($session);
+
+                return ['error' => $exception];
+            }
+
             $refresh->forceFill(['used_at' => now()])->save();
             $this->deleteAccessToken($session->access_token_id);
             $session->forceFill([
@@ -142,6 +153,22 @@ final class UserApiTokenService
         DB::transaction(function () use ($user): void {
             $this->revoke($user, null);
             $user->tokens()->delete();
+        });
+    }
+
+    public function revokeModule(string $module): int
+    {
+        return DB::transaction(function () use ($module): int {
+            $sessions = UserApiSession::query()
+                ->where('module', $module)
+                ->whereNull('revoked_at')
+                ->lockForUpdate()
+                ->get();
+            foreach ($sessions as $session) {
+                $this->revokeSessionRecords($session);
+            }
+
+            return $sessions->count();
         });
     }
 
@@ -209,12 +236,7 @@ final class UserApiTokenService
      */
     private function moduleAbilities(string $module): array
     {
-        $abilities = config("user_api.modules.{$module}.abilities");
-        if (! is_array($abilities) || $abilities === []) {
-            throw new UserApiException('模块无权签发用户令牌。', 403, 'module_not_allowed');
-        }
-
-        return array_values(array_filter($abilities, static fn (mixed $ability): bool => is_string($ability) && $ability !== ''));
+        return $this->modulePolicy->abilities($module);
     }
 
     private function requiredDeviceValue(mixed $value, string $message, int $maxLength): string

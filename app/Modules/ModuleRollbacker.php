@@ -2,7 +2,10 @@
 
 namespace App\Modules;
 
+use App\Models\SystemModule;
+use App\Models\SystemModuleRelease;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
@@ -13,6 +16,10 @@ final class ModuleRollbacker
         private readonly ModuleRepository $repository,
         private readonly ModuleFileStore $files,
         private readonly ModuleMigrationRunner $migrations,
+        private readonly ModuleArtifactHasher $hasher,
+        private readonly ModuleManifestPolicy $policy,
+        private readonly ModuleReleaseSigner $signer,
+        private readonly ModuleMenuSynchronizer $menus,
     ) {}
 
     public function rollback(string $name, ?int $actorId = null): void
@@ -32,6 +39,12 @@ final class ModuleRollbacker
         $status = (string) $module->status;
         if (! in_array($status, ['installed', 'enabled', 'disabled'], true)) {
             throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$status}] 不允许回滚。");
+        }
+
+        if ($module->active_release_id !== null && $this->previousRelease($name, (int) $module->active_release_id) !== null) {
+            $this->rollbackRelease($module, $status, $actorId);
+
+            return;
         }
 
         $restoreSource = null;
@@ -97,6 +110,106 @@ final class ModuleRollbacker
                 }
             }
         }
+    }
+
+    private function rollbackRelease(SystemModule $module, string $status, ?int $actorId): void
+    {
+        $current = SystemModuleRelease::query()->findOrFail($module->active_release_id);
+        $target = $this->previousRelease((string) $module->name, (int) $current->id);
+        if ($target === null) {
+            throw new RuntimeException("未找到模块历史制品：{$module->name}");
+        }
+
+        try {
+            $currentManifest = $this->verifiedManifest($current);
+            $targetManifest = $this->verifiedManifest($target);
+            $this->assertManifestName($targetManifest, (string) $module->name);
+            $this->migrations->assertMissingReversible($currentManifest, $targetManifest);
+            if ($this->migrations->missingMigrationCount($currentManifest, $targetManifest) > 1) {
+                throw new RuntimeException('需要人工回滚：自动回滚最多支持一个缺失迁移。');
+            }
+
+            DB::transaction(function () use ($module, $status, $actorId, $current, $target, $currentManifest, $targetManifest): void {
+                $this->migrations->rollbackMissingFrom($currentManifest, $targetManifest);
+                $current->forceFill(['status' => 'superseded'])->save();
+                $target->forceFill(['status' => 'active', 'activated_at' => now()])->save();
+                $module->forceFill([
+                    'title' => $targetManifest->title(),
+                    'vendor' => $targetManifest->vendor(),
+                    'version' => $targetManifest->version(),
+                    'type' => $targetManifest->type(),
+                    'trust_level' => $target->trust_level,
+                    'status' => $status,
+                    'path' => $targetManifest->path(),
+                    'namespace' => $targetManifest->namespace(),
+                    'admin_prefix' => $targetManifest->adminPrefix(),
+                    'signature_hash' => $target->signature_hash,
+                    'active_release_id' => $target->id,
+                    'pending_release_id' => null,
+                    'config_json' => $targetManifest->toArray(),
+                    'last_error' => null,
+                    'update_time' => time(),
+                ])->save();
+                $this->menus->sync($targetManifest);
+                $this->repository->log(
+                    'rollback_release',
+                    (string) $module->name,
+                    $status,
+                    $status,
+                    'success',
+                    null,
+                    $actorId,
+                    $currentManifest->version(),
+                    $targetManifest->version()
+                );
+            });
+
+            $this->clearCaches();
+        } catch (Throwable $exception) {
+            $this->repository->setLastError((string) $module->name, $exception->getMessage());
+            $this->repository->log(
+                'rollback_release',
+                (string) $module->name,
+                $status,
+                $status,
+                'failed',
+                $exception->getMessage(),
+                $actorId,
+                (string) $current->version,
+                (string) $target->version
+            );
+
+            throw $exception;
+        }
+    }
+
+    private function previousRelease(string $name, int $currentReleaseId): ?SystemModuleRelease
+    {
+        return SystemModuleRelease::query()
+            ->where('module', $name)
+            ->whereKeyNot($currentReleaseId)
+            ->where('status', 'superseded')
+            ->orderByDesc('activated_at')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    private function verifiedManifest(SystemModuleRelease $release): ModuleManifest
+    {
+        if (! $this->signer->verify($release)) {
+            throw new RuntimeException("模块 [{$release->module}] 历史制品签名校验失败。");
+        }
+        $actualHash = $this->hasher->hashDirectory((string) $release->artifact_path);
+        if (! hash_equals((string) $release->artifact_hash, $actualHash)) {
+            throw new RuntimeException("模块 [{$release->module}] 历史制品完整性校验失败。");
+        }
+
+        $manifest = ModuleManifest::fromFile(
+            rtrim((string) $release->artifact_path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json'
+        );
+        $this->policy->validate($manifest);
+
+        return $manifest;
     }
 
     private function latestBackup(string $name): string

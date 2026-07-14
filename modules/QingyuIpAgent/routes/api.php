@@ -17,6 +17,7 @@ Route::prefix('api/v1/modules/qingyu-ip-agent')
             'api.active',
             'throttle:60,1',
             'api.ability:module:qingyu_ip_agent',
+            'api.module_active',
         ])->group(function (): void {
             Route::post('/activation-codes/redeem', [ApiController::class, 'activate'])
                 ->middleware('api.ability:activation:redeem');

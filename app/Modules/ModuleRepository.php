@@ -11,6 +11,13 @@ final class ModuleRepository
 {
     public function upsertDiscovered(ModuleManifest $manifest): void
     {
+        $existing = SystemModule::query()->where('name', $manifest->name())->first();
+        if ($existing !== null && ($existing->active_release_id !== null || $existing->pending_release_id !== null)) {
+            $existing->forceFill(['update_time' => time()])->save();
+
+            return;
+        }
+
         SystemModule::query()->updateOrCreate(
             ['name' => $manifest->name()],
             [
@@ -19,7 +26,7 @@ final class ModuleRepository
                 'version' => $manifest->version(),
                 'type' => $manifest->type(),
                 'trust_level' => $manifest->type(),
-                'status' => SystemModule::query()->where('name', $manifest->name())->value('status') ?: 'pending_review',
+                'status' => $existing?->status ?: 'pending_review',
                 'path' => $manifest->path(),
                 'namespace' => $manifest->namespace(),
                 'admin_prefix' => $manifest->adminPrefix(),
@@ -151,8 +158,17 @@ final class ModuleRepository
         return $module->refresh();
     }
 
-    public function log(string $action, string $name, ?string $oldState, ?string $newState, string $result, ?string $error = null, ?int $actorId = null): void
-    {
+    public function log(
+        string $action,
+        string $name,
+        ?string $oldState,
+        ?string $newState,
+        string $result,
+        ?string $error = null,
+        ?int $actorId = null,
+        ?string $oldVersion = null,
+        ?string $newVersion = null
+    ): void {
         if (! Schema::hasTable('system_module_log')) {
             return;
         }
@@ -163,6 +179,8 @@ final class ModuleRepository
             'action' => $action,
             'old_state' => $oldState,
             'new_state' => $newState,
+            'old_version' => $oldVersion,
+            'new_version' => $newVersion,
             'started_at' => time(),
             'finished_at' => time(),
             'result' => $result,

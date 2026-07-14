@@ -1,9 +1,19 @@
 <?php
 
 use App\Models\SystemModule;
+use App\Modules\ModuleCenterMenuService;
+use App\Modules\ModuleInstaller;
+use App\Modules\ModuleManager;
+use App\Modules\ModuleManifest;
+use App\Modules\ModuleReleaseManager;
+use App\Modules\ModuleRepository;
+use App\Modules\ModuleReviewService;
+use App\User\NotificationOutboxDispatcher;
+use App\User\NotificationOutboxMaintenanceService;
+use App\User\UserOpsMenuService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Foundation\Inspiring;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 
 Artisan::command('inspire', function () {
@@ -37,7 +47,7 @@ $runModuleCommand = function (callable $callback) use ($ensureModulePersistence)
 
     try {
         $callback();
-    } catch (\Throwable $exception) {
+    } catch (Throwable $exception) {
         $this->error($exception->getMessage());
 
         return Command::FAILURE;
@@ -48,8 +58,8 @@ $runModuleCommand = function (callable $callback) use ($ensureModulePersistence)
 
 Artisan::command('module:discover', function () use ($runModuleCommand) {
     return $runModuleCommand->call($this, function (): void {
-        foreach (app(\App\Modules\ModuleManager::class)->discover() as $manifest) {
-            app(\App\Modules\ModuleRepository::class)->upsertDiscovered($manifest);
+        foreach (app(ModuleManager::class)->discover() as $manifest) {
+            app(ModuleRepository::class)->upsertDiscovered($manifest);
             $this->line($manifest->name().' '.$manifest->version());
         }
     });
@@ -57,28 +67,28 @@ Artisan::command('module:discover', function () use ($runModuleCommand) {
 
 Artisan::command('module:install {name}', function (string $name) use ($runModuleCommand) {
     return $runModuleCommand->call($this, function () use ($name): void {
-        app(\App\Modules\ModuleInstaller::class)->install($name);
+        app(ModuleInstaller::class)->install($name);
         $this->info("模块已安装：{$name}");
     });
 })->purpose('Install a local EasyAdmin8 module');
 
 Artisan::command('module:enable {name}', function (string $name) use ($runModuleCommand) {
     return $runModuleCommand->call($this, function () use ($name): void {
-        app(\App\Modules\ModuleInstaller::class)->enable($name);
+        app(ModuleInstaller::class)->enable($name);
         $this->info("模块已启用：{$name}");
     });
 })->purpose('Enable an installed EasyAdmin8 module');
 
 Artisan::command('module:disable {name}', function (string $name) use ($runModuleCommand) {
     return $runModuleCommand->call($this, function () use ($name): void {
-        app(\App\Modules\ModuleInstaller::class)->disable($name);
+        app(ModuleInstaller::class)->disable($name);
         $this->info("模块已禁用：{$name}");
     });
 })->purpose('Disable an EasyAdmin8 module');
 
 Artisan::command('module:uninstall {name}', function (string $name) use ($runModuleCommand) {
     return $runModuleCommand->call($this, function () use ($name): void {
-        app(\App\Modules\ModuleInstaller::class)->uninstallPreserve($name);
+        app(ModuleInstaller::class)->uninstallPreserve($name);
         $this->info("模块已卸载：{$name}");
     });
 })->purpose('Uninstall an EasyAdmin8 module while preserving data');
@@ -98,15 +108,90 @@ Artisan::command('module:list', function () use ($ensureModulePersistence) {
     return Command::SUCCESS;
 })->purpose('List EasyAdmin8 modules');
 
+Artisan::command('module:release-adopt-enabled {--admin-id=}', function () use ($runModuleCommand) {
+    return $runModuleCommand->call($this, function (): void {
+        $adminId = (int) $this->option('admin-id');
+        if ($adminId <= 0) {
+            throw new InvalidArgumentException('必须提供有效的 --admin-id。');
+        }
+
+        $rows = SystemModule::query()
+            ->where('status', 'enabled')
+            ->whereNull('active_release_id')
+            ->orderBy('name')
+            ->get();
+        foreach ($rows as $module) {
+            $manifest = ModuleManifest::fromFile(
+                rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json'
+            );
+            app(ModuleReleaseManager::class)->stageManifest($manifest, 'local', 'private', $adminId);
+            app(ModuleReviewService::class)->approve((string) $module->name, $adminId, 'private');
+            app(ModuleReleaseManager::class)->activateApproved((string) $module->name, $adminId);
+            $this->info("已纳入不可变制品：{$module->name} {$manifest->version()}");
+        }
+
+        $this->info('adopted='.$rows->count());
+    });
+})->purpose('Adopt enabled legacy modules into immutable release history with an administrator identity');
+
+Artisan::command('system:module-health', function (): int {
+    $requiredTables = [
+        'system_module',
+        'system_module_release',
+        'system_module_menu',
+        'module_api_request',
+        'user_api_sessions',
+        'user_api_refresh_tokens',
+    ];
+    foreach ($requiredTables as $table) {
+        if (! Schema::hasTable($table)) {
+            $this->error("缺少模块平台数据表：{$table}");
+
+            return Command::FAILURE;
+        }
+    }
+
+    $enabled = SystemModule::query()->where('status', 'enabled')->orderBy('name')->get();
+    foreach ($enabled as $module) {
+        if ($module->active_release_id === null) {
+            $this->error("已启用模块未绑定不可变制品：{$module->name}");
+
+            return Command::FAILURE;
+        }
+    }
+
+    $loaded = app(ModuleManager::class)->enabled(true);
+    $missing = $enabled->pluck('name')->diff(array_keys($loaded))->values();
+    if ($missing->isNotEmpty()) {
+        $this->error('模块签名、完整性或加载检查失败：'.$missing->implode(', '));
+
+        return Command::FAILURE;
+    }
+
+    if (
+        $enabled->contains('name', 'qingyu_ip_agent')
+        && (! Schema::hasColumn('activation_code_batch', 'owner_module')
+            || ! Schema::hasColumn('activation_code_redemption', 'owner_module'))
+    ) {
+        $this->error('轻语模块数据归属字段未安装。');
+
+        return Command::FAILURE;
+    }
+
+    $this->info('enabled='.$enabled->count().' verified='.count($loaded));
+
+    return Command::SUCCESS;
+})->purpose('Verify module release, integrity, ownership, and API readiness');
+
 Artisan::command('user:notifications:send {--limit=50}', function (): int {
-    $result = app(\App\User\NotificationOutboxDispatcher::class)->sendPending((int) $this->option('limit'));
+    $result = app(NotificationOutboxDispatcher::class)->sendPending((int) $this->option('limit'));
     $this->info('sent='.$result['sent'].' failed='.$result['failed']);
 
     return Command::SUCCESS;
 })->purpose('Send pending user notification outbox rows');
 
 Artisan::command('user:notifications:purge {--days=30} {--limit=500}', function (): int {
-    $result = app(\App\User\NotificationOutboxMaintenanceService::class)->purgeSentOlderThan(
+    $result = app(NotificationOutboxMaintenanceService::class)->purgeSentOlderThan(
         (int) $this->option('days'),
         (int) $this->option('limit')
     );
@@ -117,8 +202,8 @@ Artisan::command('user:notifications:purge {--days=30} {--limit=500}', function 
 
 Artisan::command('user:ops-menu:sync', function (): int {
     try {
-        $result = app(\App\User\UserOpsMenuService::class)->sync();
-    } catch (\RuntimeException $exception) {
+        $result = app(UserOpsMenuService::class)->sync();
+    } catch (RuntimeException $exception) {
         $this->error($exception->getMessage());
 
         return Command::FAILURE;
@@ -131,8 +216,8 @@ Artisan::command('user:ops-menu:sync', function (): int {
 
 Artisan::command('system:module-menu:sync', function (): int {
     try {
-        $result = app(\App\Modules\ModuleCenterMenuService::class)->sync();
-    } catch (\RuntimeException $exception) {
+        $result = app(ModuleCenterMenuService::class)->sync();
+    } catch (RuntimeException $exception) {
         $this->error($exception->getMessage());
 
         return Command::FAILURE;

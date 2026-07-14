@@ -2,21 +2,23 @@
 
 namespace Modules\QingyuIpAgent\Services;
 
+use App\Contracts\Modules\ActivationCodeGateway;
 use App\Models\ActivationCode;
 use App\Models\ActivationCodeBatch;
 use App\Models\ActivationCodeRedemption;
-use App\User\ActivationCodeService;
 
 class ActivationCodeOpsService
 {
+    private const MODULE = 'qingyu_ip_agent';
+
     public function __construct(
-        private readonly ActivationCodeService $codes,
+        private readonly ActivationCodeGateway $codes,
         private readonly AuditLogService $audit
     ) {}
 
     public function batches(array $filters, int $page, int $limit): array
     {
-        $query = ActivationCodeBatch::query();
+        $query = ActivationCodeBatch::query()->where('owner_module', self::MODULE);
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
         }
@@ -33,7 +35,7 @@ class ActivationCodeOpsService
     public function createBatch(array $payload, int $adminId): array
     {
         try {
-            $batch = $this->codes->createBatch($payload, $adminId);
+            $batch = $this->codes->createBatch(self::MODULE, $payload, $adminId);
             $this->audit->record('activation_code.create_batch', 'activation_code_batch', (int) $batch['id'], $payload, 'success');
 
             return $batch;
@@ -47,7 +49,7 @@ class ActivationCodeOpsService
     public function generateCodes(int $batchId, int $count, int $adminId): array
     {
         try {
-            $result = $this->codes->generateCodes($batchId, $count, $adminId);
+            $result = $this->codes->generateCodes(self::MODULE, $batchId, $count, $adminId);
             $this->audit->record('activation_code.generate', 'activation_code_batch', $batchId, [
                 'batch_id' => $batchId,
                 'count' => $count,
@@ -66,7 +68,10 @@ class ActivationCodeOpsService
 
     public function codes(array $filters, int $page, int $limit): array
     {
-        $query = ActivationCode::query();
+        $query = ActivationCode::query()->whereIn(
+            'batch_id',
+            ActivationCodeBatch::query()->select('id')->where('owner_module', self::MODULE)
+        );
         if (! empty($filters['batch_id'])) {
             $query->where('batch_id', (int) $filters['batch_id']);
         }
@@ -82,7 +87,7 @@ class ActivationCodeOpsService
 
     public function redemptions(array $filters, int $page, int $limit): array
     {
-        $query = ActivationCodeRedemption::query();
+        $query = ActivationCodeRedemption::query()->where('owner_module', self::MODULE);
         if (! empty($filters['result'])) {
             $query->where('result', $filters['result']);
         }

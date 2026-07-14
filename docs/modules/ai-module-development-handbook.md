@@ -848,15 +848,17 @@ AI 遇到以下情况必须停止并报告，不得继续自动修改：
 
 ### 23.1 总原则
 
-- 模块调用宿主能力时，优先通过 `App\User\*Service` 服务类完成，不直接写核心用户表。
-- 用户端接口统一走 `/user/*`，页面入口统一走 `/u/*`。
+- 模块调用宿主能力时，必须依赖 `App\Contracts\Modules\*Gateway`，不得直接依赖 `App\User\*Service` 或写核心用户表。
+- 桌面端、移动端和第三方客户端统一使用 `/api/v1/*` Bearer API；`/user/*` 与 `/u/*` 仅供宿主旧 Web 会话页面兼容，不能作为新模块的稳定协议。
 - 后台运营接口统一走动态后台路由 `/admin/user/{controller}/{action}`，实际前缀以 `config('admin.admin_alias_name')` 为准。
-- 除注册、登录、找回密码外，用户端业务接口必须校验当前用户会话，使用 `session('user')` 或控制器现有 `currentUser()` 能力。
+- `/api/v1` 业务接口必须经过 `auth:sanctum`、`api.active`、`api.module_active` 和对应 `api.ability:*`；模块不得自行解析或保存访问令牌。
 - 后台接口必须依赖 EasyAdmin 后台登录、权限节点和 `session('admin.id')`，禁止模块伪造管理员 ID。
 - 金额字段统一保留两位小数，所有余额变更必须形成流水。
 - 所有审核类动作必须保留审核人、审核时间、状态和失败原因。
 - 模块新增接口必须返回宿主兼容结构：后台表格接口使用 `{code,count,data,msg}`，普通动作使用 `{code,msg,data,url,wait,__token__}` 或现有 `success/error` 封装。
 - 模块不得读取 `.env`、不得输出密钥、不得在日志中记录明文密码、完整激活码、完整手机号、完整邮箱或支付凭证敏感内容。
+
+本章后续出现的 `App\User\*Service` 和 `/user/*` 是宿主内部实现及旧 Web 兼容说明。AI 开发独立模块时，以第 24 章的 Gateway 与 `/api/v1` 规范为准。
 
 ### 23.2 会员接口
 
@@ -1119,3 +1121,88 @@ AI 完成任何调用宿主用户域能力的模块后，必须逐项确认：
 - 是否写入安全日志或风控事件。
 - 是否避免在事务中直接调用外部通知服务。
 - 是否提供可回滚迁移和不破坏既有用户数据的升级策略。
+
+## 24. 稳定模块平台协议
+
+### 24.1 不可变版本与管理员审核
+
+- ZIP 上传只暂存到 `storage/modules/releases/{module}/{version}-{sha256}`，不得覆盖正在运行的模块目录。
+- 每个版本必须独立审核；审核记录绑定 `module + version + artifact_hash`。
+- `partner`、`community` 制品在生产环境必须有宿主 HMAC 签名；签名密钥只能来自服务端环境变量。
+- 审核通过后，由 `system_module.active_release_id` 和 `system_module.path` 原子切换活动版本。
+- 回滚只能切换到历史已审核制品；不可逆迁移必须阻止自动回滚。
+- 普通请求可按 `MODULE_INTEGRITY_CACHE_SECONDS` 短时复用制品哈希校验；部署、巡检和故障排查必须运行 `php artisan system:module-health` 强制重新计算完整哈希。
+- 模块制品是受信任的进程内 PHP 代码，不是沙箱。管理员必须审核文件访问、网络访问、命令执行、反射、动态包含和依赖代码。
+- 禁用或卸载模块会隐藏其托管菜单并撤销该模块全部 API 设备会话；业务数据保留。
+
+### 24.2 module.json API 声明
+
+```json
+{
+  "api": {
+    "abilities": ["profile:read", "vip:read", "module:example_module"],
+    "quotas": {"content.parse": 200, "content.rewrite": 100}
+  }
+}
+```
+
+- 只能声明 `config/user_api.php` 的 `allowed_abilities` 中已有能力。
+- 必须包含 `module:{module_name}` 能力。
+- 配额必须是正整数；服务端配置可以进一步收紧，模块不能自行提高生产配额。
+
+### 24.3 宿主 Gateway
+
+| 契约 | 用途 |
+| --- | --- |
+| `MemberGateway` | 读取标准会员资料。 |
+| `InvitationGateway` | 邀请概览和直推记录。 |
+| `VipGateway` | VIP 查询和可审计发放。 |
+| `ActivationCodeGateway` | 按模块归属创建、生成和兑换激活码。 |
+| `BalanceGateway` | 余额、流水、入账和扣减。 |
+| `AffiliateGateway` | 按宿主邀请关系创建二级分销佣金。 |
+| `AuditGateway` | 写入宿主安全日志。 |
+| `NotificationGateway` | 向宿主通知 outbox 写入模块归属消息。 |
+
+模块服务构造函数必须类型提示契约接口。禁止模块 `new Host*Gateway()`、直接解析实现类或绕过 Gateway 改宿主表。
+
+### 24.4 Bearer API
+
+| 方法 | 路径 | 说明或能力 |
+| --- | --- | --- |
+| `POST` | `/api/v1/auth/register` | 注册并签发访问令牌和旋转刷新令牌。 |
+| `POST` | `/api/v1/auth/login` | 登录指定模块；账号归属必须匹配。 |
+| `POST` | `/api/v1/auth/refresh` | 单次使用刷新令牌。 |
+| `GET` | `/api/v1/auth/profile` | `profile:read` |
+| `POST` | `/api/v1/auth/logout` | 撤销当前设备会话。 |
+| `GET` | `/api/v1/me/vip` | `vip:read` |
+| `GET` | `/api/v1/me/invitations` | `invite:read` |
+| `GET` | `/api/v1/me/balance` | `balance:read` |
+| `GET` | `/api/v1/me/ledger?limit=20` | `balance:read` |
+
+模块业务接口使用 `/api/v1/modules/{module-slug}/*`。模块禁用后，签发、刷新和业务请求都必须返回 `module_unavailable`，并撤销对应设备会话。
+
+### 24.5 数据归属
+
+- 会员归属使用 `user_account.source_module`，注册后不得覆盖。
+- 激活码批次和兑换记录使用 `owner_module`；模块只能读取、生成和兑换自己的批次。
+- 模块不能信任请求体中的 `source_module` 或 `owner_module`，必须由服务端模块常量或 Gateway 上下文注入。
+- 模块列表、详情、统计、导出和审核都必须带归属过滤，不能只在页面层过滤。
+
+### 24.6 幂等、配额与错误
+
+- 写操作和高成本操作必须发送 `X-Request-ID`，格式为 8 到 80 位字母、数字、点、下划线、冒号或短横线。
+- 相同用户、模块、操作、请求 ID 和载荷只执行一次；完成后重放原结果。
+- 同一请求 ID 对应不同载荷返回 `409 idempotency_conflict`；仍在处理返回 `409 request_in_progress`。
+- 超过日配额返回 `429 quota_exceeded`。
+- 响应和审计日志必须包含请求 ID；审计日志还要记录稳定错误码和耗时。
+- 客户端遇到 401 最多刷新重试一次，重试必须复用原请求 ID。
+
+### 24.7 AI 交付检查
+
+- 新版本是否生成独立制品并重新由管理员审核。
+- 是否只依赖 Gateway 契约，没有直接访问宿主核心表和内部服务。
+- 是否声明最小能力、外部域名、依赖、冲突和配额。
+- 所有列表、详情、统计和写操作是否按模块归属隔离。
+- 所有写操作和高成本操作是否具备请求 ID、幂等、配额、稳定错误码和审计关联。
+- 模块禁用、卸载、升级失败和回滚时，菜单、令牌、迁移与数据状态是否符合预期。
+- 是否有红绿测试、变更日志、升级说明、回滚说明和管理员审核清单。

@@ -6,6 +6,18 @@ use RuntimeException;
 
 final class ModuleFileStore
 {
+    public function copyImmutable(string $source, string $target): void
+    {
+        $normalizedTarget = $this->normalizePath($target);
+        $releaseRoot = $this->normalizePath(storage_path('modules/releases'));
+        if (! $this->isWithinRoot($normalizedTarget, $releaseRoot) || $normalizedTarget === $releaseRoot) {
+            throw new RuntimeException('模块制品目标不在允许的发布目录内。');
+        }
+
+        $this->assertNoSymlinkAncestors($normalizedTarget, $releaseRoot);
+        $this->copyDirectory($source, $target);
+    }
+
     public function backup(string $source, string $module, string $version): string
     {
         if (! is_dir($source)) {
@@ -154,6 +166,7 @@ final class ModuleFileStore
 
             if (is_dir($child) && ! is_link($child)) {
                 $this->deleteDirectoryUnchecked($child);
+
                 continue;
             }
 
@@ -202,6 +215,7 @@ final class ModuleFileStore
 
             if (is_dir($from)) {
                 $this->copyDirectory($from, $to);
+
                 continue;
             }
 
@@ -245,6 +259,7 @@ final class ModuleFileStore
             if ($segment === '..') {
                 if ($normalized !== [] && end($normalized) !== '..') {
                     array_pop($normalized);
+
                     continue;
                 }
             }
@@ -320,6 +335,7 @@ final class ModuleFileStore
             $this->modulesRoot(),
             $this->normalizePath(storage_path('modules/tmp')),
             $this->normalizePath(storage_path('modules/backups')),
+            $this->normalizePath(storage_path('modules/releases')),
         ] as $root) {
             if ($this->isWithinRoot($path, $root)) {
                 return $root;

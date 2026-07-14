@@ -2,8 +2,13 @@
 
 namespace Tests\Feature\Modules;
 
+use App\Models\SystemModule;
+use App\Models\SystemModuleRelease;
 use App\Models\SystemModuleVersion;
+use App\Modules\ModuleInstaller;
+use App\Modules\ModuleReviewService;
 use App\Modules\ModuleUpgrader;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use JsonException;
@@ -40,6 +45,7 @@ class ModuleUpgradeTest extends TestCase
         $this->deletePath(storage_path('modules/tmp'));
         $this->deletePath(storage_path('modules/backups'));
         $this->deletePath(storage_path('modules/locks'));
+        $this->deletePath(storage_path('modules/releases'));
 
         parent::tearDown();
     }
@@ -66,7 +72,7 @@ class ModuleUpgradeTest extends TestCase
         }
     }
 
-    public function test_local_upgrade_updates_version_and_records_history(): void
+    public function test_local_upgrade_stages_then_activates_after_review(): void
     {
         $modulePath = $this->writeModule('Blog', $this->manifest('blog', '1.0.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'old.txt', 'old');
@@ -76,10 +82,16 @@ class ModuleUpgradeTest extends TestCase
 
         app(ModuleUpgrader::class)->upgradeLocal('blog', 7);
 
-        $backups = $this->moduleBackupDirectories('blog');
-        $this->assertCount(1, $backups);
-        $this->assertFileExists($backups[0].DIRECTORY_SEPARATOR.'old.txt');
-        $this->assertFileExists($backups[0].DIRECTORY_SEPARATOR.'module.json');
+        $module = SystemModule::query()->where('name', 'blog')->firstOrFail();
+        $release = SystemModuleRelease::query()->findOrFail($module->pending_release_id);
+        $this->assertSame('1.0.0', $module->version);
+        $this->assertSame('1.1.0', $release->version);
+        $this->assertSame('pending_review', $release->status);
+        $this->assertFileExists($release->artifact_path.DIRECTORY_SEPARATOR.'old.txt');
+
+        app(ModuleReviewService::class)->approve('blog', 7);
+        app(ModuleInstaller::class)->install('blog', 7);
+
         $this->assertDatabaseHas('system_module', [
             'name' => 'blog',
             'version' => '1.1.0',
@@ -91,7 +103,7 @@ class ModuleUpgradeTest extends TestCase
         $this->assertDatabaseHas('system_module_log', [
             'admin_id' => 7,
             'module' => 'blog',
-            'action' => 'upgrade',
+            'action' => 'install_release',
             'result' => 'success',
         ]);
     }
@@ -144,7 +156,7 @@ class ModuleUpgradeTest extends TestCase
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
     }
 
-    public function test_zip_upgrade_replaces_installed_module_and_records_version_and_log(): void
+    public function test_zip_upgrade_stages_without_replacing_then_activates_after_review(): void
     {
         if (! class_exists(\ZipArchive::class)) {
             $this->markTestSkipped('ZipArchive extension is not available.');
@@ -162,14 +174,25 @@ class ModuleUpgradeTest extends TestCase
 
         app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog', 9);
 
-        $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'new.txt');
-        $this->assertFileDoesNotExist($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        $module = SystemModule::query()->where('name', 'blog')->firstOrFail();
+        $release = SystemModuleRelease::query()->findOrFail($module->pending_release_id);
+        $this->assertFileExists($modulePath.DIRECTORY_SEPARATOR.'old.txt');
+        $this->assertFileDoesNotExist($modulePath.DIRECTORY_SEPARATOR.'new.txt');
+        $this->assertFileExists($release->artifact_path.DIRECTORY_SEPARATOR.'new.txt');
+        $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.0.0']);
+
+        app(ModuleReviewService::class)->approve('blog', 9);
+        app(ModuleInstaller::class)->install('blog', 9);
+
+        $module->refresh();
+        $this->assertFileExists($module->path.DIRECTORY_SEPARATOR.'new.txt');
+        $this->assertFileDoesNotExist($module->path.DIRECTORY_SEPARATOR.'old.txt');
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'version' => '1.2.0']);
         $this->assertDatabaseHas('system_module_version', ['module' => 'blog', 'version' => '1.2.0']);
         $this->assertDatabaseHas('system_module_log', [
             'admin_id' => 9,
             'module' => 'blog',
-            'action' => 'upgrade',
+            'action' => 'install_release',
             'result' => 'success',
         ]);
     }
@@ -231,7 +254,7 @@ class ModuleUpgradeTest extends TestCase
         ]);
         $this->assertDatabaseHas('system_module_log', [
             'module' => 'blog',
-            'action' => 'upgrade',
+            'action' => 'stage_release',
             'result' => 'failed',
         ]);
     }
@@ -260,7 +283,7 @@ class ModuleUpgradeTest extends TestCase
         $this->assertDatabaseMissing('system_module', ['name' => 'blog']);
     }
 
-    public function test_zip_install_rejects_existing_target_directory_without_overwrite(): void
+    public function test_zip_install_does_not_overwrite_existing_local_directory(): void
     {
         if (! class_exists(\ZipArchive::class)) {
             $this->markTestSkipped('ZipArchive extension is not available.');
@@ -276,16 +299,14 @@ class ModuleUpgradeTest extends TestCase
             'Blog/new.txt' => 'new',
         ]);
 
-        try {
-            app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
-            $this->fail('Expected zip install to reject existing target directory.');
-        } catch (\RuntimeException|\InvalidArgumentException $exception) {
-            $this->assertStringContainsString('模块目标目录已存在', $exception->getMessage());
-        }
+        app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
 
         $this->assertFileExists($target.DIRECTORY_SEPARATOR.'keep.txt');
         $this->assertFileDoesNotExist($target.DIRECTORY_SEPARATOR.'new.txt');
-        $this->assertDatabaseMissing('system_module', ['name' => 'blog']);
+        $module = SystemModule::query()->where('name', 'blog')->firstOrFail();
+        $release = SystemModuleRelease::query()->findOrFail($module->pending_release_id);
+        $this->assertFileExists($release->artifact_path.DIRECTORY_SEPARATOR.'new.txt');
+        $this->assertSame('pending_review', $module->status);
     }
 
     public function test_zip_upgrade_restores_files_and_database_when_migration_fails(): void
@@ -321,8 +342,11 @@ PHP;
             'Blog/database/migrations/2026_07_04_000001_boom.php' => $migration,
         ]);
 
+        app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+        app(ModuleReviewService::class)->approve('blog');
+
         try {
-            app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+            app(ModuleInstaller::class)->install('blog');
             $this->fail('Expected zip upgrade migration to fail.');
         } catch (\RuntimeException $exception) {
             $this->assertSame('boom', $exception->getMessage());
@@ -375,10 +399,13 @@ PHP;
             'Blog/database/migrations/2026_07_04_000002_unique_fails.php' => $migration,
         ]);
 
+        app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+        app(ModuleReviewService::class)->approve('blog');
+
         try {
-            app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
+            app(ModuleInstaller::class)->install('blog');
             $this->fail('Expected zip upgrade migration unique constraint to fail.');
-        } catch (\Illuminate\Database\QueryException $exception) {
+        } catch (QueryException $exception) {
             $this->assertStringContainsString('module_unique_probe', $exception->getMessage());
         }
 
@@ -410,7 +437,9 @@ PHP;
         app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
 
         $this->assertSame($before, $this->moduleTmpDirectories());
-        $this->assertFileExists($this->root.DIRECTORY_SEPARATOR.'Blog'.DIRECTORY_SEPARATOR.'flat.txt');
+        $module = SystemModule::query()->where('name', 'blog')->firstOrFail();
+        $release = SystemModuleRelease::query()->findOrFail($module->pending_release_id);
+        $this->assertFileExists($release->artifact_path.DIRECTORY_SEPARATOR.'flat.txt');
         $this->assertDatabaseHas('system_module', [
             'name' => 'blog',
             'version' => '1.0.0',
@@ -443,7 +472,8 @@ PHP;
         app(ModuleUpgrader::class)->upgradeZip($zipPath, 'blog');
         $this->assertFalse(DB::getSchemaBuilder()->hasTable('zip_install_items'));
 
-        $this->installApprovedModule('blog');
+        app(ModuleReviewService::class)->approve('blog');
+        app(ModuleInstaller::class)->install('blog');
 
         $this->assertTrue(DB::getSchemaBuilder()->hasTable('zip_install_items'));
         $this->assertDatabaseHas('system_module_migration', [
@@ -509,11 +539,11 @@ PHP;
     }
 
     /**
-     * @param array<string, string> $entries
+     * @param  array<string, string>  $entries
      */
     private function createZip(string $zipPath, array $entries): void
     {
-        $zip = new \ZipArchive();
+        $zip = new \ZipArchive;
         $result = $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
         $this->assertTrue($result === true, 'Failed to create zip fixture.');
 

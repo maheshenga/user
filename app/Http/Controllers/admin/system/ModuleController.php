@@ -7,9 +7,12 @@ use App\Http\Services\annotation\ControllerAnnotation;
 use App\Http\Services\annotation\NodeAnnotation;
 use App\Models\SystemModule;
 use App\Models\SystemModuleLog;
+use App\Models\SystemModuleRelease;
 use App\Modules\ModuleInstaller;
 use App\Modules\ModuleManager;
+use App\Modules\ModuleReleaseManager;
 use App\Modules\ModuleRepository;
+use App\Modules\ModuleReviewService;
 use App\Modules\ModuleRollbacker;
 use App\Modules\ModuleUpgrader;
 use Illuminate\Http\JsonResponse;
@@ -24,7 +27,7 @@ class ModuleController extends AdminController
     public function initialize()
     {
         parent::initialize();
-        $this->model = new SystemModule();
+        $this->model = new SystemModule;
     }
 
     #[NodeAnnotation(title: '列表', auth: true)]
@@ -36,15 +39,26 @@ class ModuleController extends AdminController
 
         [$page, $limit, $where] = $this->buildTableParams();
         $query = SystemModule::query()->where($where);
+        $items = $query
+            ->orderBy($this->order, $this->orderDirection)
+            ->paginate($limit, ['*'], 'page', (int) $page)
+            ->items();
+        $pendingIds = collect($items)->pluck('pending_release_id')->filter()->values();
+        $pending = $pendingIds->isEmpty()
+            ? collect()
+            : SystemModuleRelease::query()->whereIn('id', $pendingIds)->get()->keyBy('id');
+        foreach ($items as $module) {
+            $release = $module->pending_release_id === null ? null : $pending->get($module->pending_release_id);
+            $module->setAttribute('pending_version', $release?->version);
+            $module->setAttribute('pending_release_status', $release?->status);
+            $module->setAttribute('pending_trust_level', $release?->trust_level);
+        }
 
         return json([
             'code' => 0,
             'msg' => '',
             'count' => (clone $query)->count(),
-            'data' => $query
-                ->orderBy($this->order, $this->orderDirection)
-                ->paginate($limit, ['*'], 'page', (int) $page)
-                ->items(),
+            'data' => $items,
         ]);
     }
 
@@ -59,6 +73,12 @@ class ModuleController extends AdminController
         return $this->fetch('', [
             'module' => $module,
             'metadata' => $module->config_json ?: [],
+            'activeRelease' => $module->active_release_id === null
+                ? null
+                : SystemModuleRelease::query()->find($module->active_release_id),
+            'pendingRelease' => $module->pending_release_id === null
+                ? null
+                : SystemModuleRelease::query()->find($module->pending_release_id),
         ]);
     }
 
@@ -128,7 +148,7 @@ class ModuleController extends AdminController
     #[NodeAnnotation(title: '审核通过模块', auth: true)]
     public function approve(): Response|JsonResponse|View
     {
-        return $this->runLifecycleAction(fn () => app(ModuleRepository::class)->approve($this->moduleName(), $this->actorId()));
+        return $this->runLifecycleAction(fn () => app(ModuleReviewService::class)->approve($this->moduleName(), $this->actorId()));
     }
 
     #[NodeAnnotation(title: '审核拒绝模块', auth: true)]
@@ -136,7 +156,7 @@ class ModuleController extends AdminController
     {
         return $this->runLifecycleAction(function (): void {
             $reason = trim((string) request()->input('reason', '管理员审核拒绝。'));
-            app(ModuleRepository::class)->reject(
+            app(ModuleReviewService::class)->reject(
                 $this->moduleName(),
                 $reason === '' ? '管理员审核拒绝。' : $reason,
                 $this->actorId()
@@ -190,7 +210,7 @@ class ModuleController extends AdminController
 
         try {
             $expectedName = request()->input('name');
-            app(ModuleUpgrader::class)->upgradeZip($path, $expectedName === '' ? null : $expectedName, $this->actorId());
+            app(ModuleReleaseManager::class)->stageZip($path, $expectedName === '' ? null : $expectedName, $this->actorId());
         } catch (Throwable $exception) {
             return $this->error($exception->getMessage());
         } finally {
@@ -199,7 +219,7 @@ class ModuleController extends AdminController
             }
         }
 
-        return $this->success('操作成功');
+        return $this->success('模块版本已暂存，请审核通过后安装或升级');
     }
 
     #[NodeAnnotation(title: '回滚模块', auth: true)]
@@ -263,7 +283,7 @@ class ModuleController extends AdminController
             return false;
         }
 
-        $zip = new \ZipArchive();
+        $zip = new \ZipArchive;
         $path = $file->getRealPath();
         if ($path === false) {
             return false;
@@ -278,7 +298,7 @@ class ModuleController extends AdminController
     }
 
     /**
-     * @param callable(): void $operation
+     * @param  callable(): void  $operation
      */
     private function runLifecycleAction(callable $operation): Response|JsonResponse|View
     {

@@ -2,21 +2,23 @@
 
 namespace Modules\QingyuIpAgent\Services;
 
+use App\Contracts\Modules\ActivationCodeGateway;
+use App\Contracts\Modules\VipGateway;
 use App\Models\UserAccount;
-use App\User\ActivationCodeService;
 use App\User\PasswordResetService;
 use App\User\UserAuthService;
-use App\User\VipService;
 use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 
 class ClientApiService
 {
+    private const MODULE = 'qingyu_ip_agent';
+
     public function __construct(
         private readonly UserAuthService $auth,
         private readonly PasswordResetService $passwords,
-        private readonly ActivationCodeService $activationCodes,
-        private readonly VipService $vip,
+        private readonly ActivationCodeGateway $activationCodes,
+        private readonly VipGateway $vip,
         private readonly VideoParserService $videoParser,
         private readonly RewriteService $rewrite,
         private readonly AuditLogService $audit
@@ -55,6 +57,10 @@ class ClientApiService
     {
         return $this->recorded('client.login', null, null, $payload, function () use ($payload, $ip): array {
             $result = $this->auth->login($payload, $ip);
+            if ((string) ($result['user']['source_module'] ?? 'core') !== self::MODULE) {
+                $this->auth->logout();
+                throw new InvalidArgumentException('账号或密码错误。');
+            }
 
             return $this->userPayload($result['user']);
         });
@@ -95,7 +101,7 @@ class ClientApiService
     {
 
         return $this->recorded('client.activate', 'user_account', (int) $user['id'], $payload, function () use ($payload, $user, $ip): array {
-            $result = $this->activationCodes->redeem([
+            $result = $this->activationCodes->redeem('qingyu_ip_agent', [
                 'code' => $payload['code'] ?? $payload['activationCode'] ?? null,
             ], (int) $user['id'], $ip);
             $account = UserAccount::query()->find((int) $user['id']);
@@ -199,7 +205,11 @@ class ClientApiService
         }
 
         $account = UserAccount::query()->find((int) $sessionUser['id']);
-        if ($account === null || ! in_array((string) $account->status, ['active'], true)) {
+        if (
+            $account === null
+            || ! in_array((string) $account->status, ['active'], true)
+            || (string) ($account->source_module ?: 'core') !== self::MODULE
+        ) {
             session()->forget('user');
             throw new InvalidArgumentException('请先登录。');
         }
@@ -220,7 +230,11 @@ class ClientApiService
     private function userFromAccount(UserAccount $account): array
     {
         $account = $account->fresh();
-        if ($account === null || ! in_array((string) $account->status, ['active'], true)) {
+        if (
+            $account === null
+            || ! in_array((string) $account->status, ['active'], true)
+            || (string) ($account->source_module ?: 'core') !== self::MODULE
+        ) {
             throw new InvalidArgumentException('请先登录。');
         }
 

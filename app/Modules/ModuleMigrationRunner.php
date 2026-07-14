@@ -10,68 +10,119 @@ use Throwable;
 
 final class ModuleMigrationRunner
 {
-    public function runPending(ModuleManifest $manifest): void
+    public function runPending(ModuleManifest $manifest): ?int
     {
         $path = $manifest->migrationsPath();
 
         if ($path === null || ! is_dir($path)) {
-            return;
+            return null;
         }
 
         $pendingFiles = $this->pendingFiles($manifest, $path);
 
         if ($pendingFiles === []) {
-            return;
+            return null;
         }
 
         $batch = $this->nextBatch($manifest->name());
+        $applied = [];
 
-        foreach ($pendingFiles as $file) {
+        try {
+            foreach ($pendingFiles as $file) {
+                if ($this->applyPendingFile($manifest, $file, $batch)) {
+                    $applied[] = $file;
+                }
+            }
+        } catch (Throwable $exception) {
+            try {
+                $this->compensateApplied($manifest, $applied);
+            } catch (Throwable $cleanupException) {
+                throw new RuntimeException(
+                    "模块迁移批次在原始失败 [{$exception->getMessage()}] 后执行补偿失败：{$cleanupException->getMessage()}",
+                    0,
+                    $exception
+                );
+            }
+
+            throw $exception;
+        }
+
+        return $batch;
+    }
+
+    private function applyPendingFile(ModuleManifest $manifest, string $file, int $batch): bool
+    {
+        $migration = basename($file);
+
+        return DB::transaction(function () use ($manifest, $migration, $batch, $file): bool {
+            if (SystemModuleMigration::query()->where('module', $manifest->name())->where('migration', $migration)->exists()) {
+                return false;
+            }
+
+            $instance = require $file;
+            if (! is_object($instance) || ! method_exists($instance, 'up')) {
+                throw new RuntimeException("模块迁移 [{$migration}] 必须返回包含 up() 方法的对象。");
+            }
+
+            try {
+                $instance->up();
+            } catch (Throwable $exception) {
+                if (method_exists($instance, 'down')) {
+                    try {
+                        $instance->down();
+                    } catch (Throwable $cleanupException) {
+                        throw new RuntimeException(
+                            "模块迁移 [{$migration}] 在原始失败 [{$exception->getMessage()}] 后执行清理失败：{$cleanupException->getMessage()}",
+                            0,
+                            $exception
+                        );
+                    }
+                }
+
+                throw $exception;
+            }
+
+            try {
+                SystemModuleMigration::query()->create([
+                    'module' => $manifest->name(),
+                    'migration' => $migration,
+                    'batch' => $batch,
+                    'ran_at' => time(),
+                ]);
+            } catch (QueryException $exception) {
+                if (! $this->isDuplicateTrackingRow($exception)) {
+                    throw $exception;
+                }
+
+                if (method_exists($instance, 'down')) {
+                    $instance->down();
+                }
+
+                return false;
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * @param  array<int, string>  $files
+     */
+    private function compensateApplied(ModuleManifest $manifest, array $files): void
+    {
+        foreach (array_reverse($files) as $file) {
             $migration = basename($file);
-
-            DB::transaction(function () use ($manifest, $migration, $batch, $file): void {
-                if (SystemModuleMigration::query()->where('module', $manifest->name())->where('migration', $migration)->exists()) {
-                    return;
-                }
-
+            DB::transaction(function () use ($manifest, $file, $migration): void {
                 $instance = require $file;
-
-                if (! is_object($instance) || ! method_exists($instance, 'up')) {
-                    throw new RuntimeException("模块迁移 [{$migration}] 必须返回包含 up() 方法的对象。");
+                if (! is_object($instance) || ! method_exists($instance, 'down')) {
+                    throw new RuntimeException("模块迁移补偿被不可逆迁移阻止：{$migration}");
                 }
 
-                try {
-                    $instance->up();
-                } catch (Throwable $exception) {
-                    if (method_exists($instance, 'down')) {
-                        try {
-                            $instance->down();
-                        } catch (Throwable $cleanupException) {
-                            throw new RuntimeException(
-                                "模块迁移 [{$migration}] 在原始失败 [{$exception->getMessage()}] 后执行清理失败：{$cleanupException->getMessage()}",
-                                0,
-                                $exception
-                            );
-                        }
-                    }
-
-                    throw $exception;
-                }
-
-                try {
-                    SystemModuleMigration::query()->create([
-                        'module' => $manifest->name(),
-                        'migration' => $migration,
-                        'batch' => $batch,
-                        'ran_at' => time(),
-                    ]);
-                } catch (QueryException $exception) {
-                    if ($this->isDuplicateTrackingRow($exception)) {
-                        return;
-                    }
-
-                    throw $exception;
-                }
+                $instance->down();
+                SystemModuleMigration::query()
+                    ->where('module', $manifest->name())
+                    ->where('migration', $migration)
+                    ->delete();
             });
         }
     }

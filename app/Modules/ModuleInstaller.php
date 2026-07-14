@@ -2,6 +2,7 @@
 
 namespace App\Modules;
 
+use App\User\UserApiTokenService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -15,10 +16,20 @@ final class ModuleInstaller
         private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
         private readonly ModuleVersionRecorder $versions,
         private readonly ModuleMigrationRunner $migrations,
+        private readonly ModuleReleaseManager $releases,
+        private readonly ModuleMenuSynchronizer $menus,
+        private readonly UserApiTokenService $apiTokens,
     ) {}
 
     public function install(string $name, ?int $actorId = null): void
     {
+        $current = $this->repository->installed($name);
+        if ($current !== null && $current->pending_release_id !== null) {
+            $this->releases->activateApproved($name, $actorId);
+
+            return;
+        }
+
         $manifest = $this->manager->manifest($name);
         if ($manifest === null) {
             throw new InvalidArgumentException("模块不存在：{$name}");
@@ -41,7 +52,7 @@ final class ModuleInstaller
             $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $name);
             $this->repository->upsertDiscovered($manifest);
             $this->versions->record($manifest);
-            $this->importMenus($manifest);
+            $this->menus->sync($manifest);
             $this->migrations->runPending($manifest);
             $this->repository->setStatus($name, $newState);
         });
@@ -63,6 +74,10 @@ final class ModuleInstaller
                 throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$module->status}] 不允许启用。");
             }
 
+            $manifest = ModuleManifest::fromFile(
+                rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json'
+            );
+            $this->menus->sync($manifest);
             $this->repository->setStatus($name, 'enabled');
         });
     }
@@ -81,6 +96,8 @@ final class ModuleInstaller
                 throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$module->status}] 不允许禁用。");
             }
 
+            $this->menus->hide($name);
+            $this->apiTokens->revokeModule($name);
             $this->repository->setStatus($name, 'disabled');
         });
     }
@@ -99,59 +116,10 @@ final class ModuleInstaller
                 throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$module->status}] 不允许卸载。");
             }
 
+            $this->menus->hide($name);
+            $this->apiTokens->revokeModule($name);
             $this->repository->setStatus($name, 'uninstalled');
         });
-    }
-
-    private function importMenus(ModuleManifest $manifest): void
-    {
-        foreach ($manifest->menus() as $menu) {
-            $this->importMenuNode($menu, 0);
-        }
-    }
-
-    /**
-     * @param array<string, mixed> $menu
-     */
-    private function importMenuNode(array $menu, int $pid): void
-    {
-        $href = isset($menu['href']) ? (string) $menu['href'] : '';
-        $title = (string) ($menu['title'] ?? '');
-        $icon = isset($menu['icon']) ? (string) $menu['icon'] : '';
-        $children = is_array($menu['children'] ?? null) ? $menu['children'] : [];
-
-        if ($href === '') {
-            $existing = DB::table('system_menu')
-                ->where('title', $title)
-                ->where('pid', $pid)
-                ->where(function ($query) {
-                    $query->whereNull('href')->orWhere('href', '');
-                })
-                ->first();
-        } else {
-            $existing = DB::table('system_menu')->where('href', $href)->first();
-        }
-
-        if ($existing !== null) {
-            $id = (int) $existing->id;
-        } else {
-            $id = (int) DB::table('system_menu')->insertGetId([
-                'pid' => $pid,
-                'title' => $title,
-                'icon' => $icon,
-                'href' => $href,
-                'target' => '_self',
-                'sort' => 0,
-                'status' => 1,
-                'create_time' => time(),
-            ]);
-        }
-
-        foreach ($children as $child) {
-            if (is_array($child)) {
-                $this->importMenuNode($child, $id);
-            }
-        }
     }
 
     private function clearCaches(): void

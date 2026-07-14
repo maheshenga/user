@@ -2,91 +2,40 @@
 
 namespace App\Modules;
 
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
+use App\Models\SystemModule;
 use InvalidArgumentException;
 use RuntimeException;
-use Throwable;
 
 final class ModuleUpgrader
 {
     public function __construct(
         private readonly ModuleRepository $repository,
-        private readonly ModuleFileStore $files,
-        private readonly ModuleZipExtractor $zips,
-        private readonly ModuleVersionRecorder $versions,
-        private readonly ModuleMigrationRunner $migrations,
-        private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
+        private readonly ModuleReleaseManager $releases,
     ) {}
 
     public function upgradeLocal(string $name, ?int $actorId = null): void
     {
+        if (app()->environment('production')) {
+            throw new InvalidArgumentException('生产环境禁止从可变本地目录直接升级模块，请上传 ZIP 制品并重新审核。');
+        }
+
         $this->withModuleLock($name, function () use ($name, $actorId): void {
             $module = $this->installedModule($name);
-            $manifest = ModuleManifest::fromFile(rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json');
+            $manifest = ModuleManifest::fromFile(
+                rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json'
+            );
             $this->assertManifestName($manifest, $name);
             $this->assertUpgradeable((string) $module->status, (string) $module->version, $manifest);
-            $this->files->backup((string) $module->path, $manifest->name(), (string) $module->version);
-
-            $this->upgradeInstalled($manifest, (string) $module->status, (string) $module->version, $actorId);
+            $this->releases->stageManifest($manifest, 'local', 'private', $actorId);
         });
     }
 
     public function upgradeZip(string $zipPath, ?string $expectedName = null, ?int $actorId = null): void
     {
-        $extracted = $this->zips->extract($zipPath);
-
-        try {
-            $manifest = ModuleManifest::fromFile($extracted.DIRECTORY_SEPARATOR.'module.json');
-
-            $this->withModuleLock($manifest->name(), function () use ($manifest, $extracted, $expectedName, $actorId): void {
-                if ($expectedName !== null && $manifest->name() !== $expectedName) {
-                    $this->assertManifestName($manifest, $expectedName);
-                }
-
-                $module = $this->repository->installed($manifest->name());
-                if ($module === null) {
-                    $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $manifest->name());
-
-                    $target = rtrim((string) config('modules.path', base_path('modules')), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.Str::studly($manifest->name());
-                    if (file_exists($target)) {
-                        throw new RuntimeException("模块目标目录已存在：{$target}");
-                    }
-
-                    $this->files->replace($target, $extracted);
-                    try {
-                        $this->repository->upsertDiscovered(ModuleManifest::fromFile($target.DIRECTORY_SEPARATOR.'module.json'));
-                    } catch (Throwable $exception) {
-                        $this->files->deleteDirectory($target);
-
-                        throw $exception;
-                    }
-
-                    $this->clearCaches();
-
-                    return;
-                }
-
-                $this->assertUpgradeable((string) $module->status, (string) $module->version, $manifest);
-                $backup = $this->files->backup((string) $module->path, $manifest->name(), (string) $module->version);
-                $this->files->replace((string) $module->path, $extracted);
-
-                $fresh = ModuleManifest::fromFile(rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json');
-                try {
-                    $this->upgradeInstalled($fresh, (string) $module->status, (string) $module->version, $actorId);
-                } catch (Throwable $exception) {
-                    $this->files->replace((string) $module->path, $backup);
-
-                    throw $exception;
-                }
-            });
-        } finally {
-            $this->cleanupExtracted($extracted);
-        }
+        $this->releases->stageZip($zipPath, $expectedName, $actorId);
     }
 
-    private function installedModule(string $name): \App\Models\SystemModule
+    private function installedModule(string $name): SystemModule
     {
         $module = $this->repository->installed($name);
         if ($module === null) {
@@ -103,28 +52,6 @@ final class ModuleUpgrader
         }
     }
 
-    private function upgradeInstalled(ModuleManifest $manifest, string $status, string $currentVersion, ?int $actorId): void
-    {
-        $this->assertUpgradeable($status, $currentVersion, $manifest);
-
-        try {
-            DB::transaction(function () use ($manifest, $status, $currentVersion, $actorId): void {
-                $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $manifest->name());
-                $this->migrations->runPending($manifest);
-                $this->repository->updateFromManifest($manifest, $status);
-                $this->versions->record($manifest);
-                $this->repository->log('upgrade', $manifest->name(), $status, $status, 'success', null, $actorId);
-            });
-        } catch (Throwable $exception) {
-            $this->repository->setLastError($manifest->name(), $exception->getMessage());
-            $this->repository->log('upgrade', $manifest->name(), $status, $status, 'failed', $exception->getMessage(), $actorId);
-
-            throw $exception;
-        }
-
-        $this->clearCaches();
-    }
-
     private function assertUpgradeable(string $status, string $currentVersion, ModuleManifest $manifest): void
     {
         if (! in_array($status, ['installed', 'enabled', 'disabled'], true)) {
@@ -132,39 +59,10 @@ final class ModuleUpgrader
         }
 
         if (version_compare($manifest->version(), $currentVersion, '<=')) {
-            throw new InvalidArgumentException("模块 [{$manifest->name()}] 新版本 [{$manifest->version()}] 必须大于当前版本 [{$currentVersion}]。");
+            throw new InvalidArgumentException(
+                "模块 [{$manifest->name()}] 新版本 [{$manifest->version()}] 必须大于当前版本 [{$currentVersion}]。"
+            );
         }
-    }
-
-    private function cleanupExtracted(string $path): void
-    {
-        $tmp = $this->normalizePath(storage_path('modules/tmp'));
-        $path = rtrim($path, DIRECTORY_SEPARATOR);
-        $normalizedPath = $this->normalizePath($path);
-        $parent = $this->normalizePath(dirname($path));
-
-        if (is_file($path.DIRECTORY_SEPARATOR.'module.json') && dirname($normalizedPath) === $tmp) {
-            $this->files->deleteDirectory($path);
-
-            return;
-        }
-
-        if (is_file($path.DIRECTORY_SEPARATOR.'module.json') && dirname($parent) === $tmp) {
-            $this->files->deleteDirectory(dirname($path));
-        }
-    }
-
-    private function normalizePath(string $path): string
-    {
-        $path = str_replace('\\', '/', rtrim($path, '\\/'));
-
-        return preg_match('/^[A-Za-z]:/', $path) === 1 ? strtolower($path) : $path;
-    }
-
-    private function clearCaches(): void
-    {
-        Cache::forget(config('modules.cache_key'));
-        Cache::forget('version');
     }
 
     /**

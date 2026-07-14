@@ -3,7 +3,7 @@
   "name": "qingyu_ip_agent",
   "title": "轻语IP智能体",
   "vendor": "internal",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "type": "private",
   "core_version": "^8.0",
   "php": ">=8.3",
@@ -24,6 +24,23 @@
   ],
   "dependencies": {},
   "conflicts": {},
+  "api": {
+    "abilities": [
+      "profile:read",
+      "vip:read",
+      "invite:read",
+      "balance:read",
+      "activation:redeem",
+      "content:parse",
+      "content:rewrite",
+      "module:qingyu_ip_agent"
+    ],
+    "quotas": {
+      "activation.redeem": 50,
+      "content.parse": 200,
+      "content.rewrite": 100
+    }
+  },
   "database": {
     "tables": [
       "qingyu_ip_agent_settings",

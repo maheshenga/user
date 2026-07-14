@@ -3,6 +3,7 @@
 namespace Tests\Feature\User;
 
 use App\Http\Middleware\CheckInstall;
+use App\Models\SystemModule;
 use App\Models\UserAccount;
 use App\Models\UserNotificationOutbox;
 use App\Models\UserPasswordReset;
@@ -28,6 +29,25 @@ class UserPasswordResetTest extends TestCase
 
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
         $this->createSystemConfigTable();
+        $manifest = json_decode(
+            file_get_contents(base_path('modules/QingyuIpAgent/module.json')) ?: '{}',
+            true,
+            512,
+            JSON_THROW_ON_ERROR
+        );
+        SystemModule::query()->create([
+            'name' => 'qingyu_ip_agent',
+            'title' => '轻语IP智能体',
+            'vendor' => 'internal',
+            'version' => (string) $manifest['version'],
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'enabled',
+            'path' => base_path('modules/QingyuIpAgent'),
+            'namespace' => 'Modules\\QingyuIpAgent',
+            'admin_prefix' => 'qingyu_ip_agent',
+            'config_json' => $manifest,
+        ]);
     }
 
     public function test_password_reset_phase_3_tables_exist_and_models_query(): void
@@ -120,6 +140,7 @@ class UserPasswordResetTest extends TestCase
         $registered = app(UserAuthService::class)->register([
             'mobile' => '13920000001',
             'password' => 'old-password',
+            'source_module' => 'qingyu_ip_agent',
         ], '127.0.0.1');
         $this->withSession(['user' => ['id' => $registered['user']['id']]]);
         $user = UserAccount::query()->findOrFail($registered['user']['id']);

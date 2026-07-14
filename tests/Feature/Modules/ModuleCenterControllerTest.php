@@ -190,7 +190,7 @@ class ModuleCenterControllerTest extends TestCase
         $this->assertDatabaseHas('system_module', ['name' => 'blog', 'status' => 'approved']);
         $this->assertDatabaseHas('system_module_log', [
             'module' => 'blog',
-            'action' => 'approve',
+            'action' => 'approve_release',
             'result' => 'success',
         ]);
     }
@@ -257,7 +257,7 @@ class ModuleCenterControllerTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     private function createBlogModule(array $overrides = []): SystemModule
     {

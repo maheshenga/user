@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\User;
 
+use App\Models\SystemModule;
 use App\Models\UserAccount;
 use App\Models\UserApiRefreshToken;
 use App\Models\UserApiSession;
+use App\Modules\ModuleInstaller;
 use App\User\UserApiException;
 use App\User\UserApiTokenService;
 use App\User\UserAuthService;
@@ -21,6 +23,25 @@ class UserApiTokenAuthTest extends TestCase
         parent::setUp();
 
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $manifest = json_decode(
+            file_get_contents(base_path('modules/QingyuIpAgent/module.json')) ?: '{}',
+            true,
+            512,
+            JSON_THROW_ON_ERROR
+        );
+        SystemModule::query()->create([
+            'name' => 'qingyu_ip_agent',
+            'title' => '轻语IP智能体',
+            'vendor' => 'internal',
+            'version' => (string) $manifest['version'],
+            'type' => 'private',
+            'trust_level' => 'private',
+            'status' => 'enabled',
+            'path' => base_path('modules/QingyuIpAgent'),
+            'namespace' => 'Modules\\QingyuIpAgent',
+            'admin_prefix' => 'qingyu_ip_agent',
+            'config_json' => $manifest,
+        ]);
     }
 
     public function test_token_storage_schema_and_module_policy_are_available(): void
@@ -55,6 +76,8 @@ class UserApiTokenAuthTest extends TestCase
         $this->assertSame([
             'profile:read',
             'vip:read',
+            'invite:read',
+            'balance:read',
             'activation:redeem',
             'content:parse',
             'content:rewrite',
@@ -215,6 +238,87 @@ class UserApiTokenAuthTest extends TestCase
         $this->assertSame(0, UserApiRefreshToken::query()->whereNull('revoked_at')->count());
     }
 
+    public function test_disabled_module_cannot_issue_tokens(): void
+    {
+        $user = $this->registeredUser('module-disabled-issue@example.com');
+        SystemModule::query()->where('name', 'qingyu_ip_agent')->update(['status' => 'disabled']);
+
+        try {
+            app(UserApiTokenService::class)->issue(
+                $user,
+                'qingyu_ip_agent',
+                ['device_id' => 'disabled-module-device'],
+                '127.0.0.13',
+                'Disabled Module Test'
+            );
+            $this->fail('Expected disabled module token issue to fail.');
+        } catch (UserApiException $exception) {
+            $this->assertSame(403, $exception->httpStatus());
+            $this->assertSame('module_unavailable', $exception->errorCode());
+        }
+    }
+
+    public function test_disabled_module_cannot_refresh_and_revokes_the_session(): void
+    {
+        $user = $this->registeredUser('module-disabled-refresh@example.com');
+        $service = app(UserApiTokenService::class);
+        $issued = $service->issue(
+            $user,
+            'qingyu_ip_agent',
+            ['device_id' => 'disabled-refresh-device'],
+            '127.0.0.14',
+            'Disabled Refresh Test'
+        );
+        SystemModule::query()->where('name', 'qingyu_ip_agent')->update(['status' => 'disabled']);
+
+        try {
+            $service->rotate($issued['refresh_token'], '127.0.0.15', 'Disabled Refresh Test');
+            $this->fail('Expected disabled module refresh to fail.');
+        } catch (UserApiException $exception) {
+            $this->assertSame('module_unavailable', $exception->errorCode());
+        }
+
+        $this->assertNotNull(UserApiSession::query()->firstOrFail()->revoked_at);
+        $this->assertNull(PersonalAccessToken::findToken($issued['access_token']));
+    }
+
+    public function test_disabled_module_token_is_rejected_by_protected_routes(): void
+    {
+        $user = $this->registeredUser('module-disabled-route@example.com');
+        $issued = app(UserApiTokenService::class)->issue(
+            $user,
+            'qingyu_ip_agent',
+            ['device_id' => 'disabled-route-device'],
+            '127.0.0.16',
+            'Disabled Route Test'
+        );
+        SystemModule::query()->where('name', 'qingyu_ip_agent')->update(['status' => 'disabled']);
+
+        $this->withToken($issued['access_token'])
+            ->getJson('/api/v1/auth/profile')
+            ->assertForbidden()
+            ->assertJsonPath('code', 'module_unavailable');
+
+        $this->assertNull(PersonalAccessToken::findToken($issued['access_token']));
+    }
+
+    public function test_disabling_module_revokes_all_module_sessions(): void
+    {
+        $user = $this->registeredUser('module-disable-lifecycle@example.com');
+        $issued = app(UserApiTokenService::class)->issue(
+            $user,
+            'qingyu_ip_agent',
+            ['device_id' => 'module-disable-lifecycle-device'],
+            '127.0.0.17',
+            'Module Disable Lifecycle Test'
+        );
+
+        app(ModuleInstaller::class)->disable('qingyu_ip_agent', 1);
+
+        $this->assertNotNull(UserApiSession::query()->firstOrFail()->revoked_at);
+        $this->assertNull(PersonalAccessToken::findToken($issued['access_token']));
+    }
+
     public function test_api_registration_is_csrf_free_and_returns_token_bundle(): void
     {
         $response = $this->postJson('/api/v1/auth/register', [
@@ -235,6 +339,21 @@ class UserApiTokenAuthTest extends TestCase
         $this->assertIsString($response->json('data.tokens.access_token'));
         $this->assertIsString($response->json('data.tokens.refresh_token'));
         $response->assertSessionMissing('user');
+    }
+
+    public function test_api_registration_does_not_create_account_for_disabled_module(): void
+    {
+        SystemModule::query()->where('name', 'qingyu_ip_agent')->update(['status' => 'disabled']);
+
+        $this->postJson('/api/v1/auth/register', [
+            'email' => 'disabled-module-orphan@example.com',
+            'password' => 'secret123',
+            'module' => 'qingyu_ip_agent',
+            'device_id' => 'disabled-module-orphan-device',
+        ])->assertForbidden()
+            ->assertJsonPath('code', 'module_unavailable');
+
+        $this->assertDatabaseMissing('user_account', ['email' => 'disabled-module-orphan@example.com']);
     }
 
     public function test_api_login_and_profile_use_bearer_auth_without_web_session(): void
@@ -312,6 +431,53 @@ class UserApiTokenAuthTest extends TestCase
         $this->withToken($access)->getJson('/api/v1/auth/profile')->assertUnauthorized();
         $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $refresh])
             ->assertUnauthorized();
+    }
+
+    public function test_bearer_me_endpoints_expose_vip_invitation_balance_and_ledger_reads(): void
+    {
+        $user = $this->registeredUser('api-me@example.com');
+        $issued = app(UserApiTokenService::class)->issue(
+            $user,
+            'qingyu_ip_agent',
+            ['device_id' => 'api-me-device'],
+            '127.0.0.18',
+            'API Me Test'
+        );
+
+        $this->withToken($issued['access_token'])
+            ->getJson('/api/v1/me/vip')
+            ->assertOk()
+            ->assertJsonPath('data.active', false);
+        $this->withToken($issued['access_token'])
+            ->getJson('/api/v1/me/invitations')
+            ->assertOk()
+            ->assertJsonPath('data.direct_count', 0);
+        $this->withToken($issued['access_token'])
+            ->getJson('/api/v1/me/balance')
+            ->assertOk()
+            ->assertJsonPath('data.available_balance', '0.00');
+        $this->withToken($issued['access_token'])
+            ->getJson('/api/v1/me/ledger')
+            ->assertOk()
+            ->assertJsonPath('data', []);
+    }
+
+    public function test_module_host_gateway_contracts_are_bound(): void
+    {
+        $bindings = [
+            'App\\Contracts\\Modules\\MemberGateway' => 'App\\Modules\\Host\\HostMemberGateway',
+            'App\\Contracts\\Modules\\InvitationGateway' => 'App\\Modules\\Host\\HostInvitationGateway',
+            'App\\Contracts\\Modules\\VipGateway' => 'App\\Modules\\Host\\HostVipGateway',
+            'App\\Contracts\\Modules\\ActivationCodeGateway' => 'App\\Modules\\Host\\HostActivationCodeGateway',
+            'App\\Contracts\\Modules\\BalanceGateway' => 'App\\Modules\\Host\\HostBalanceGateway',
+            'App\\Contracts\\Modules\\AffiliateGateway' => 'App\\Modules\\Host\\HostAffiliateGateway',
+            'App\\Contracts\\Modules\\AuditGateway' => 'App\\Modules\\Host\\HostAuditGateway',
+            'App\\Contracts\\Modules\\NotificationGateway' => 'App\\Modules\\Host\\HostNotificationGateway',
+        ];
+
+        foreach ($bindings as $contract => $implementation) {
+            $this->assertInstanceOf($implementation, app($contract));
+        }
     }
 
     public function test_api_returns_specific_statuses_for_duplicate_and_bad_credentials(): void
@@ -402,6 +568,7 @@ class UserApiTokenAuthTest extends TestCase
         app(UserAuthService::class)->register([
             'email' => $email,
             'password' => 'secret123',
+            'source_module' => 'qingyu_ip_agent',
         ], '127.0.0.1');
 
         return UserAccount::query()->where('email', $email)->firstOrFail();

@@ -16,11 +16,11 @@ final class ActivationCodeService
         private readonly VipService $vip,
         private readonly AffiliateService $affiliate,
         private readonly RiskService $risk
-    ) {
-    }
+    ) {}
 
-    public function createBatch(array $payload, ?int $adminId): array
+    public function createBatch(array $payload, ?int $adminId, string $ownerModule = 'core'): array
     {
+        $ownerModule = $this->normalizeOwnerModule($ownerModule);
         $plan = VipPlan::query()->find((int) ($payload['vip_plan_id'] ?? 0));
         if ($plan === null || $plan->status !== 'active') {
             throw new InvalidArgumentException('VIP 套餐未启用。');
@@ -38,6 +38,7 @@ final class ActivationCodeService
 
         $now = time();
         $batch = ActivationCodeBatch::query()->create([
+            'owner_module' => $ownerModule,
             'name' => $name,
             'vip_plan_id' => $plan->id,
             'duration_days' => (int) ($payload['duration_days'] ?? $plan->duration_days),
@@ -56,14 +57,18 @@ final class ActivationCodeService
         return $this->publicBatch($batch);
     }
 
-    public function generateCodes(int $batchId, int $count, ?int $adminId): array
+    public function generateCodes(int $batchId, int $count, ?int $adminId, ?string $ownerModule = null): array
     {
         unset($adminId);
+        $ownerModule = $ownerModule === null ? null : $this->normalizeOwnerModule($ownerModule);
 
-        return DB::transaction(function () use ($batchId, $count): array {
+        return DB::transaction(function () use ($batchId, $count, $ownerModule): array {
             $batch = ActivationCodeBatch::query()->lockForUpdate()->find($batchId);
             if ($batch === null || $batch->status !== 'active') {
                 throw new InvalidArgumentException('激活码批次未启用。');
+            }
+            if ($ownerModule !== null && (string) $batch->owner_module !== $ownerModule) {
+                throw new InvalidArgumentException('激活码批次不属于当前模块。');
             }
 
             $count = max(0, $count);
@@ -109,30 +114,36 @@ final class ActivationCodeService
         });
     }
 
-    public function redeem(array $payload, int $userId, string $ip): array
+    public function redeem(array $payload, int $userId, string $ip, ?string $ownerModule = null): array
     {
+        $ownerModule = $ownerModule === null ? null : $this->normalizeOwnerModule($ownerModule);
         $plainCode = $this->normalizeNullableString($payload['code'] ?? null);
         if ($plainCode === null) {
             throw new InvalidArgumentException('激活码不能为空。');
         }
 
         $normalized = $this->normalizeCode($plainCode);
-        $result = DB::transaction(function () use ($normalized, $userId, $ip): array {
+        $result = DB::transaction(function () use ($normalized, $userId, $ip, $ownerModule): array {
             $code = ActivationCode::query()
                 ->where('code_hash', $this->hashCode($normalized))
                 ->lockForUpdate()
                 ->first();
 
             if ($code === null) {
-                $this->writeRedemption(null, null, $userId, null, null, $ip, 'failed', '激活码无效。');
+                $this->writeRedemption(null, null, $userId, null, null, $ip, 'failed', '激活码无效。', $ownerModule ?? 'core');
 
                 return ['error' => '激活码无效。'];
             }
 
             $batch = ActivationCodeBatch::query()->lockForUpdate()->find($code->batch_id);
+            if ($ownerModule !== null && ($batch === null || (string) $batch->owner_module !== $ownerModule)) {
+                $this->writeRedemption(null, null, $userId, null, null, $ip, 'failed', '激活码无效。', $ownerModule);
+
+                return ['error' => '激活码无效。'];
+            }
             $error = $this->redemptionError($code, $batch, $userId);
             if ($error !== null) {
-                $this->writeRedemption($code, $batch, $userId, null, null, $ip, 'failed', $error);
+                $this->writeRedemption($code, $batch, $userId, null, null, $ip, 'failed', $error, (string) ($batch?->owner_module ?? $ownerModule ?? 'core'));
 
                 return ['error' => $error];
             }
@@ -153,7 +164,7 @@ final class ActivationCodeService
                 isCommissionable: (bool) $batch->is_commissionable
             );
             $commissionSourceId = $commissions[0]['id'] ?? null;
-            $this->writeRedemption($code, $batch, $userId, (int) $vip['vip_record_id'], $commissionSourceId, $ip, 'success', '');
+            $this->writeRedemption($code, $batch, $userId, (int) $vip['vip_record_id'], $commissionSourceId, $ip, 'success', '', (string) ($batch->owner_module ?: 'core'));
 
             return [
                 'redeemed' => true,
@@ -209,9 +220,11 @@ final class ActivationCodeService
         ?int $commissionSourceId,
         string $ip,
         string $result,
-        string $errorMessage
+        string $errorMessage,
+        string $ownerModule
     ): void {
         ActivationCodeRedemption::query()->create([
+            'owner_module' => $ownerModule,
             'activation_code_id' => $code?->id,
             'batch_id' => $batch?->id,
             'user_id' => $userId,
@@ -276,10 +289,21 @@ final class ActivationCodeService
         return $value === '' ? null : $value;
     }
 
+    private function normalizeOwnerModule(string $ownerModule): string
+    {
+        $ownerModule = strtolower(trim($ownerModule));
+        if (preg_match('/^[a-z][a-z0-9_]{0,79}$/', $ownerModule) !== 1) {
+            throw new InvalidArgumentException('模块标识无效。');
+        }
+
+        return $ownerModule;
+    }
+
     private function publicBatch(ActivationCodeBatch $batch): array
     {
         return [
             'id' => (int) $batch->id,
+            'owner_module' => (string) ($batch->owner_module ?: 'core'),
             'name' => $batch->name,
             'vip_plan_id' => (int) $batch->vip_plan_id,
             'duration_days' => (int) $batch->duration_days,

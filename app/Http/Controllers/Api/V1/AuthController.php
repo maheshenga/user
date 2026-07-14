@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Models\UserAccount;
 use App\Models\UserApiSession;
+use App\User\ModuleApiPolicy;
 use App\User\PasswordResetService;
 use App\User\UserApiException;
 use App\User\UserApiProfileService;
@@ -21,7 +22,8 @@ class AuthController extends ApiController
         Request $request,
         UserAuthService $auth,
         UserApiTokenService $tokens,
-        UserApiProfileService $profiles
+        UserApiProfileService $profiles,
+        ModuleApiPolicy $modules
     ): JsonResponse {
         $validator = Validator::make($request->all(), $this->credentialRules(true));
         if ($validator->fails()) {
@@ -32,6 +34,7 @@ class AuthController extends ApiController
         $payload['source_module'] = $payload['module'];
 
         try {
+            $modules->assertAvailable($payload['module']);
             $registered = $auth->register($payload, $request->ip());
             $user = UserAccount::query()->findOrFail((int) $registered['user']['id']);
             $tokenBundle = $tokens->issue(

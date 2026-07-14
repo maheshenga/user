@@ -17,12 +17,17 @@ use App\Providers\AppServiceProvider;
 use App\User\ActivationCodeService;
 use App\User\UserApiTokenService;
 use App\User\UserAuthService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use InvalidArgumentException;
 use Laravel\Sanctum\PersonalAccessToken;
+use Modules\QingyuIpAgent\Services\ActivationCodeOpsService;
 use Modules\QingyuIpAgent\Services\AuditLogService;
+use Modules\QingyuIpAgent\Services\DashboardService;
+use Modules\QingyuIpAgent\Services\MemberOpsService;
 use Modules\QingyuIpAgent\Services\RewriteService;
 use Tests\Concerns\CreatesModuleTestSchema;
 use Tests\TestCase;
@@ -55,7 +60,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $this->assertSame('qingyu_ip_agent', $manifest->name());
         $this->assertSame('轻语IP智能体', $manifest->title());
         $this->assertSame('qingyu_ip_agent', $manifest->adminPrefix());
-        $this->assertSame('1.4.0', $manifest->version());
+        $this->assertSame('1.5.0', $manifest->version());
         $this->assertSame('private', $manifest->type());
         $this->assertContains('menu:write', $manifest->permissions());
         $this->assertContains('node:write', $manifest->permissions());
@@ -187,6 +192,11 @@ class QingyuIpAgentModuleTest extends TestCase
             'source_module' => 'qingyu_ip_agent',
         ], '127.0.0.1');
         $account = UserAccount::query()->findOrFail((int) $registered['user']['id']);
+        $account->forceFill([
+            'vip_level' => 1,
+            'vip_expires_at' => now()->addDay(),
+            'update_time' => time(),
+        ])->save();
         $tokens = app(UserApiTokenService::class)->issue(
             $account,
             'qingyu_ip_agent',
@@ -209,7 +219,7 @@ class QingyuIpAgentModuleTest extends TestCase
             'vip_plan_id' => $plan->id,
             'total_count' => 1,
             'status' => 'active',
-        ], 1);
+        ], 1, 'qingyu_ip_agent');
         $generated = app(ActivationCodeService::class)->generateCodes((int) $batch['id'], 1, 1);
 
         $tokenable = PersonalAccessToken::findToken($tokens['access_token'])->tokenable;
@@ -227,6 +237,96 @@ class QingyuIpAgentModuleTest extends TestCase
             ->assertJsonPath('data.userInfo.email', 'api-activate@example.com')
             ->assertJsonPath('data.userInfo.is_vip', 1)
             ->assertJsonPath('data.vip.vip_level', 3);
+    }
+
+    public function test_versioned_qingyu_api_replays_idempotent_requests_and_enforces_daily_quota(): void
+    {
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+        (new AppServiceProvider(app()))->boot();
+        Config::set('modules.api_daily_quotas.qingyu_ip_agent', ['content.parse' => 1]);
+
+        $registered = app(UserAuthService::class)->register([
+            'email' => 'api-idempotent@example.com',
+            'password' => 'secret123',
+            'source_module' => 'qingyu_ip_agent',
+        ], '127.0.0.1');
+        $account = UserAccount::query()->findOrFail((int) $registered['user']['id']);
+        $account->forceFill([
+            'vip_level' => 1,
+            'vip_expires_at' => now()->addDay(),
+            'update_time' => time(),
+        ])->save();
+        $tokens = app(UserApiTokenService::class)->issue(
+            $account,
+            'qingyu_ip_agent',
+            ['device_id' => 'module-idempotent-device'],
+            '127.0.0.1',
+            'Module Idempotency Test'
+        );
+        $payload = [
+            'url' => 'https://www.douyin.com/video/7639590279997132072',
+            'text' => '这是需要提取的短视频文案 https://www.douyin.com/video/7639590279997132072',
+        ];
+
+        $first = $this->withToken($tokens['access_token'])
+            ->withHeader('X-Request-ID', 'parse-request-0001')
+            ->postJson('/api/v1/modules/qingyu-ip-agent/content/parse', $payload);
+        $first->assertOk()
+            ->assertJsonPath('request_id', 'parse-request-0001')
+            ->assertJsonPath('data.content', '这是需要提取的短视频文案');
+
+        $second = $this->withToken($tokens['access_token'])
+            ->withHeader('X-Request-ID', 'parse-request-0001')
+            ->postJson('/api/v1/modules/qingyu-ip-agent/content/parse', $payload);
+        $second->assertOk()
+            ->assertJsonPath('request_id', 'parse-request-0001')
+            ->assertJsonPath('data.content', '这是需要提取的短视频文案');
+        $this->assertSame(1, DB::table('module_api_request')->count());
+        $this->assertSame(1, DB::table('qingyu_ip_agent_operation_logs')->where('action', 'client.video.parse')->count());
+        $this->assertSame(
+            'parse-request-0001',
+            DB::table('qingyu_ip_agent_operation_logs')->where('action', 'client.video.parse')->value('request_id')
+        );
+
+        $this->withToken($tokens['access_token'])
+            ->withHeader('X-Request-ID', 'parse-request-0001')
+            ->postJson('/api/v1/modules/qingyu-ip-agent/content/parse', array_merge($payload, ['text' => '不同载荷']))
+            ->assertConflict()
+            ->assertJsonPath('code', 'idempotency_conflict');
+
+        $this->withToken($tokens['access_token'])
+            ->withHeader('X-Request-ID', 'parse-request-0002')
+            ->postJson('/api/v1/modules/qingyu-ip-agent/content/parse', $payload)
+            ->assertStatus(429)
+            ->assertJsonPath('code', 'quota_exceeded');
+    }
+
+    public function test_versioned_qingyu_api_returns_typed_errors_with_request_id(): void
+    {
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+        (new AppServiceProvider(app()))->boot();
+        $registered = app(UserAuthService::class)->register([
+            'email' => 'api-typed-error@example.com',
+            'password' => 'secret123',
+            'source_module' => 'qingyu_ip_agent',
+        ], '127.0.0.1');
+        $account = UserAccount::query()->findOrFail((int) $registered['user']['id']);
+        $tokens = app(UserApiTokenService::class)->issue(
+            $account,
+            'qingyu_ip_agent',
+            ['device_id' => 'module-typed-error-device'],
+            '127.0.0.1',
+            'Module Typed Error Test'
+        );
+
+        $this->withToken($tokens['access_token'])
+            ->withHeader('X-Request-ID', 'activate-request-0001')
+            ->postJson('/api/v1/modules/qingyu-ip-agent/activation-codes/redeem', [])
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'activation_invalid')
+            ->assertJsonPath('request_id', 'activate-request-0001');
     }
 
     public function test_qingyu_ip_agent_audit_log_masks_sensitive_payloads(): void
@@ -340,6 +440,97 @@ class QingyuIpAgentModuleTest extends TestCase
         ]);
     }
 
+    public function test_qingyu_services_only_expose_owned_members_and_activation_codes(): void
+    {
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+        app(ModuleAutoloader::class)->register(app(ModuleManager::class)->manifest('qingyu_ip_agent'));
+
+        $qingyuUser = app(UserAuthService::class)->register([
+            'email' => 'qingyu-owner@example.com',
+            'password' => 'secret123',
+            'source_module' => 'qingyu_ip_agent',
+        ], '127.0.0.1');
+        $coreUser = app(UserAuthService::class)->register([
+            'email' => 'core-owner@example.com',
+            'password' => 'secret123',
+            'source_module' => 'core',
+        ], '127.0.0.1');
+
+        $members = app(MemberOpsService::class)->paginate([], 1, 20);
+        $this->assertSame(1, $members['total']);
+        $this->assertSame('qingyu_ip_agent', $members['list'][0]['source_module']);
+        try {
+            app(MemberOpsService::class)->detail((int) $coreUser['user']['id']);
+            $this->fail('Expected Qingyu member detail to reject a core user.');
+        } catch (ModelNotFoundException) {
+            $this->addToAssertionCount(1);
+        }
+
+        $plan = VipPlan::query()->create([
+            'name' => 'Ownership VIP',
+            'level' => 2,
+            'duration_days' => 30,
+            'price' => 99,
+            'status' => 'active',
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+        $coreBatch = app(ActivationCodeService::class)->createBatch([
+            'name' => 'Core Codes',
+            'vip_plan_id' => $plan->id,
+            'total_count' => 1,
+            'status' => 'active',
+        ], 1);
+        $qingyuBatch = app(ActivationCodeOpsService::class)->createBatch([
+            'name' => 'Qingyu Codes',
+            'vip_plan_id' => $plan->id,
+            'total_count' => 1,
+            'status' => 'active',
+        ], 1);
+
+        $this->assertDatabaseHas('activation_code_batch', [
+            'id' => $coreBatch['id'],
+            'owner_module' => 'core',
+        ]);
+        $this->assertDatabaseHas('activation_code_batch', [
+            'id' => $qingyuBatch['id'],
+            'owner_module' => 'qingyu_ip_agent',
+        ]);
+        $this->assertSame(1, app(ActivationCodeOpsService::class)->batches([], 1, 20)['total']);
+        $this->assertSame(1, app(DashboardService::class)->summary()['member_count']);
+        $this->assertSame(1, app(DashboardService::class)->summary()['activation_batch_count']);
+
+        try {
+            app(ActivationCodeOpsService::class)->generateCodes((int) $coreBatch['id'], 1, 1);
+            $this->fail('Expected Qingyu code generation to reject a core batch.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('不属于当前模块', $exception->getMessage());
+        }
+
+        $coreGenerated = app(ActivationCodeService::class)->generateCodes((int) $coreBatch['id'], 1, 1);
+        $qingyuGenerated = app(ActivationCodeOpsService::class)->generateCodes((int) $qingyuBatch['id'], 1, 1);
+        $this->assertSame(1, app(ActivationCodeOpsService::class)->codes([], 1, 20)['total']);
+
+        try {
+            app(ActivationCodeService::class)->redeem([
+                'code' => $coreGenerated['codes'][0],
+            ], (int) $qingyuUser['user']['id'], '127.0.0.1', 'qingyu_ip_agent');
+            $this->fail('Expected Qingyu redemption to reject a core activation code.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('激活码无效。', $exception->getMessage());
+        }
+
+        app(ActivationCodeService::class)->redeem([
+            'code' => $qingyuGenerated['codes'][0],
+        ], (int) $qingyuUser['user']['id'], '127.0.0.1', 'qingyu_ip_agent');
+        $this->assertDatabaseHas('activation_code_redemption', [
+            'batch_id' => $qingyuBatch['id'],
+            'owner_module' => 'qingyu_ip_agent',
+            'result' => 'success',
+        ]);
+    }
+
     public function test_qingyu_ip_agent_business_dashboard_route_is_not_module_center_route(): void
     {
         $this->withoutMiddleware([
@@ -413,6 +604,31 @@ class QingyuIpAgentModuleTest extends TestCase
             ->assertJsonPath('data.userInfo.email', 'desktop-module@example.com');
     }
 
+    public function test_qingyu_legacy_client_login_rejects_accounts_owned_by_other_modules(): void
+    {
+        $this->withoutMiddleware([
+            CheckInstall::class,
+            RateLimiting::class,
+            SystemLog::class,
+            CheckAuth::class,
+        ]);
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+        app(UserAuthService::class)->register([
+            'email' => 'other-module-login@example.com',
+            'password' => 'secret123',
+            'source_module' => 'core',
+        ], '127.0.0.1');
+
+        $this->postJson('/admin/qingyu_ip_agent/client/login', [
+            'account' => 'other-module-login@example.com',
+            'password' => 'secret123',
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('msg', '账号或密码错误。')
+            ->assertSessionMissing('user');
+    }
+
     public function test_qingyu_ip_agent_client_route_redeems_activation_code_and_records_safe_audit(): void
     {
         $this->withoutMiddleware([
@@ -445,7 +661,7 @@ class QingyuIpAgentModuleTest extends TestCase
             'vip_plan_id' => $plan->id,
             'total_count' => 1,
             'status' => 'active',
-        ], 1);
+        ], 1, 'qingyu_ip_agent');
         $generated = app(ActivationCodeService::class)->generateCodes((int) $batch['id'], 1, 1);
         $plainCode = $generated['codes'][0];
 

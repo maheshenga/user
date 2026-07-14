@@ -104,6 +104,18 @@ final class ModuleManifest
         return (string) $this->data['version'];
     }
 
+    public function coreVersion(): string
+    {
+        return (string) $this->data['core_version'];
+    }
+
+    public function phpConstraint(): ?string
+    {
+        $constraint = $this->data['php'] ?? null;
+
+        return is_string($constraint) && $constraint !== '' ? $constraint : null;
+    }
+
     public function type(): string
     {
         return (string) $this->data['type'];
@@ -169,6 +181,54 @@ final class ModuleManifest
         $permissions = $this->data['permissions'];
 
         return $permissions;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function apiAbilities(): array
+    {
+        $api = $this->data['api'] ?? [];
+        $abilities = is_array($api) && is_array($api['abilities'] ?? null) ? $api['abilities'] : [];
+
+        return array_values($abilities);
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    public function apiQuotas(): array
+    {
+        $api = $this->data['api'] ?? [];
+        $quotas = is_array($api) && is_array($api['quotas'] ?? null) ? $api['quotas'] : [];
+
+        return $quotas;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function externalDomains(): array
+    {
+        return is_array($this->data['external_domains'] ?? null)
+            ? array_values($this->data['external_domains'])
+            : [];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function dependencies(): array
+    {
+        return is_array($this->data['dependencies'] ?? null) ? $this->data['dependencies'] : [];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function conflicts(): array
+    {
+        return is_array($this->data['conflicts'] ?? null) ? $this->data['conflicts'] : [];
     }
 
     public function path(): string
@@ -249,6 +309,7 @@ final class ModuleManifest
             if ($segment === '..') {
                 if ($normalized !== [] && end($normalized) !== '..') {
                     array_pop($normalized);
+
                     continue;
                 }
 

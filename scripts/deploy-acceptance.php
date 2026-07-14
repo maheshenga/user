@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-final class DeploymentAcceptanceFailure extends RuntimeException
-{
-}
+final class DeploymentAcceptanceFailure extends RuntimeException {}
 
 /**
  * @return array{
@@ -85,7 +83,7 @@ function parseDeploymentOptions(): array
 }
 
 /**
- * @param array<string, mixed> $options
+ * @param  array<string, mixed>  $options
  */
 function optionString(array $options, string $key, ?string $default = null): ?string
 {
@@ -97,7 +95,7 @@ function optionString(array $options, string $key, ?string $default = null): ?st
 }
 
 /**
- * @param array<string, mixed> $options
+ * @param  array<string, mixed>  $options
  */
 function hasOptionFlag(array $options, string $key): bool
 {
@@ -127,7 +125,7 @@ function deploymentEnvPath(): string
         return $override;
     }
 
-    return projectRoot() . DIRECTORY_SEPARATOR . '.env';
+    return projectRoot().DIRECTORY_SEPARATOR.'.env';
 }
 
 /**
@@ -159,7 +157,7 @@ function parseDotEnv(string $contents): array
 }
 
 /**
- * @param array<string, string> $env
+ * @param  array<string, string>  $env
  */
 function envValue(array $env, string $key, string $default = ''): string
 {
@@ -167,7 +165,7 @@ function envValue(array $env, string $key, string $default = ''): string
 }
 
 /**
- * @param array<string, string> $env
+ * @param  array<string, string>  $env
  */
 function assertProductionEnvValue(array $env, string $key, string $expected, string $message): void
 {
@@ -177,7 +175,7 @@ function assertProductionEnvValue(array $env, string $key, string $expected, str
 }
 
 /**
- * @param array<string, string> $env
+ * @param  array<string, string>  $env
  */
 function assertProductionDatabaseCredentials(array $env): void
 {
@@ -227,7 +225,7 @@ function checkDeploymentEnv(): void
 }
 
 /**
- * @param list<string> $arguments
+ * @param  list<string>  $arguments
  * @return list<string>
  */
 function phpCommand(string $phpBinary, array $arguments): array
@@ -240,7 +238,7 @@ function phpCommand(string $phpBinary, array $arguments): array
 }
 
 /**
- * @param list<string> $command
+ * @param  list<string>  $command
  */
 function runDeploymentChild(array $command, string $label, float $timeout): void
 {
@@ -293,11 +291,11 @@ function runDeploymentChild(array $command, string $label, float $timeout): void
     }
 
     if ($exitCode !== 0) {
-        $output = trim($stdout . ($stderr === '' ? '' : PHP_EOL . $stderr));
+        $output = trim($stdout.($stderr === '' ? '' : PHP_EOL.$stderr));
         $message = "{$label} failed with exit code {$exitCode}.";
 
         if ($output !== '') {
-            $message .= PHP_EOL . $output;
+            $message .= PHP_EOL.$output;
         }
 
         throw new DeploymentAcceptanceFailure($message);
@@ -305,7 +303,7 @@ function runDeploymentChild(array $command, string $label, float $timeout): void
 }
 
 /**
- * @param array<int, resource> $pipes
+ * @param  array<int, resource>  $pipes
  */
 function closeDeploymentPipes(array $pipes): void
 {
@@ -317,11 +315,11 @@ function closeDeploymentPipes(array $pipes): void
 }
 
 /**
- * @param list<string> $command
+ * @param  list<string>  $command
  */
 function commandPreview(array $command): string
 {
-    $root = str_replace('\\', '/', projectRoot()) . '/';
+    $root = str_replace('\\', '/', projectRoot()).'/';
     $parts = [];
 
     foreach ($command as $part) {
@@ -366,18 +364,22 @@ function deploymentCommands(array $options): array
             'label' => 'artisan system:module-menu:sync',
             'command' => phpCommand($php, ['artisan', 'system:module-menu:sync']),
         ];
+        $commands[] = [
+            'label' => 'artisan system:module-health',
+            'command' => phpCommand($php, ['artisan', 'system:module-health']),
+        ];
     }
 
     if (! $options['skip_portal']) {
         $portalArguments = [
-            $root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'user-portal-smoke.php',
-            '--base-url=' . $options['base_url'],
-            '--password=' . $options['portal_password'],
-            '--timeout=' . (string) $options['timeout'],
+            $root.DIRECTORY_SEPARATOR.'scripts'.DIRECTORY_SEPARATOR.'user-portal-smoke.php',
+            '--base-url='.$options['base_url'],
+            '--password='.$options['portal_password'],
+            '--timeout='.(string) $options['timeout'],
         ];
 
         if ($options['portal_email'] !== null) {
-            $portalArguments[] = '--email=' . $options['portal_email'];
+            $portalArguments[] = '--email='.$options['portal_email'];
         }
 
         $commands[] = [
@@ -390,12 +392,12 @@ function deploymentCommands(array $options): array
         $commands[] = [
             'label' => 'user admin smoke',
             'command' => phpCommand($php, [
-                $root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'user-admin-smoke.php',
-                '--base-url=' . $options['base_url'],
-                '--admin-prefix=' . $options['admin_prefix'],
-                '--username=' . $options['admin_username'],
-                '--password=' . $options['admin_password'],
-                '--timeout=' . (string) $options['timeout'],
+                $root.DIRECTORY_SEPARATOR.'scripts'.DIRECTORY_SEPARATOR.'user-admin-smoke.php',
+                '--base-url='.$options['base_url'],
+                '--admin-prefix='.$options['admin_prefix'],
+                '--username='.$options['admin_username'],
+                '--password='.$options['admin_password'],
+                '--timeout='.(string) $options['timeout'],
             ]),
         ];
     }
@@ -419,6 +421,7 @@ function runDeploymentAcceptance(): void
         if ($options['dry_run']) {
             dryRunDeploymentCheck($entry['label']);
             dryRunDeploymentCheck(commandPreview($entry['command']));
+
             continue;
         }
 

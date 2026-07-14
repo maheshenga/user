@@ -14,7 +14,7 @@ class DeployAcceptanceScriptTest extends TestCase
         $process = $this->runDeployAcceptance([
             '--base-url=http://127.0.0.1:8000',
             '--dry-run',
-            '--php-binary=' . base_path('tests/Fixtures/deploy-acceptance-php-runner.php'),
+            '--php-binary='.base_path('tests/Fixtures/deploy-acceptance-php-runner.php'),
             '--admin-prefix=staff',
             '--admin-username=root',
             '--admin-password=topsecret',
@@ -23,12 +23,13 @@ class DeployAcceptanceScriptTest extends TestCase
             '--timeout=3',
         ], ['DEPLOY_ACCEPTANCE_RECORD_FILE' => $recordFile]);
 
-        $output = $process->getOutput() . $process->getErrorOutput();
+        $output = $process->getOutput().$process->getErrorOutput();
 
         $this->assertSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('DRY-RUN env APP_KEY present', $output);
         $this->assertStringContainsString('artisan migrate --force', $output);
         $this->assertStringContainsString('artisan system:module-menu:sync', $output);
+        $this->assertStringContainsString('artisan system:module-health', $output);
         $this->assertStringContainsString('DRY-RUN user portal smoke', $output);
         $this->assertStringContainsString('DRY-RUN user admin smoke', $output);
         $this->assertStringContainsString('scripts/user-portal-smoke.php', str_replace('\\', '/', $output));
@@ -50,7 +51,7 @@ class DeployAcceptanceScriptTest extends TestCase
         $process = $this->runDeployAcceptance([
             '--base-url=http://127.0.0.1:8000',
             '--skip-env',
-            '--php-binary=' . base_path('tests/Fixtures/deploy-acceptance-php-runner.php'),
+            '--php-binary='.base_path('tests/Fixtures/deploy-acceptance-php-runner.php'),
             '--admin-prefix=staff',
             '--admin-username=root',
             '--admin-password=topsecret',
@@ -59,13 +60,14 @@ class DeployAcceptanceScriptTest extends TestCase
             '--timeout=3',
         ], ['DEPLOY_ACCEPTANCE_RECORD_FILE' => $recordFile]);
 
-        $output = $process->getOutput() . $process->getErrorOutput();
+        $output = $process->getOutput().$process->getErrorOutput();
         $commands = $this->recordedCommands($recordFile);
 
         $this->assertSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('PASS artisan migrate --force', $output);
         $this->assertStringContainsString('PASS artisan user:ops-menu:sync', $output);
         $this->assertStringContainsString('PASS artisan system:module-menu:sync', $output);
+        $this->assertStringContainsString('PASS artisan system:module-health', $output);
         $this->assertStringContainsString('PASS user portal smoke', $output);
         $this->assertStringContainsString('PASS user admin smoke', $output);
         $this->assertStringContainsString('OK deployment acceptance passed', $output);
@@ -76,14 +78,15 @@ class DeployAcceptanceScriptTest extends TestCase
         $this->assertSame(['user:ops-menu:sync'], array_slice($commands[1], 1));
         $this->assertSame('artisan', $commands[2][0] ?? null);
         $this->assertSame(['system:module-menu:sync'], array_slice($commands[2], 1));
-        $this->assertStringEndsWith('scripts/user-portal-smoke.php', str_replace('\\', '/', $commands[3][0] ?? ''));
-        $this->assertContains('--base-url=http://127.0.0.1:8000', $commands[3]);
-        $this->assertContains('--email=smoke@example.test', $commands[3]);
-        $this->assertContains('--password=secret123', $commands[3]);
-        $this->assertStringEndsWith('scripts/user-admin-smoke.php', str_replace('\\', '/', $commands[4][0] ?? ''));
-        $this->assertContains('--admin-prefix=staff', $commands[4]);
-        $this->assertContains('--username=root', $commands[4]);
-        $this->assertContains('--password=topsecret', $commands[4]);
+        $this->assertSame(['system:module-health'], array_slice($commands[3], 1));
+        $this->assertStringEndsWith('scripts/user-portal-smoke.php', str_replace('\\', '/', $commands[4][0] ?? ''));
+        $this->assertContains('--base-url=http://127.0.0.1:8000', $commands[4]);
+        $this->assertContains('--email=smoke@example.test', $commands[4]);
+        $this->assertContains('--password=secret123', $commands[4]);
+        $this->assertStringEndsWith('scripts/user-admin-smoke.php', str_replace('\\', '/', $commands[5][0] ?? ''));
+        $this->assertContains('--admin-prefix=staff', $commands[5]);
+        $this->assertContains('--username=root', $commands[5]);
+        $this->assertContains('--password=topsecret', $commands[5]);
     }
 
     public function test_deploy_acceptance_surfaces_child_command_failure_with_observed_exit_code(): void
@@ -93,13 +96,13 @@ class DeployAcceptanceScriptTest extends TestCase
         $process = $this->runDeployAcceptance([
             '--base-url=http://127.0.0.1:8000',
             '--skip-env',
-            '--php-binary=' . base_path('tests/Fixtures/deploy-acceptance-php-runner.php'),
+            '--php-binary='.base_path('tests/Fixtures/deploy-acceptance-php-runner.php'),
         ], [
             'DEPLOY_ACCEPTANCE_RECORD_FILE' => $recordFile,
             'DEPLOY_ACCEPTANCE_FAIL_CONTAINS' => 'user-admin-smoke.php',
         ]);
 
-        $output = $process->getOutput() . $process->getErrorOutput();
+        $output = $process->getOutput().$process->getErrorOutput();
 
         $this->assertNotSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('FAIL deployment acceptance failed', $output);
@@ -115,7 +118,7 @@ class DeployAcceptanceScriptTest extends TestCase
             '--skip-menu-sync',
         ]);
 
-        $output = $process->getOutput() . $process->getErrorOutput();
+        $output = $process->getOutput().$process->getErrorOutput();
 
         $this->assertNotSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('Missing required option: --base-url', $output);
@@ -125,7 +128,7 @@ class DeployAcceptanceScriptTest extends TestCase
             '--dry-run',
         ]);
 
-        $slashOnlyOutput = $slashOnlyUrl->getOutput() . $slashOnlyUrl->getErrorOutput();
+        $slashOnlyOutput = $slashOnlyUrl->getOutput().$slashOnlyUrl->getErrorOutput();
 
         $this->assertNotSame(0, $slashOnlyUrl->getExitCode(), $slashOnlyOutput);
         $this->assertStringContainsString('Missing required option: --base-url', $slashOnlyOutput);
@@ -138,13 +141,13 @@ class DeployAcceptanceScriptTest extends TestCase
             '--skip-admin',
         ]);
 
-        $this->assertSame(0, $skipped->getExitCode(), $skipped->getOutput() . $skipped->getErrorOutput());
+        $this->assertSame(0, $skipped->getExitCode(), $skipped->getOutput().$skipped->getErrorOutput());
     }
 
     public function test_deploy_acceptance_rejects_unsafe_production_env(): void
     {
         $envFile = $this->writeTempEnv([
-            'APP_KEY=base64:' . base64_encode(str_repeat('a', 32)),
+            'APP_KEY=base64:'.base64_encode(str_repeat('a', 32)),
             'APP_ENV=production',
             'APP_DEBUG=true',
             'APP_URL=https://example.com',
@@ -163,7 +166,7 @@ class DeployAcceptanceScriptTest extends TestCase
                 '--skip-admin',
             ], ['DEPLOY_ACCEPTANCE_ENV_FILE' => $envFile]);
 
-            $output = $process->getOutput() . $process->getErrorOutput();
+            $output = $process->getOutput().$process->getErrorOutput();
 
             $this->assertNotSame(0, $process->getExitCode(), $output);
             $this->assertStringContainsString('APP_DEBUG must be false in production.', $output);
@@ -175,7 +178,7 @@ class DeployAcceptanceScriptTest extends TestCase
     public function test_deploy_acceptance_accepts_hardened_production_env(): void
     {
         $envFile = $this->writeTempEnv([
-            'APP_KEY=base64:' . base64_encode(str_repeat('a', 32)),
+            'APP_KEY=base64:'.base64_encode(str_repeat('a', 32)),
             'APP_ENV=production',
             'APP_DEBUG=false',
             'APP_URL=https://example.com',
@@ -194,7 +197,7 @@ class DeployAcceptanceScriptTest extends TestCase
                 '--skip-admin',
             ], ['DEPLOY_ACCEPTANCE_ENV_FILE' => $envFile]);
 
-            $output = $process->getOutput() . $process->getErrorOutput();
+            $output = $process->getOutput().$process->getErrorOutput();
 
             $this->assertSame(0, $process->getExitCode(), $output);
             $this->assertStringContainsString('PASS env APP_KEY present', $output);
@@ -205,8 +208,8 @@ class DeployAcceptanceScriptTest extends TestCase
     }
 
     /**
-     * @param list<string> $arguments
-     * @param array<string, string> $environment
+     * @param  list<string>  $arguments
+     * @param  array<string, string>  $environment
      */
     private function runDeployAcceptance(array $arguments, array $environment = []): Process
     {
@@ -222,16 +225,16 @@ class DeployAcceptanceScriptTest extends TestCase
 
     private function recordFile(): string
     {
-        return sys_get_temp_dir() . '/deploy-acceptance-' . bin2hex(random_bytes(6)) . '.jsonl';
+        return sys_get_temp_dir().'/deploy-acceptance-'.bin2hex(random_bytes(6)).'.jsonl';
     }
 
     /**
-     * @param list<string> $lines
+     * @param  list<string>  $lines
      */
     private function writeTempEnv(array $lines): string
     {
-        $path = sys_get_temp_dir() . '/deploy-env-' . bin2hex(random_bytes(6));
-        file_put_contents($path, implode(PHP_EOL, $lines) . PHP_EOL);
+        $path = sys_get_temp_dir().'/deploy-env-'.bin2hex(random_bytes(6));
+        file_put_contents($path, implode(PHP_EOL, $lines).PHP_EOL);
 
         return $path;
     }

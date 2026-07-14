@@ -27,7 +27,8 @@ define(["jquery", "easy-admin"], function ($, ea) {
         installed: '已安装',
         enabled: '已启用',
         disabled: '已禁用',
-        uninstalled: '已卸载'
+        uninstalled: '已卸载',
+        upgrading: '切换中'
     };
 
     function moduleUrl(url, name) {
@@ -87,6 +88,18 @@ define(["jquery", "easy-admin"], function ($, ea) {
                     {field: 'title', minWidth: 160, title: '标题'},
                     {field: 'version', width: 110, title: '版本', search: false},
                     {
+                        field: 'pending_version',
+                        width: 130,
+                        title: '待处理版本',
+                        search: false,
+                        templet: function (d) {
+                            if (!d.pending_version) {
+                                return '-';
+                            }
+                            return escapeAttr(d.pending_version) + ' / ' + statusText(d.pending_release_status);
+                        }
+                    },
+                    {
                         field: 'status',
                         width: 110,
                         title: '状态',
@@ -108,19 +121,29 @@ define(["jquery", "easy-admin"], function ($, ea) {
                             var name = escapeAttr(rawName);
                             var buttons = [
                                 '<a class="layui-btn layui-btn-xs" data-open="' + moduleUrl(init.detail_url, rawName) + '" data-title="模块详情">详情</a>',
-                                '<a class="layui-btn layui-btn-normal layui-btn-xs" data-open="' + moduleUrl(init.logs_url, rawName) + '" data-title="模块日志">日志</a>',
-                                '<a class="layui-btn layui-btn-warm layui-btn-xs" data-module-action="' + init.install_url + '" data-module-name="' + name + '">安装</a>',
-                                '<a class="layui-btn layui-btn-xs" data-module-action="' + init.enable_url + '" data-module-name="' + name + '">启用</a>',
-                                '<a class="layui-btn layui-btn-primary layui-btn-xs" data-module-action="' + init.disable_url + '" data-module-name="' + name + '">禁用</a>',
-                                '<a class="layui-btn layui-btn-normal layui-btn-xs" data-module-action="' + init.upgradeLocal_url + '" data-module-name="' + name + '">本地升级</a>',
-                                '<a class="layui-btn layui-btn-danger layui-btn-xs" data-module-action="' + init.rollback_url + '" data-module-name="' + name + '">回滚</a>',
-                                '<a class="layui-btn layui-btn-danger layui-btn-xs" data-module-action="' + init.uninstall_url + '" data-module-name="' + name + '">卸载</a>'
+                                '<a class="layui-btn layui-btn-normal layui-btn-xs" data-open="' + moduleUrl(init.logs_url, rawName) + '" data-title="模块日志">日志</a>'
                             ];
-                            if (d.status === 'pending_review' || d.status === 'rejected') {
+                            if (d.pending_release_status === 'pending_review' || d.pending_release_status === 'rejected') {
                                 buttons.push('<a class="layui-btn layui-btn-xs" data-module-action="' + init.approve_url + '" data-module-name="' + name + '">审核通过</a>');
                             }
-                            if (d.status === 'pending_review' || d.status === 'approved') {
+                            if (d.pending_release_status === 'pending_review' || d.pending_release_status === 'approved') {
                                 buttons.push('<a class="layui-btn layui-btn-danger layui-btn-xs" data-module-reject="' + init.reject_url + '" data-module-name="' + name + '">审核拒绝</a>');
+                            }
+                            if (d.pending_release_status === 'approved' || (d.status === 'approved' && !d.pending_release_id)) {
+                                buttons.push('<a class="layui-btn layui-btn-warm layui-btn-xs" data-module-action="' + init.install_url + '" data-module-name="' + name + '">应用版本</a>');
+                            }
+                            if (d.status === 'installed' || d.status === 'disabled') {
+                                buttons.push('<a class="layui-btn layui-btn-xs" data-module-action="' + init.enable_url + '" data-module-name="' + name + '">启用</a>');
+                            }
+                            if (d.status === 'enabled') {
+                                buttons.push('<a class="layui-btn layui-btn-primary layui-btn-xs" data-module-action="' + init.disable_url + '" data-module-name="' + name + '">禁用</a>');
+                            }
+                            if (d.status === 'installed' || d.status === 'enabled' || d.status === 'disabled') {
+                                buttons.push('<a class="layui-btn layui-btn-normal layui-btn-xs" data-module-action="' + init.upgradeLocal_url + '" data-module-name="' + name + '">暂存本地版本</a>');
+                                buttons.push('<a class="layui-btn layui-btn-danger layui-btn-xs" data-module-action="' + init.uninstall_url + '" data-module-name="' + name + '">卸载</a>');
+                            }
+                            if (d.active_release_id) {
+                                buttons.push('<a class="layui-btn layui-btn-danger layui-btn-xs" data-module-action="' + init.rollback_url + '" data-module-name="' + name + '">回滚版本</a>');
                             }
                             return buttons.join(' ');
                         }

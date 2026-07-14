@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\RequireActiveApiModule;
 use App\Http\Middleware\RequireActiveApiUser;
 use App\Http\Middleware\RequireApiAbility;
 use Illuminate\Foundation\Application;
@@ -18,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'api.ability' => RequireApiAbility::class,
             'api.active' => RequireActiveApiUser::class,
+            'api.module_active' => RequireActiveApiModule::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

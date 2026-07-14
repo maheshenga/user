@@ -2,19 +2,21 @@
 
 namespace Modules\QingyuIpAgent\Services;
 
+use App\Contracts\Modules\VipGateway;
 use App\Models\UserAccount;
-use App\User\VipService;
 
 class MemberOpsService
 {
+    private const MODULE = 'qingyu_ip_agent';
+
     public function __construct(
-        private readonly VipService $vip,
+        private readonly VipGateway $vip,
         private readonly AuditLogService $audit
     ) {}
 
     public function paginate(array $filters, int $page, int $limit): array
     {
-        $query = UserAccount::query();
+        $query = UserAccount::query()->where('source_module', self::MODULE);
         if (! empty($filters['keyword'])) {
             $keyword = (string) $filters['keyword'];
             $query->where(function ($query) use ($keyword): void {
@@ -39,13 +41,15 @@ class MemberOpsService
 
     public function detail(int $userId): array
     {
-        $user = UserAccount::query()->findOrFail($userId);
+        $user = UserAccount::query()->where('source_module', self::MODULE)->findOrFail($userId);
 
         return $this->publicUser($user) + ['vip' => $this->vip->summary($userId)];
     }
 
     public function grantVip(int $userId, int $vipPlanId, int $adminId): array
     {
+        UserAccount::query()->where('source_module', self::MODULE)->findOrFail($userId);
+
         try {
             $result = $this->vip->grant($userId, $vipPlanId, 'qingyu_ip_agent_admin_grant', $adminId);
             $this->audit->record('member.grant_vip', 'user_account', $userId, [
