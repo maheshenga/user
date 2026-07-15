@@ -24,6 +24,16 @@ use Throwable;
 #[ControllerAnnotation(title: '模块中心')]
 class ModuleController extends AdminController
 {
+    private const LIST_FILTER_FIELDS = [
+        'id', 'name', 'title', 'vendor', 'version', 'type', 'trust_level', 'status',
+        'admin_prefix', 'installed_at', 'enabled_at', 'created_at', 'updated_at',
+    ];
+
+    private const LOG_FILTER_FIELDS = [
+        'id', 'admin_id', 'module', 'action', 'old_state', 'new_state', 'result',
+        'started_at', 'finished_at', 'created_at', 'updated_at',
+    ];
+
     public function initialize()
     {
         parent::initialize();
@@ -37,7 +47,7 @@ class ModuleController extends AdminController
             return $this->fetch();
         }
 
-        [$page, $limit, $where] = $this->buildTableParams();
+        [$page, $limit, $where] = $this->buildTableParams([], self::LIST_FILTER_FIELDS);
         $query = SystemModule::query()->where($where);
         $items = $query
             ->orderBy($this->order, $this->orderDirection)
@@ -89,7 +99,7 @@ class ModuleController extends AdminController
             return $this->fetch('', ['module' => request()->input('module', '')]);
         }
 
-        [$page, $limit, $where] = $this->buildTableParams(['module']);
+        [$page, $limit, $where] = $this->buildTableParams(['module'], self::LOG_FILTER_FIELDS);
         $module = request()->input('module');
         $query = SystemModuleLog::query()->where($where);
         if ($module !== null && $module !== '') {
@@ -236,6 +246,29 @@ class ModuleController extends AdminController
         }
 
         return SystemModule::query()->where('name', (string) $name)->first();
+    }
+
+    public function setOrder(): static
+    {
+        $tableOrder = trim((string) request()->get('tableOrder', ''));
+        if ($tableOrder === '') {
+            return $this;
+        }
+
+        $parts = preg_split('/\s+/', $tableOrder) ?: [];
+        $allowed = $this->action === 'logs' ? self::LOG_FILTER_FIELDS : self::LIST_FILTER_FIELDS;
+        if (count($parts) !== 2 || ! in_array($parts[0], $allowed, true)) {
+            $this->order = 'id';
+            $this->orderDirection = 'desc';
+
+            return $this;
+        }
+
+        $this->order = $parts[0];
+        $direction = strtolower($parts[1]);
+        $this->orderDirection = in_array($direction, ['asc', 'desc'], true) ? $direction : 'desc';
+
+        return $this;
     }
 
     private function moduleName(): string

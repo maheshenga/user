@@ -162,7 +162,7 @@ class AdminController extends Controller
      * @param array $excludeFields 忽略构建搜索的字段
      * @return array
      */
-    protected function buildTableParams(array $excludeFields = []): array
+    protected function buildTableParams(array $excludeFields = [], array $allowedFields = []): array
     {
         $get     = request()->input();
         $page    = !empty($get['page']) ? $get['page'] : 1;
@@ -172,10 +172,18 @@ class AdminController extends Controller
         // json转数组
         $filters  = json_decode($filters, true);
         $ops      = json_decode($ops, true);
+        $filters  = is_array($filters) ? $filters : [];
+        $ops      = is_array($ops) ? $ops : [];
         $where    = [];
         $excludes = [];
 
         foreach ($filters as $key => $val) {
+            if (! is_string($key) || preg_match('/^[A-Za-z_][A-Za-z0-9_.]*$/', $key) !== 1) {
+                continue;
+            }
+            if ($allowedFields !== [] && ! in_array($key, $allowedFields, true)) {
+                continue;
+            }
             if (in_array($key, $excludeFields)) {
                 $excludes[$key] = $val;
                 continue;
@@ -196,26 +204,58 @@ class AdminController extends Controller
                     $where[] = [$key, 'LIKE', "%{$val}"];
                     break;
                 case 'in':
-                    $where[] = [DB::raw("$key IN ($val)"), 1];
+                    $values = $this->integerFilterValues($val);
+                    if ($values !== []) {
+                        $where[] = [DB::raw($key.' IN ('.implode(',', $values).')'), 1];
+                    }
                     break;
                 case 'find_in_set':
-                    $where[] = [DB::raw("FIND_IN_SET($val,$key)"), 1];
+                    $value = is_scalar($val) ? trim((string) $val) : '';
+                    if (ctype_digit($value)) {
+                        $where[] = [DB::raw('FIND_IN_SET('.(int) $value.','.$key.')'), 1];
+                    }
                     break;
                 case 'range':
-                    [$beginTime, $endTime] = explode(' - ', $val);
+                    $range = is_string($val) ? explode(' - ', $val, 2) : [];
+                    if (count($range) !== 2) {
+                        break;
+                    }
+                    [$beginTime, $endTime] = $range;
                     $where[] = [$key, '>=', strtotime($beginTime)];
                     $where[] = [$key, '<=', strtotime($endTime)];
                     break;
                 case 'datetime':
-                    [$beginTime, $endTime] = explode(' - ', $val);
+                    $range = is_string($val) ? explode(' - ', $val, 2) : [];
+                    if (count($range) !== 2) {
+                        break;
+                    }
+                    [$beginTime, $endTime] = $range;
                     $where[] = [$key, '>=', $beginTime];
                     $where[] = [$key, '<=', $endTime];
                     break;
                 default:
-                    $where[] = [$key, $op, "%{$val}"];
+                    break;
             }
         }
         return [$page, $limit, $where, $excludes];
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function integerFilterValues(mixed $value): array
+    {
+        $values = is_array($value) ? $value : explode(',', (string) $value);
+        $integers = [];
+
+        foreach ($values as $item) {
+            $item = is_scalar($item) ? trim((string) $item) : '';
+            if ($item !== '' && ctype_digit($item)) {
+                $integers[] = (int) $item;
+            }
+        }
+
+        return array_values(array_unique($integers));
     }
 
     /**

@@ -53,6 +53,42 @@ class ModuleCenterControllerTest extends TestCase
             ->assertJsonPath('data.0.status', 'installed');
     }
 
+    public function test_index_ignores_unknown_filter_columns_and_unsafe_sorting(): void
+    {
+        $this->createBlogModule();
+
+        $response = $this->getJson('/admin/system/module/index?'.http_build_query([
+            'filter' => json_encode(['name) OR 1=1 --' => 'blog'], JSON_THROW_ON_ERROR),
+            'op' => json_encode(['name) OR 1=1 --' => '='], JSON_THROW_ON_ERROR),
+            'tableOrder' => 'name desc, (select 1)',
+        ]));
+
+        $response->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('count', 1)
+            ->assertJsonPath('data.0.name', 'blog');
+    }
+
+    public function test_index_normalizes_in_filter_values_without_executing_sql_fragments(): void
+    {
+        $blog = $this->createBlogModule();
+        $this->createBlogModule([
+            'name' => 'shop',
+            'title' => 'Shop Module',
+            'admin_prefix' => 'shop',
+        ]);
+
+        $response = $this->getJson('/admin/system/module/index?'.http_build_query([
+            'filter' => json_encode(['id' => $blog->id.', 0) OR 1=1 --'], JSON_THROW_ON_ERROR),
+            'op' => json_encode(['id' => 'in'], JSON_THROW_ON_ERROR),
+        ]));
+
+        $response->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('count', 1)
+            ->assertJsonPath('data.0.name', 'blog');
+    }
+
     public function test_module_menu_sync_creates_system_module_management_entry(): void
     {
         $this->artisan('system:module-menu:sync')

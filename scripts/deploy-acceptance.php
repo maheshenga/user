@@ -214,7 +214,12 @@ function checkDeploymentEnv(): void
         assertProductionEnvValue($parsed, 'APP_DEBUG', 'false', 'APP_DEBUG must be false in production.');
         assertProductionEnvValue($parsed, 'SESSION_ENCRYPT', 'true', 'SESSION_ENCRYPT must be true in production.');
         assertProductionEnvValue($parsed, 'APP_LOCALE', 'zh_CN', 'APP_LOCALE must be zh_CN in production.');
+        assertProductionEnvValue($parsed, 'APP_TIMEZONE', 'Asia/Shanghai', 'APP_TIMEZONE must be Asia/Shanghai in production.');
         assertProductionDatabaseCredentials($parsed);
+
+        if (strlen(envValue($parsed, 'MODULE_SIGNING_KEY')) < 32) {
+            throw new DeploymentAcceptanceFailure('MODULE_SIGNING_KEY is required in production.');
+        }
 
         if (envValue($parsed, 'APP_URL') === '' || envValue($parsed, 'APP_URL') === 'http://localhost') {
             throw new DeploymentAcceptanceFailure('APP_URL must be a production URL in production.');
@@ -350,8 +355,16 @@ function deploymentCommands(array $options): array
 
     if (! $options['skip_migrate']) {
         $commands[] = [
+            'label' => 'artisan route:clear',
+            'command' => phpCommand($php, ['artisan', 'route:clear']),
+        ];
+        $commands[] = [
             'label' => 'artisan migrate --force',
             'command' => phpCommand($php, ['artisan', 'migrate', '--force']),
+        ];
+        $commands[] = [
+            'label' => 'artisan route:list --path=api/v1',
+            'command' => phpCommand($php, ['artisan', 'route:list', '--path=api/v1']),
         ];
     }
 
