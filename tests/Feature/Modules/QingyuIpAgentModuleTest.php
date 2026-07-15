@@ -7,9 +7,11 @@ use App\Http\Middleware\CheckInstall;
 use App\Http\Middleware\RateLimiting;
 use App\Http\Middleware\SystemLog;
 use App\Models\UserAccount;
+use App\Models\SystemModule;
 use App\Models\VipPlan;
 use App\Modules\ModuleAutoloader;
 use App\Modules\ModuleInstaller;
+use App\Modules\ModuleExecutionContext;
 use App\Modules\ModuleManager;
 use App\Modules\ModuleRepository;
 use App\Modules\ModuleViewRegistrar;
@@ -459,6 +461,9 @@ class QingyuIpAgentModuleTest extends TestCase
         $this->installApprovedModule('qingyu_ip_agent', 1);
         app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
         app(ModuleAutoloader::class)->register(app(ModuleManager::class)->manifest('qingyu_ip_agent'));
+        $module = SystemModule::query()->where('name', 'qingyu_ip_agent')->firstOrFail();
+        $runAsModule = fn (callable $callback): mixed => app(ModuleExecutionContext::class)
+            ->run($module, 'qingyu-ownership-test', $callback);
 
         $qingyuUser = app(UserAuthService::class)->register([
             'email' => 'qingyu-owner@example.com',
@@ -494,12 +499,12 @@ class QingyuIpAgentModuleTest extends TestCase
             'total_count' => 1,
             'status' => 'active',
         ], 1);
-        $qingyuBatch = app(ActivationCodeOpsService::class)->createBatch([
+        $qingyuBatch = $runAsModule(fn (): array => app(ActivationCodeOpsService::class)->createBatch([
             'name' => 'Qingyu Codes',
             'vip_plan_id' => $plan->id,
             'total_count' => 1,
             'status' => 'active',
-        ], 1);
+        ], 1));
 
         $this->assertDatabaseHas('activation_code_batch', [
             'id' => $coreBatch['id'],
@@ -514,14 +519,16 @@ class QingyuIpAgentModuleTest extends TestCase
         $this->assertSame(1, app(DashboardService::class)->summary()['activation_batch_count']);
 
         try {
-            app(ActivationCodeOpsService::class)->generateCodes((int) $coreBatch['id'], 1, 1);
+            $runAsModule(fn (): array => app(ActivationCodeOpsService::class)->generateCodes((int) $coreBatch['id'], 1, 1));
             $this->fail('Expected Qingyu code generation to reject a core batch.');
         } catch (InvalidArgumentException $exception) {
             $this->assertStringContainsString('不属于当前模块', $exception->getMessage());
         }
 
         $coreGenerated = app(ActivationCodeService::class)->generateCodes((int) $coreBatch['id'], 1, 1);
-        $qingyuGenerated = app(ActivationCodeOpsService::class)->generateCodes((int) $qingyuBatch['id'], 1, 1);
+        $qingyuGenerated = $runAsModule(
+            fn (): array => app(ActivationCodeOpsService::class)->generateCodes((int) $qingyuBatch['id'], 1, 1)
+        );
         $this->assertSame(1, app(ActivationCodeOpsService::class)->codes([], 1, 20)['total']);
 
         try {

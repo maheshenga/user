@@ -4,9 +4,9 @@ namespace App\Contracts\Modules;
 
 interface ActivationCodeGateway
 {
-    public function createBatch(string $module, array $payload, ?int $adminId): array;
+    public function createBatch(array $payload, ?int $adminId): array;
 
-    public function generateCodes(string $module, int $batchId, int $count, ?int $adminId): array;
+    public function generateCodes(int $batchId, int $count, ?int $adminId): array;
 
-    public function redeem(string $module, array $payload, int $userId, string $ip): array;
+    public function redeem(array $payload, int $userId, string $ip): array;
 }

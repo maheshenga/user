@@ -6,6 +6,7 @@ use App\Mail\UserNotificationMail;
 use App\Models\UserNotificationOutbox;
 use App\Models\UserPasswordReset;
 use App\Modules\Host\HostNotificationGateway;
+use App\Modules\ModuleExecutionContext;
 use App\User\NotificationOutboxDispatcher;
 use App\User\NotificationOutboxMaintenanceService;
 use App\User\PasswordResetService;
@@ -220,13 +221,14 @@ class UserPasswordResetNotificationTest extends TestCase
     public function test_dispatcher_sends_module_message_with_generic_template(): void
     {
         Mail::fake();
-        app(HostNotificationGateway::class)->enqueue(
-            'qingyu_ip_agent',
-            null,
-            'email',
-            'module@example.com',
-            '模块通知',
-            ['message' => '模块任务已经完成。']
+        app(ModuleExecutionContext::class)->runAsHost(
+            fn (): int => app(HostNotificationGateway::class)->enqueue(
+                null,
+                'email',
+                'module@example.com',
+                '模块通知',
+                ['message' => '模块任务已经完成。']
+            )
         );
 
         $result = app(NotificationOutboxDispatcher::class)->sendPending(10);

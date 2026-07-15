@@ -16,12 +16,12 @@ Route::prefix('auth')->middleware(CheckInstall::class)->group(function (): void 
 
     Route::middleware(['auth:sanctum', 'api.active', 'throttle:60,1'])->group(function (): void {
         Route::get('/profile', [AuthController::class, 'profile'])
-            ->middleware(['api.ability:profile:read', 'api.module_active']);
-        Route::post('/logout', [AuthController::class, 'logout'])->middleware('api.module_active');
+            ->middleware(['api.ability:profile:read', 'api.module_active', 'api.module_context']);
+        Route::post('/logout', [AuthController::class, 'logout'])->middleware(['api.module_active', 'api.module_context']);
     });
 });
 
-Route::prefix('me')->middleware(['auth:sanctum', 'api.active', 'api.module_active', 'throttle:60,1'])->group(function (): void {
+Route::prefix('me')->middleware(['auth:sanctum', 'api.active', 'api.module_active', 'api.module_context', 'throttle:60,1'])->group(function (): void {
     Route::get('/vip', [MeController::class, 'vip'])->middleware('api.ability:vip:read');
     Route::get('/invitations', [MeController::class, 'invitations'])->middleware('api.ability:invite:read');
     Route::get('/balance', [MeController::class, 'balance'])->middleware('api.ability:balance:read');

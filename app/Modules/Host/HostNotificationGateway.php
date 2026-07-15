@@ -5,20 +5,23 @@ namespace App\Modules\Host;
 use App\Contracts\Modules\NotificationGateway;
 use App\Models\UserNotificationOutbox;
 use InvalidArgumentException;
+use App\Modules\ModuleCapabilityPolicy;
 
 final class HostNotificationGateway implements NotificationGateway
 {
     private const SENSITIVE_KEYS = ['password', 'token', 'access_token', 'refresh_token', 'secret', 'activation_code'];
 
+    public function __construct(private readonly ModuleCapabilityPolicy $capabilities) {}
+
     public function enqueue(
-        string $module,
         ?int $userId,
         string $channel,
         string $recipient,
         string $subject,
         array $payload = [],
     ): int {
-        $module = strtolower(trim($module));
+        $identity = $this->capabilities->authorize('notification:write');
+        $module = $identity->name;
         $channel = strtolower(trim($channel));
         $recipient = trim($recipient);
         $subject = trim($subject);
@@ -37,7 +40,10 @@ final class HostNotificationGateway implements NotificationGateway
             'recipient' => $recipient,
             'recipient_mask' => $this->maskRecipient($recipient, $channel),
             'subject' => mb_substr($subject, 0, 180),
-            'payload_json' => $payload + ['module' => $module],
+            'payload_json' => array_merge($payload, [
+                'module' => $module,
+                'request_id' => $identity->requestId,
+            ]),
             'status' => 'pending',
             'attempt_count' => 0,
             'available_at' => now(),

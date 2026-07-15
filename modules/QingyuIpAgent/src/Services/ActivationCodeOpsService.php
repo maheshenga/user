@@ -35,7 +35,7 @@ class ActivationCodeOpsService
     public function createBatch(array $payload, int $adminId): array
     {
         try {
-            $batch = $this->codes->createBatch(self::MODULE, $payload, $adminId);
+            $batch = $this->codes->createBatch($payload, $adminId);
             $this->audit->record('activation_code.create_batch', 'activation_code_batch', (int) $batch['id'], $payload, 'success');
 
             return $batch;
@@ -49,7 +49,7 @@ class ActivationCodeOpsService
     public function generateCodes(int $batchId, int $count, int $adminId): array
     {
         try {
-            $result = $this->codes->generateCodes(self::MODULE, $batchId, $count, $adminId);
+            $result = $this->codes->generateCodes($batchId, $count, $adminId);
             $this->audit->record('activation_code.generate', 'activation_code_batch', $batchId, [
                 'batch_id' => $batchId,
                 'count' => $count,

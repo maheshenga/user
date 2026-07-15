@@ -17,7 +17,17 @@
   "seeders": "database/seeders",
   "permissions": [
     "menu:write",
-    "node:write"
+    "node:write",
+    "user:read",
+    "invite:read",
+    "vip:read",
+    "vip:write",
+    "activation-code:write",
+    "balance:read",
+    "balance:write",
+    "affiliate:write",
+    "audit:write",
+    "notification:write"
   ],
   "external_domains": [
     "dashscope.aliyuncs.com"

@@ -517,6 +517,27 @@ class UserApiTokenAuthTest extends TestCase
             ->assertJsonPath('data', []);
     }
 
+    public function test_gateway_capability_revocation_takes_effect_for_existing_token(): void
+    {
+        $user = $this->registeredUser('capability-revoked@example.com');
+        $issued = app(UserApiTokenService::class)->issue(
+            $user,
+            'qingyu_ip_agent',
+            ['device_id' => 'capability-revoked-device'],
+            '127.0.0.32',
+            'Capability Revocation Test'
+        );
+        $module = SystemModule::query()->where('name', 'qingyu_ip_agent')->firstOrFail();
+        $manifest = $module->config_json;
+        $manifest['permissions'] = array_values(array_diff($manifest['permissions'] ?? [], ['balance:read']));
+        $module->update(['config_json' => $manifest]);
+
+        $this->withToken($issued['access_token'])
+            ->getJson('/api/v1/me/balance')
+            ->assertForbidden()
+            ->assertJsonPath('code', 'module_capability_denied');
+    }
+
     public function test_module_host_gateway_contracts_are_bound(): void
     {
         $bindings = [

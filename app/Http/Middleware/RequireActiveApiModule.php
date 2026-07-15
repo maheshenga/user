@@ -36,7 +36,7 @@ final class RequireActiveApiModule
         }
 
         try {
-            $this->policy->assertUserAccess((string) $session->module, $user);
+            $module = $this->policy->assertUserAccess((string) $session->module, $user);
         } catch (UserApiException $exception) {
             $this->tokens->revoke($user, (int) $accessToken->id);
 
@@ -44,6 +44,7 @@ final class RequireActiveApiModule
         }
 
         $request->attributes->set('module_api_session', $session);
+        $request->attributes->set('module_runtime_record', $module);
 
         return $next($request);
     }

@@ -15,6 +15,7 @@ return [
         'node:write',
         'api:user',
         'user:read',
+        'invite:read',
         'vip:read',
         'vip:write',
         'activation-code:write',

@@ -99,7 +99,7 @@ class ClientApiService
     {
 
         return $this->recorded('client.activate', 'user_account', (int) $user['id'], $payload, function () use ($payload, $user, $ip): array {
-            $result = $this->activationCodes->redeem('qingyu_ip_agent', [
+            $result = $this->activationCodes->redeem([
                 'code' => $payload['code'] ?? $payload['activationCode'] ?? null,
             ], (int) $user['id'], $ip);
             $account = UserAccount::query()->find((int) $user['id']);
