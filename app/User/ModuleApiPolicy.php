@@ -4,17 +4,20 @@ namespace App\User;
 
 use App\Models\SystemModule;
 use App\Models\UserAccount;
+use App\Modules\ModuleRuntimeEligibility;
+use Throwable;
 
 final class ModuleApiPolicy
 {
+    public function __construct(private readonly ModuleRuntimeEligibility $eligibility) {}
+
     public function assertAvailable(string $module): SystemModule
     {
-        $record = SystemModule::query()->where('name', $module)->first();
-        if ($record === null || $record->status !== 'enabled') {
+        try {
+            return $this->eligibility->assertEligible($module);
+        } catch (Throwable) {
             throw new UserApiException('模块当前未启用。', 403, 'module_unavailable');
         }
-
-        return $record;
     }
 
     public function assertUserAccess(string $module, UserAccount $user): SystemModule

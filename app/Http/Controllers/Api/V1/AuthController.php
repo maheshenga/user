@@ -34,18 +34,22 @@ class AuthController extends ApiController
 
         try {
             $modules->assertAvailable($payload['module']);
-            $registered = $auth->register($payload, $request->ip(), $payload['module']);
-            $user = UserAccount::query()->findOrFail((int) $registered['user']['id']);
-            $tokenBundle = $tokens->issue(
-                $user,
-                $payload['module'],
-                $this->device($payload),
+            $registered = $auth->registerWithToken(
+                $payload,
                 $request->ip(),
-                (string) $request->userAgent()
+                $payload['module'],
+                fn (UserAccount $user): array => $tokens->issue(
+                    $user,
+                    $payload['module'],
+                    $this->device($payload),
+                    $request->ip(),
+                    (string) $request->userAgent()
+                )
             );
+            $user = UserAccount::query()->findOrFail((int) $registered['user']['id']);
 
             return $this->success(
-                $profiles->payload($user) + ['tokens' => $tokenBundle],
+                $profiles->payload($user) + ['tokens' => $registered['tokens']],
                 '注册成功。',
                 201
             );

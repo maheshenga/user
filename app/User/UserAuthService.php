@@ -19,6 +19,25 @@ final class UserAuthService
 
     public function register(array $payload, string $ip, string $sourceModule = 'core'): array
     {
+        return $this->registerAccount($payload, $ip, $sourceModule, null);
+    }
+
+    public function registerWithToken(
+        array $payload,
+        string $ip,
+        string $sourceModule,
+        callable $issueToken
+    ): array {
+        return $this->registerAccount($payload, $ip, $sourceModule, $issueToken);
+    }
+
+    private function registerAccount(
+        array $payload,
+        string $ip,
+        string $sourceModule,
+        ?callable $afterCreate
+    ): array
+    {
         $mobile = $this->normalizeNullableString($payload['mobile'] ?? null);
         $email = $this->normalizeEmail($payload['email'] ?? null);
         $password = (string) ($payload['password'] ?? '');
@@ -42,7 +61,7 @@ final class UserAuthService
         }
 
         try {
-            [$user, $defaultInviteCode, $inviteRelation] = DB::transaction(function () use ($mobile, $email, $password, $ip, $inviteCode, $sourceModule): array {
+            [$user, $defaultInviteCode, $inviteRelation, $afterCreateResult] = DB::transaction(function () use ($mobile, $email, $password, $ip, $inviteCode, $sourceModule, $afterCreate): array {
                 $now = time();
 
                 $user = UserAccount::query()->create([
@@ -59,8 +78,9 @@ final class UserAuthService
 
                 $defaultInviteCode = $this->invites->createDefaultCode($user);
                 $inviteRelation = $this->invites->bindRegistration($user, $inviteCode);
+                $afterCreateResult = $afterCreate === null ? null : $afterCreate($user);
 
-                return [$user, $defaultInviteCode, $inviteRelation];
+                return [$user, $defaultInviteCode, $inviteRelation, $afterCreateResult];
             });
         } catch (QueryException $exception) {
             $duplicateException = $this->duplicateRegistrationException($exception, $mobile, $email);
@@ -76,11 +96,17 @@ final class UserAuthService
             $this->risk->evaluateInviteRegistration((int) $user->id);
         }
 
-        return [
+        $result = [
             'user' => $this->publicUser($user),
             'invite_code' => $this->invites->publicCode($defaultInviteCode),
             'invite_relation' => $this->invites->publicRelation($inviteRelation),
         ];
+
+        if ($afterCreate !== null) {
+            $result['tokens'] = $afterCreateResult;
+        }
+
+        return $result;
     }
 
     public function login(array $payload, string $ip): array

@@ -3,6 +3,7 @@
 namespace Tests\Feature\User;
 
 use App\Models\SystemModule;
+use App\Models\SystemModuleRelease;
 use App\Models\UserAccount;
 use App\Models\UserApiRefreshToken;
 use App\Models\UserApiSession;
@@ -258,6 +259,40 @@ class UserApiTokenAuthTest extends TestCase
         }
     }
 
+    public function test_module_with_invalid_active_release_cannot_issue_tokens(): void
+    {
+        $user = $this->registeredUser('invalid-release-issue@example.com');
+        $module = SystemModule::query()->where('name', 'qingyu_ip_agent')->firstOrFail();
+        $release = SystemModuleRelease::query()->create([
+            'module' => 'qingyu_ip_agent',
+            'version' => (string) $module->version,
+            'source_type' => 'local',
+            'trust_level' => 'private',
+            'artifact_path' => (string) $module->path,
+            'artifact_hash' => str_repeat('0', 64),
+            'signature_hash' => str_repeat('f', 64),
+            'manifest_json' => $module->config_json,
+            'status' => 'active',
+        ]);
+        $module->update(['active_release_id' => $release->id]);
+
+        try {
+            app(UserApiTokenService::class)->issue(
+                $user,
+                'qingyu_ip_agent',
+                ['device_id' => 'invalid-release-device'],
+                '127.0.0.31',
+                'Invalid Release Test'
+            );
+            $this->fail('Expected an invalid active release to block token issue.');
+        } catch (UserApiException $exception) {
+            $this->assertSame(403, $exception->httpStatus());
+            $this->assertSame('module_unavailable', $exception->errorCode());
+        }
+
+        $this->assertDatabaseCount('user_api_sessions', 0);
+    }
+
     public function test_disabled_module_cannot_refresh_and_revokes_the_session(): void
     {
         $user = $this->registeredUser('module-disabled-refresh@example.com');
@@ -354,6 +389,26 @@ class UserApiTokenAuthTest extends TestCase
             ->assertJsonPath('code', 'module_unavailable');
 
         $this->assertDatabaseMissing('user_account', ['email' => 'disabled-module-orphan@example.com']);
+    }
+
+    public function test_api_registration_rolls_back_account_when_token_issue_fails(): void
+    {
+        $module = SystemModule::query()->where('name', 'qingyu_ip_agent')->firstOrFail();
+        $manifest = $module->config_json;
+        $manifest['api']['abilities'] = [];
+        $module->update(['config_json' => $manifest]);
+
+        $this->postJson('/api/v1/auth/register', [
+            'email' => 'token-failure-orphan@example.com',
+            'password' => 'secret123',
+            'module' => 'qingyu_ip_agent',
+            'device_id' => 'token-failure-orphan-device',
+        ])->assertForbidden()
+            ->assertJsonPath('code', 'module_not_allowed');
+
+        $this->assertDatabaseMissing('user_account', ['email' => 'token-failure-orphan@example.com']);
+        $this->assertDatabaseCount('user_api_sessions', 0);
+        $this->assertDatabaseCount('personal_access_tokens', 0);
     }
 
     public function test_api_login_and_profile_use_bearer_auth_without_web_session(): void
