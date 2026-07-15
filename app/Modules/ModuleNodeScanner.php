@@ -24,7 +24,14 @@ final class ModuleNodeScanner
         $nodes = [];
 
         foreach ($this->modules->enabled() as $manifest) {
-            $nodes = array_merge($nodes, $this->scanManifestControllers($manifest));
+            $moduleNodes = array_map(
+                static fn (array $node): array => $node + [
+                    'owner_module' => $manifest->name(),
+                    'status' => 1,
+                ],
+                $this->nodesForManifest($manifest)
+            );
+            $nodes = array_merge($nodes, $moduleNodes);
         }
 
         return $nodes;
@@ -33,7 +40,7 @@ final class ModuleNodeScanner
     /**
      * @return array<int, array{node:string,title:?string,is_auth:bool,type:int}>
      */
-    private function scanManifestControllers(ModuleManifest $manifest): array
+    public function nodesForManifest(ModuleManifest $manifest): array
     {
         $controllersPath = $manifest->controllersPath();
         if (! is_dir($controllersPath)) {

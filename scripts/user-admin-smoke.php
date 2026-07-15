@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-final class AdminSmokeFailure extends RuntimeException
-{
-}
+final class AdminSmokeFailure extends RuntimeException {}
 
 /**
  * @return array{base_url:string,admin_prefix:string,username:string,password:string,timeout:float}
@@ -70,8 +68,7 @@ final class AdminSmokeHttpClient
     public function __construct(
         private readonly string $baseUrl,
         private readonly float $timeout,
-    ) {
-    }
+    ) {}
 
     public function setCsrfToken(string $csrfToken): void
     {
@@ -79,14 +76,14 @@ final class AdminSmokeHttpClient
     }
 
     /**
-     * @param array<string, string> $payload
+     * @param  array<string, string>  $payload
      * @return array{status:int,body:string,json:?array<string, mixed>}
      */
     public function request(string $method, string $path, array $payload = [], bool $ajax = false, bool $jsonAccept = false): array
     {
         $method = strtoupper($method);
         $headers = [
-            'Accept: ' . ($jsonAccept ? 'application/json' : 'text/html, application/json'),
+            'Accept: '.($jsonAccept ? 'application/json' : 'text/html, application/json'),
             'Connection: close',
         ];
 
@@ -98,10 +95,10 @@ final class AdminSmokeHttpClient
             $cookiePairs = [];
 
             foreach ($this->cookies as $name => $value) {
-                $cookiePairs[] = $name . '=' . $value;
+                $cookiePairs[] = $name.'='.$value;
             }
 
-            $headers[] = 'Cookie: ' . implode('; ', $cookiePairs);
+            $headers[] = 'Cookie: '.implode('; ', $cookiePairs);
         }
 
         $content = null;
@@ -109,10 +106,10 @@ final class AdminSmokeHttpClient
         if ($method !== 'GET') {
             $content = http_build_query($payload, '', '&', PHP_QUERY_RFC3986);
             $headers[] = 'Content-Type: application/x-www-form-urlencoded';
-            $headers[] = 'Content-Length: ' . strlen($content);
+            $headers[] = 'Content-Length: '.strlen($content);
 
             if ($this->csrfToken !== null) {
-                $headers[] = 'X-CSRF-TOKEN: ' . $this->csrfToken;
+                $headers[] = 'X-CSRF-TOKEN: '.$this->csrfToken;
             }
         }
 
@@ -128,7 +125,7 @@ final class AdminSmokeHttpClient
             ],
         ]);
 
-        $body = @file_get_contents($this->baseUrl . $path, false, $context);
+        $body = @file_get_contents($this->baseUrl.$path, false, $context);
         $responseHeaders = $http_response_header ?? [];
 
         if ($body === false) {
@@ -159,7 +156,7 @@ final class AdminSmokeHttpClient
     }
 
     /**
-     * @param array<int, string> $headers
+     * @param  array<int, string>  $headers
      */
     private function statusCode(array $headers): int
     {
@@ -175,7 +172,7 @@ final class AdminSmokeHttpClient
     }
 
     /**
-     * @param array<int, string> $headers
+     * @param  array<int, string>  $headers
      */
     private function captureCookies(array $headers): void
     {
@@ -198,7 +195,7 @@ final class AdminSmokeHttpClient
 }
 
 /**
- * @param array<string, mixed> $payload
+ * @param  array<string, mixed>  $payload
  */
 function findToken(array $payload): ?string
 {
@@ -232,22 +229,22 @@ function adminPath(string $prefix, string $path = ''): string
 {
     $path = trim($path, '/');
 
-    return '/' . trim($prefix, '/') . ($path === '' ? '' : '/' . $path);
+    return '/'.trim($prefix, '/').($path === '' ? '' : '/'.$path);
 }
 
 /**
- * @param array{status:int,body:string,json:?array<string, mixed>} $response
- * @param list<int> $expected
+ * @param  array{status:int,body:string,json:?array<string, mixed>}  $response
+ * @param  list<int>  $expected
  */
 function expectStatus(array $response, array $expected, string $label): void
 {
     if (! in_array($response['status'], $expected, true)) {
-        throw new AdminSmokeFailure("{$label} returned HTTP {$response['status']}; expected " . implode(' or ', $expected) . '.');
+        throw new AdminSmokeFailure("{$label} returned HTTP {$response['status']}; expected ".implode(' or ', $expected).'.');
     }
 }
 
 /**
- * @param array{status:int,body:string,json:?array<string, mixed>} $response
+ * @param  array{status:int,body:string,json:?array<string, mixed>}  $response
  */
 function expectJsonCode(array $response, int $code, string $label): void
 {
@@ -256,12 +253,12 @@ function expectJsonCode(array $response, int $code, string $label): void
     }
 
     if (($response['json']['code'] ?? null) !== $code) {
-        throw new AdminSmokeFailure("{$label} returned JSON code " . var_export($response['json']['code'] ?? null, true) . "; expected {$code}.");
+        throw new AdminSmokeFailure("{$label} returned JSON code ".var_export($response['json']['code'] ?? null, true)."; expected {$code}.");
     }
 }
 
 /**
- * @param array{status:int,body:string,json:?array<string, mixed>} $response
+ * @param  array{status:int,body:string,json:?array<string, mixed>}  $response
  */
 function expectJsonMessageContains(array $response, string $needle, string $label): void
 {
@@ -307,7 +304,7 @@ function expectedUserOpsPaths(): array
 }
 
 /**
- * @param array<string, mixed> $payload
+ * @param  array<string, mixed>  $payload
  */
 function expectMenu(array $payload, string $adminPrefix): void
 {
@@ -325,7 +322,7 @@ function expectMenu(array $payload, string $adminPrefix): void
 }
 
 /**
- * @param array<string, mixed> $payload
+ * @param  array<string, mixed>  $payload
  */
 function expectModuleCenterMenu(array $payload, string $adminPrefix): void
 {
@@ -341,8 +338,8 @@ function expectModuleCenterMenu(array $payload, string $adminPrefix): void
 }
 
 /**
- * @param mixed $node
- * @param array<int, string> $titles
+ * @param  mixed  $node
+ * @param  array<int, string>  $titles
  * @return array<string, mixed>|null
  */
 function findMenuByTitles($node, array $titles): ?array
@@ -359,7 +356,7 @@ function findMenuByTitles($node, array $titles): ?array
 }
 
 /**
- * @param mixed $node
+ * @param  mixed  $node
  * @return array<string, mixed>|null
  */
 function findMenuByTitle($node, string $title): ?array
@@ -384,7 +381,7 @@ function findMenuByTitle($node, string $title): ?array
 }
 
 /**
- * @param mixed $node
+ * @param  mixed  $node
  */
 function menuContainsHref($node, string $expectedPath, string $adminPrefix): bool
 {
@@ -411,7 +408,7 @@ function normalizeMenuPath(string $href, string $adminPrefix): string
     $path = trim($path, '/');
     $prefix = trim($adminPrefix, '/');
 
-    if ($prefix !== '' && str_starts_with($path . '/', $prefix . '/')) {
+    if ($prefix !== '' && str_starts_with($path.'/', $prefix.'/')) {
         $path = substr($path, strlen($prefix) + 1);
     }
 
@@ -419,7 +416,7 @@ function normalizeMenuPath(string $href, string $adminPrefix): string
 }
 
 /**
- * @param array<string, mixed> $payload
+ * @param  array<string, mixed>  $payload
  */
 function expectDashboardMetrics(array $payload): void
 {
@@ -465,7 +462,7 @@ function expectAdminPageBody(array $response, string $label): void
 }
 
 /**
- * @param array{status:int,body:string,json:?array<string, mixed>} $response
+ * @param  array{status:int,body:string,json:?array<string, mixed>}  $response
  */
 function expectAccountStatusPage(array $response, string $label): void
 {
@@ -481,7 +478,7 @@ function expectAccountStatusPage(array $response, string $label): void
 }
 
 /**
- * @param array{status:int,body:string,json:?array<string, mixed>} $response
+ * @param  array{status:int,body:string,json:?array<string, mixed>}  $response
  */
 function expectAccountStatusScript(array $response, string $label): void
 {
@@ -497,7 +494,7 @@ function expectAccountStatusScript(array $response, string $label): void
 }
 
 /**
- * @param array{status:int,body:string,json:?array<string, mixed>} $response
+ * @param  array{status:int,body:string,json:?array<string, mixed>}  $response
  */
 function expectModuleCenterPage(array $response, string $label): void
 {
@@ -508,7 +505,7 @@ function expectModuleCenterPage(array $response, string $label): void
 }
 
 /**
- * @param array{status:int,body:string,json:?array<string, mixed>} $response
+ * @param  array{status:int,body:string,json:?array<string, mixed>}  $response
  */
 function expectModuleCenterScript(array $response, string $label): void
 {
@@ -528,6 +525,7 @@ function expectModuleCenterScript(array $response, string $label): void
         "rollback_url: 'system/module/rollback'",
         'data-module-action',
         'data-module-reject',
+        'data-review-detail',
     ] as $needle) {
         expectBodyContains($response['body'], $needle, $label);
     }
@@ -535,25 +533,25 @@ function expectModuleCenterScript(array $response, string $label): void
 
 function expectAccountStatusEndpointGuards(AdminSmokeHttpClient $client, string $prefix): void
 {
-    $label = 'POST /' . $prefix . '/user/account/modify status endpoint guards';
+    $label = 'POST /'.$prefix.'/user/account/modify status endpoint guards';
 
     $response = $client->request('POST', adminPath($prefix, 'user/account/modify'), [
         'id' => '1',
         'field' => 'nickname',
         'value' => 'Smoke Probe',
     ], ajax: true, jsonAccept: true);
-    expectStatus($response, [200], $label . ' non-status field');
-    expectJsonCode($response, 0, $label . ' non-status field');
-    expectJsonMessageContains($response, '用户账号管理仅允许修改账号状态', $label . ' non-status field');
+    expectStatus($response, [200], $label.' non-status field');
+    expectJsonCode($response, 0, $label.' non-status field');
+    expectJsonMessageContains($response, '用户账号管理仅允许修改账号状态', $label.' non-status field');
 
     $response = $client->request('POST', adminPath($prefix, 'user/account/modify'), [
         'id' => '1',
         'field' => 'status',
         'value' => 'archived',
     ], ajax: true, jsonAccept: true);
-    expectStatus($response, [200], $label . ' invalid status');
-    expectJsonCode($response, 0, $label . ' invalid status');
-    expectJsonMessageContains($response, '账号状态值无效', $label . ' invalid status');
+    expectStatus($response, [200], $label.' invalid status');
+    expectJsonCode($response, 0, $label.' invalid status');
+    expectJsonMessageContains($response, '账号状态值无效', $label.' invalid status');
 }
 
 function pass(string $message): void
@@ -568,65 +566,65 @@ function runAdminSmoke(): void
     $prefix = $options['admin_prefix'];
 
     $response = $client->request('GET', adminPath($prefix, 'login'));
-    expectStatus($response, [200], 'GET /' . $prefix . '/login');
+    expectStatus($response, [200], 'GET /'.$prefix.'/login');
 
     $csrfToken = csrfFromHtml($response['body']);
 
     if ($csrfToken === null) {
-        throw new AdminSmokeFailure('GET /' . $prefix . '/login missing CSRF token.');
+        throw new AdminSmokeFailure('GET /'.$prefix.'/login missing CSRF token.');
     }
 
     $client->setCsrfToken($csrfToken);
-    pass('GET /' . $prefix . '/login loaded CSRF token');
+    pass('GET /'.$prefix.'/login loaded CSRF token');
 
     $response = $client->request('POST', adminPath($prefix, 'login'), [
         'username' => $options['username'],
         'password' => $options['password'],
         'keep_login' => '1',
     ], ajax: true, jsonAccept: true);
-    expectStatus($response, [200], 'POST /' . $prefix . '/login');
-    expectJsonCode($response, 1, 'POST /' . $prefix . '/login');
-    pass('POST /' . $prefix . '/login');
+    expectStatus($response, [200], 'POST /'.$prefix.'/login');
+    expectJsonCode($response, 1, 'POST /'.$prefix.'/login');
+    pass('POST /'.$prefix.'/login');
 
     $response = $client->request('GET', adminPath($prefix, 'ajax/initAdmin'), ajax: true, jsonAccept: true);
-    expectStatus($response, [200], 'GET /' . $prefix . '/ajax/initAdmin');
+    expectStatus($response, [200], 'GET /'.$prefix.'/ajax/initAdmin');
 
     if ($response['json'] === null) {
-        throw new AdminSmokeFailure('GET /' . $prefix . '/ajax/initAdmin did not return JSON.');
+        throw new AdminSmokeFailure('GET /'.$prefix.'/ajax/initAdmin did not return JSON.');
     }
 
     expectMenu($response['json'], $prefix);
-    pass('GET /' . $prefix . '/ajax/initAdmin menu contains 用户运营');
+    pass('GET /'.$prefix.'/ajax/initAdmin menu contains 用户运营');
     expectModuleCenterMenu($response['json'], $prefix);
-    pass('GET /' . $prefix . '/ajax/initAdmin menu contains 模块管理');
+    pass('GET /'.$prefix.'/ajax/initAdmin menu contains 模块管理');
 
     $response = $client->request('GET', adminPath($prefix, 'user/dashboard/index'), ajax: true, jsonAccept: true);
-    expectStatus($response, [200], 'GET /' . $prefix . '/user/dashboard/index JSON');
-    expectJsonCode($response, 1, 'GET /' . $prefix . '/user/dashboard/index JSON');
+    expectStatus($response, [200], 'GET /'.$prefix.'/user/dashboard/index JSON');
+    expectJsonCode($response, 1, 'GET /'.$prefix.'/user/dashboard/index JSON');
     expectDashboardMetrics($response['json'] ?? []);
-    pass('GET /' . $prefix . '/user/dashboard/index JSON metrics');
+    pass('GET /'.$prefix.'/user/dashboard/index JSON metrics');
 
     foreach (expectedUserOpsPaths() as $path) {
         $response = $client->request('GET', adminPath($prefix, $path));
-        expectStatus($response, [200], 'GET /' . $prefix . '/' . $path);
-        expectAdminPageBody($response, 'GET /' . $prefix . '/' . $path);
-        pass('GET /' . $prefix . '/' . $path);
+        expectStatus($response, [200], 'GET /'.$prefix.'/'.$path);
+        expectAdminPageBody($response, 'GET /'.$prefix.'/'.$path);
+        pass('GET /'.$prefix.'/'.$path);
     }
 
     $response = $client->request('GET', adminPath($prefix, 'user/account/index'));
-    expectAccountStatusPage($response, 'GET /' . $prefix . '/user/account/index account status UI');
-    pass('GET /' . $prefix . '/user/account/index account status UI');
+    expectAccountStatusPage($response, 'GET /'.$prefix.'/user/account/index account status UI');
+    pass('GET /'.$prefix.'/user/account/index account status UI');
 
     $response = $client->request('GET', '/static/admin/js/user/account.js');
     expectAccountStatusScript($response, 'GET /static/admin/js/user/account.js');
     pass('GET /static/admin/js/user/account.js status actions');
 
     expectAccountStatusEndpointGuards($client, $prefix);
-    pass('POST /' . $prefix . '/user/account/modify status endpoint guards');
+    pass('POST /'.$prefix.'/user/account/modify status endpoint guards');
 
     $response = $client->request('GET', adminPath($prefix, 'system/module/index'));
-    expectModuleCenterPage($response, 'GET /' . $prefix . '/system/module/index module center page');
-    pass('GET /' . $prefix . '/system/module/index module center page');
+    expectModuleCenterPage($response, 'GET /'.$prefix.'/system/module/index module center page');
+    pass('GET /'.$prefix.'/system/module/index module center page');
 
     $response = $client->request('GET', '/static/admin/js/system/module.js');
     expectModuleCenterScript($response, 'GET /static/admin/js/system/module.js');

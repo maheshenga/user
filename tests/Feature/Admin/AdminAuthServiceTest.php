@@ -48,6 +48,7 @@ class AdminAuthServiceTest extends TestCase
             $table->string('title', 120)->nullable();
             $table->unsignedTinyInteger('type')->default(2);
             $table->unsignedTinyInteger('is_auth')->default(1);
+            $table->unsignedTinyInteger('status')->default(1);
         });
 
         Schema::create('system_auth_node', function (Blueprint $table): void {

@@ -4,33 +4,28 @@ namespace App\Http\Services;
 
 use App\Http\Services\annotation\NodeAnnotation;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 
 /**
  * 权限验证服务
  * Class AuthService
- * @package app\common\service
  */
 class AuthService
 {
-
     /**
      * 用户ID
-     * @var int
      */
     protected int $adminId = 0;
 
     /**
      * 默认配置
-     * @var array
      */
     protected array $config = [
-        'auth_on'          => true,              // 权限开关
-        'system_admin'     => 'system_admin',    // 用户表
-        'system_auth'      => 'system_auth',     // 权限表
-        'system_node'      => 'system_node',     // 节点表
-        'system_auth_node' => 'system_auth_node',// 权限-节点表
+        'auth_on' => true,              // 权限开关
+        'system_admin' => 'system_admin',    // 用户表
+        'system_auth' => 'system_auth',     // 权限表
+        'system_node' => 'system_node',     // 节点表
+        'system_auth_node' => 'system_auth_node', // 权限-节点表
     ];
 
     /**
@@ -40,13 +35,11 @@ class AuthService
 
     /**
      * 所有节点信息
-     * @var array
      */
     protected array $nodeList;
 
     /**
      * 管理员所有授权节点
-     * @var array
      */
     protected array $adminNode;
 
@@ -57,17 +50,18 @@ class AuthService
      */
     public function __construct($adminId = null)
     {
-        $this->adminId = (int)$adminId;
+        $this->adminId = (int) $adminId;
         $this->adminInfo = $this->getAdminInfo();
-        $this->nodeList  = $this->getNodeList();
+        $this->nodeList = $this->getNodeList();
         $this->adminNode = $this->getAdminNode();
+
         return $this;
     }
 
     /**
      * 检测检测权限
-     * @param null $node
-     * @return bool
+     *
+     * @param  null  $node
      */
     public function checkNode($node = null): bool
     {
@@ -82,11 +76,11 @@ class AuthService
         // 判断是否需要获取当前节点
         if (empty($node)) {
             $node = $this->getCurrentNode();
-        }else {
+        } else {
             $node = $this->parseNodeStr($node);
         }
         // 判断是否加入节点控制，优先获取缓存信息
-        if (!isset($this->nodeList[$node])) {
+        if (! isset($this->nodeList[$node])) {
             return false;
         }
         $nodeInfo = get_object_vars($this->nodeList[$node]);
@@ -101,7 +95,10 @@ class AuthService
         if (isset($this->adminNode[$node])) {
             return true;
         }
-        if ($this->checkNodeAnnotationAttrAuth($node)) return true;
+        if ($this->checkNodeAnnotationAttrAuth($node)) {
+            return true;
+        }
+
         return false;
     }
 
@@ -109,67 +106,73 @@ class AuthService
     {
         $bool = false;
         try {
-            $currentAdminAction        = currentAdminAction();
+            $currentAdminAction = currentAdminAction();
             $currentAdminActionExplode = explode('@', $currentAdminAction);
-            $nodeExplode               = explode('/', $node);
-            $action                    = end($nodeExplode);
-            $reflectionClass           = new \ReflectionMethod($currentAdminActionExplode[0], $action);
-            $attributes                = $reflectionClass->getAttributes(NodeAnnotation::class);
+            $nodeExplode = explode('/', $node);
+            $action = end($nodeExplode);
+            $reflectionClass = new \ReflectionMethod($currentAdminActionExplode[0], $action);
+            $attributes = $reflectionClass->getAttributes(NodeAnnotation::class);
             foreach ($attributes as $attribute) {
                 $annotation = $attribute->newInstance();
-                $bool       = $annotation->auth === false;
+                $bool = $annotation->auth === false;
             }
-        }catch (\Throwable) {
+        } catch (\Throwable) {
         }
+
         return $bool;
     }
 
     /**
      * 获取当前节点
-     * @return string
      */
     public function getCurrentNode(): string
     {
         $parameters = request()->route()->parameters ?? [];
         $controller = $parameters['controllerPath'] ?? $parameters['controller'] ?? '';
 
-        return ($parameters['secondary'] ?? '') . '/' . $controller . '/' . ($parameters['action'] ?? '');
+        return ($parameters['secondary'] ?? '').'/'.$controller.'/'.($parameters['action'] ?? '');
     }
 
     /**
      * 获取当前管理员所有节点
-     * @return array
      */
     public function getAdminNode(): array
     {
-        $nodeList  = [];
+        $nodeList = [];
         $adminInfo = DB::table($this->config['system_admin'])
             ->where([
-                'id'     => $this->adminId,
+                'id' => $this->adminId,
                 'status' => 1,
             ])->first();
         if ($adminInfo === null) {
             return [];
         }
         $adminInfo = get_object_vars($adminInfo);
-        if (!empty($adminInfo) && !empty($adminInfo['auth_ids'])) {
+        if (! empty($adminInfo) && ! empty($adminInfo['auth_ids'])) {
 
-            $nodeIds  = DB::table($this->config['system_auth_node'])
+            $nodeIds = DB::table($this->config['system_auth_node'])
                 ->whereIn('auth_id', explode(',', $adminInfo['auth_ids']))
-                ->select('node_id')->get()->map(function($value) {
-                    return (array)$value;
+                ->select('node_id')->get()->map(function ($value) {
+                    return (array) $value;
                 })->toArray();
             $nodeList = DB::table($this->config['system_node'])
-                ->whereIn('id', $nodeIds)->get()->keyBy('node')->map(function($value) {
-                    return (array)$value;
+                ->where('status', 1)
+                ->whereIn('id', $nodeIds)->get()->keyBy('node')->map(function ($value) {
+                    return (array) $value;
                 })->toArray();
         }
+
         return $nodeList;
     }
 
     public function getNodeList(): array
     {
-        return DB::table($this->config['system_node'])->select('id', 'node', 'title', 'type', 'is_auth')->get()->keyBy('node')->toArray();
+        return DB::table($this->config['system_node'])
+            ->where('status', 1)
+            ->select('id', 'node', 'title', 'type', 'is_auth')
+            ->get()
+            ->keyBy('node')
+            ->toArray();
     }
 
     public function getAdminInfo()
@@ -180,13 +183,12 @@ class AuthService
         if ($result === null) {
             return [];
         }
+
         return get_object_vars($result);
     }
 
     /**
      * 驼峰转下划线规则
-     * @param string $node
-     * @return string
      */
     public function parseNodeStr(string $node): string
     {
@@ -197,13 +199,13 @@ class AuthService
                 foreach ($val as &$vo) {
                     $vo = Str::snake(lcfirst($vo));
                 }
-                $val         = implode('.', $val);
+                $val = implode('.', $val);
                 $array[$key] = $val;
             }
         }
         $node = implode('/', $array);
         $node = Str::camel($node);
+
         return $node;
     }
-
 }

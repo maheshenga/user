@@ -20,6 +20,7 @@ final class ModuleRollbacker
         private readonly ModuleManifestPolicy $policy,
         private readonly ModuleReleaseSigner $signer,
         private readonly ModuleMenuSynchronizer $menus,
+        private readonly ModuleNodeSynchronizer $nodes,
         private readonly ModuleOperationCoordinator $operations,
     ) {}
 
@@ -93,6 +94,12 @@ final class ModuleRollbacker
 
             $restored = ModuleManifest::fromFile($currentPath.DIRECTORY_SEPARATOR.'module.json');
             $this->repository->restoreVersion($restored, $status);
+            $this->menus->sync($restored);
+            $this->nodes->sync($restored);
+            if ($status === 'disabled') {
+                $this->menus->hide($name);
+                $this->nodes->hide($name);
+            }
             $this->repository->log('rollback', $name, $status, $status, 'success', null, $actorId);
             $this->clearCaches();
             $keepCurrentSource = false;
@@ -156,6 +163,11 @@ final class ModuleRollbacker
                     'update_time' => time(),
                 ])->save();
                 $this->menus->sync($targetManifest);
+                $this->nodes->sync($targetManifest);
+                if ($status === 'disabled') {
+                    $this->menus->hide((string) $module->name);
+                    $this->nodes->hide((string) $module->name);
+                }
                 $this->repository->log(
                     'rollback_release',
                     (string) $module->name,
@@ -261,5 +273,4 @@ final class ModuleRollbacker
         Cache::forget(config('modules.cache_key'));
         Cache::forget('version');
     }
-
 }

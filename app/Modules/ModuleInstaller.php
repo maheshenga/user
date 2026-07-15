@@ -20,6 +20,7 @@ final class ModuleInstaller
         private readonly ModuleMigrationRunner $migrations,
         private readonly ModuleReleaseManager $releases,
         private readonly ModuleMenuSynchronizer $menus,
+        private readonly ModuleNodeSynchronizer $nodes,
         private readonly UserApiTokenService $apiTokens,
         private readonly ModuleOperationCoordinator $operations,
     ) {}
@@ -56,6 +57,11 @@ final class ModuleInstaller
             $this->repository->upsertDiscovered($manifest);
             $this->versions->record($manifest);
             $this->menus->sync($manifest);
+            $this->nodes->sync($manifest);
+            if ($newState === 'disabled') {
+                $this->menus->hide($name);
+                $this->nodes->hide($name);
+            }
             $this->migrations->runPending($manifest);
             $this->repository->setStatus($name, $newState);
         });
@@ -92,6 +98,7 @@ final class ModuleInstaller
                 rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json'
             );
             $this->menus->sync($manifest);
+            $this->nodes->sync($manifest);
             $this->repository->setStatus($name, 'enabled');
         });
     }
@@ -112,6 +119,7 @@ final class ModuleInstaller
             }
 
             $this->menus->hide($name);
+            $this->nodes->hide($name);
             $this->apiTokens->revokeModule($name);
             $this->repository->setStatus($name, 'disabled');
         });
@@ -133,6 +141,7 @@ final class ModuleInstaller
             }
 
             $this->menus->hide($name);
+            $this->nodes->hide($name);
             $this->apiTokens->revokeModule($name);
             $this->repository->setStatus($name, 'uninstalled');
         });

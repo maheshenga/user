@@ -3,13 +3,13 @@
 namespace App\Http\Controllers\admin\system;
 
 use App\Http\Controllers\common\AdminController;
+use App\Http\Services\annotation\ControllerAnnotation;
+use App\Http\Services\annotation\NodeAnnotation;
 use App\Http\Services\NodeService;
 use App\Http\Services\TriggerService;
 use App\Models\SystemNode;
 use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
-use App\Http\Services\annotation\NodeAnnotation;
-use App\Http\Services\annotation\ControllerAnnotation;
 
 #[ControllerAnnotation(title: '系统节点管理')]
 class NodeController extends AdminController
@@ -17,7 +17,7 @@ class NodeController extends AdminController
     public function initialize()
     {
         parent::initialize();
-        $this->model = new SystemNode();
+        $this->model = new SystemNode;
     }
 
     #[NodeAnnotation(title: '列表', auth: true)]
@@ -25,15 +25,17 @@ class NodeController extends AdminController
     {
         if (request()->ajax()) {
             $count = $this->model->count();
-            $list  = $this->model->getNodeTreeList();
-            $data  = [
-                'code'  => 0,
-                'msg'   => '',
+            $list = $this->model->getNodeTreeList();
+            $data = [
+                'code' => 0,
+                'msg' => '',
                 'count' => $count,
-                'data'  => $list,
+                'data' => $list,
             ];
+
             return json($data);
         }
+
         return $this->fetch();
     }
 
@@ -41,27 +43,32 @@ class NodeController extends AdminController
     public function refreshNode(): JsonResponse
     {
         $force = request()->input('force');
-        if (!request()->ajax()) return $this->error();
-        $nodeList = (new NodeService())->getNodeList();
-        if (empty($nodeList)) return $this->error('暂无需要更新的系统节点');
-        $model = new SystemNode();
+        if (! request()->ajax()) {
+            return $this->error();
+        }
+        $nodeList = (new NodeService)->getNodeList();
+        if (empty($nodeList)) {
+            return $this->error('暂无需要更新的系统节点');
+        }
+        $model = new SystemNode;
         try {
             if ($force == 1) {
-                $where[]        = [function ($query) use ($nodeList) {
+                $where[] = [function ($query) use ($nodeList) {
                     $query->whereIn('node', array_column($nodeList, 'node'));
                 }];
                 $updateNodeList = $model->where($where)->get()->toArray();
                 $formatNodeList = [];
                 array_map(function ($value) use (&$formatNodeList) {
-                    $formatNodeList[$value['node']]['title']   = $value['title'];
+                    $formatNodeList[$value['node']]['title'] = $value['title'];
                     $formatNodeList[$value['node']]['is_auth'] = $value['is_auth'];
                 }, $nodeList);
                 foreach ($updateNodeList as $vo) {
                     if (isset($formatNodeList[$vo['node']])) {
                         $model->where('id', $vo['id'])->update(
                             [
-                                'title'   => $formatNodeList[$vo['node']]['title'],
+                                'title' => $formatNodeList[$vo['node']]['title'],
                                 'is_auth' => $formatNodeList[$vo['node']]['is_auth'],
+                                'status' => 1,
                             ]
                         );
                     }
@@ -79,31 +86,37 @@ class NodeController extends AdminController
             }
             $model->addAll($nodeList);
             TriggerService::updateNode();
-        }catch (\Exception $e) {
-            return $this->error('节点更新失败:' . $e->getMessage());
+        } catch (\Exception $e) {
+            return $this->error('节点更新失败:'.$e->getMessage());
         }
+
         return $this->success('节点更新成功');
     }
 
     #[NodeAnnotation(title: '清除失效节点', auth: true)]
     public function clearNode(): JsonResponse
     {
-        if (!request()->ajax()) return $this->error();
-        $nodeList = (new NodeService())->getNodeList();
-        $model    = new SystemNode();
+        if (! request()->ajax()) {
+            return $this->error();
+        }
+        $nodeList = (new NodeService)->getNodeList();
+        $model = new SystemNode;
         try {
-            $existNodeList  = $model->select(explode(',', 'id,node,title,type,is_auth'))->get()->toArray();
+            $existNodeList = $model->select(explode(',', 'id,node,title,type,is_auth,owner_module'))->get()->toArray();
             $formatNodeList = [];
             array_map(function ($value) use (&$formatNodeList) {
                 $formatNodeList[$value['node']] = $value['title'];
             }, $nodeList);
             foreach ($existNodeList as $vo) {
-                !isset($formatNodeList[$vo['node']]) && $model->where('id', $vo['id'])->delete();
+                if (($vo['owner_module'] ?? 'core') === 'core' && ! isset($formatNodeList[$vo['node']])) {
+                    $model->where('id', $vo['id'])->delete();
+                }
             }
             TriggerService::updateNode();
-        }catch (\Exception $e) {
-            return $this->error('节点更新失败:' . $e->getMessage());
+        } catch (\Exception $e) {
+            return $this->error('节点更新失败:'.$e->getMessage());
         }
+
         return $this->success('节点更新成功');
     }
 }

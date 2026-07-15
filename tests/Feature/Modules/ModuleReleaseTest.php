@@ -216,6 +216,12 @@ class ModuleReleaseTest extends TestCase
         $this->createZip($zipPath, [
             'Blog/module.json' => json_encode($this->manifest(version: '1.1.0'), JSON_THROW_ON_ERROR),
             'Blog/active.txt' => 'version-1.1.0',
+            'Blog/src/Controllers/BasePostController.php' => file_get_contents(
+                base_path('tests/Fixtures/modules/Blog/src/Controllers/BasePostController.php')
+            ),
+            'Blog/src/Controllers/PostController.php' => file_get_contents(
+                base_path('tests/Fixtures/modules/Blog/src/Controllers/PostController.php')
+            ),
         ]);
 
         $release = app(ModuleReleaseManager::class)->stageZip($zipPath, 'blog', 9);
@@ -234,6 +240,11 @@ class ModuleReleaseTest extends TestCase
         $this->assertSame(7, $release->reviewed_by);
         $this->assertNotNull($release->signature_hash);
         $this->assertNull($module->active_operation_id);
+        $this->assertDatabaseHas('system_node', [
+            'owner_module' => 'blog',
+            'node' => 'blog/post/index',
+            'status' => 1,
+        ]);
         $this->assertTrue(SystemModuleOperation::query()
             ->where('module', 'blog')
             ->where('action', 'activate_release')
@@ -433,6 +444,15 @@ PHP;
     public function test_release_adoption_includes_disabled_legacy_modules(): void
     {
         $path = $this->writeModule('Blog', $this->manifest());
+        mkdir($path.DIRECTORY_SEPARATOR.'src'.DIRECTORY_SEPARATOR.'Controllers', 0777, true);
+        copy(
+            base_path('tests/Fixtures/modules/Blog/src/Controllers/BasePostController.php'),
+            $path.DIRECTORY_SEPARATOR.'src'.DIRECTORY_SEPARATOR.'Controllers'.DIRECTORY_SEPARATOR.'BasePostController.php'
+        );
+        copy(
+            base_path('tests/Fixtures/modules/Blog/src/Controllers/PostController.php'),
+            $path.DIRECTORY_SEPARATOR.'src'.DIRECTORY_SEPARATOR.'Controllers'.DIRECTORY_SEPARATOR.'PostController.php'
+        );
         SystemModule::query()->create([
             'name' => 'blog',
             'title' => 'Blog',
@@ -456,6 +476,11 @@ PHP;
             'active',
             SystemModuleRelease::query()->findOrFail($module->active_release_id)->status
         );
+        $this->assertDatabaseHas('system_node', [
+            'owner_module' => 'blog',
+            'node' => 'blog/post/index',
+            'status' => 0,
+        ]);
     }
 
     public function test_tampered_active_release_is_not_loaded(): void

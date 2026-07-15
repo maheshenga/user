@@ -4,6 +4,7 @@ namespace Tests\Feature\Modules;
 
 use App\Models\SystemModule;
 use App\Models\SystemModuleLog;
+use App\Models\SystemModuleRelease;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Config;
@@ -133,6 +134,7 @@ class ModuleCenterControllerTest extends TestCase
         $this->assertStringContainsString('/static/admin/js/system/module.js', $script);
         $this->assertStringContainsString('data-module-action', $script);
         $this->assertStringContainsString('data-module-reject', $script);
+        $this->assertStringContainsString('data-review-detail', $script);
         $this->assertStringContainsString('approve_url', $script);
         $this->assertStringContainsString('rollback_url', $script);
     }
@@ -161,6 +163,94 @@ class ModuleCenterControllerTest extends TestCase
             ->assertSee('easyadmin8')
             ->assertSee('Modules\\Blog')
             ->assertSee('blog/post/index');
+        $response->assertViewHas('reviewDetails', function (array $details): bool {
+            foreach ($details['manifest_diff'] as $diff) {
+                if ($diff['added'] !== [] || $diff['removed'] !== [] || $diff['changed'] !== []) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+    }
+
+    public function test_detail_contains_complete_release_review_context(): void
+    {
+        $activeManifest = json_decode(
+            file_get_contents(base_path('tests/Fixtures/modules/Blog/module.json')),
+            true,
+            512,
+            JSON_THROW_ON_ERROR
+        );
+        $pendingManifest = $activeManifest;
+        $pendingManifest['version'] = '1.1.0';
+        $pendingManifest['permissions'][] = 'balance:read';
+        $pendingManifest['api'] = ['abilities' => ['profile:read'], 'quotas' => ['profile.read' => 100]];
+        $pendingManifest['external_domains'] = ['api.example.com'];
+        $pendingManifest['dependencies'] = ['foundation' => '^1.0'];
+        $pendingManifest['conflicts'] = ['legacy_blog' => '*'];
+
+        $module = $this->createBlogModule([
+            'status' => 'enabled',
+            'config_json' => $activeManifest,
+        ]);
+        $active = SystemModuleRelease::query()->create([
+            'module' => 'blog',
+            'version' => '1.0.0',
+            'source_type' => 'local',
+            'trust_level' => 'private',
+            'artifact_path' => base_path('tests/Fixtures/modules/Blog'),
+            'artifact_hash' => hash('sha256', 'active'),
+            'signature_hash' => hash('sha256', 'active-signature'),
+            'manifest_json' => $activeManifest,
+            'status' => 'active',
+            'previous_status' => 'installed',
+            'uploaded_by' => 5,
+            'reviewed_by' => 6,
+            'reviewed_at' => now()->subDay(),
+            'activated_at' => now()->subDay(),
+        ]);
+        $pending = SystemModuleRelease::query()->create([
+            'module' => 'blog',
+            'version' => '1.1.0',
+            'source_type' => 'zip',
+            'trust_level' => 'community',
+            'artifact_path' => storage_path('modules/releases/blog/pending'),
+            'artifact_hash' => hash('sha256', 'pending'),
+            'signature_hash' => null,
+            'manifest_json' => $pendingManifest,
+            'status' => 'pending_review',
+            'previous_status' => 'enabled',
+            'uploaded_by' => 7,
+            'reviewed_by' => null,
+            'reviewed_at' => null,
+            'review_reason' => '<script>alert(1)</script>',
+        ]);
+        $module->forceFill([
+            'active_release_id' => $active->id,
+            'pending_release_id' => $pending->id,
+        ])->save();
+
+        $response = $this->get('/admin/system/module/detail?name=blog');
+
+        $response->assertOk()->assertViewHas('reviewDetails', function (mixed $details): bool {
+            return is_array($details)
+                && $details['active']['version'] === '1.0.0'
+                && $details['pending']['version'] === '1.1.0'
+                && $details['pending']['source_type'] === 'zip'
+                && $details['pending']['uploaded_by'] === 7
+                && $details['pending']['signature_state'] === 'unsigned'
+                && in_array('balance:read', $details['manifest_diff']['permissions']['added'], true)
+                && in_array('profile:read', $details['manifest_diff']['api_abilities']['added'], true)
+                && in_array('api.example.com', $details['manifest_diff']['external_domains']['added'], true)
+                && isset($details['manifest_diff']['dependencies']['added']['foundation'])
+                && isset($details['manifest_diff']['conflicts']['added']['legacy_blog'])
+                && count($details['release_history']) === 2;
+        });
+        $response->assertSee('待审制品')
+            ->assertSee('权限与依赖差异')
+            ->assertDontSee('<script>alert(1)</script>', false)
+            ->assertSee('&lt;script&gt;alert(1)&lt;/script&gt;', false);
     }
 
     public function test_logs_ajax_returns_module_log_rows(): void

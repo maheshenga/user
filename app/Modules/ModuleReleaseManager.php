@@ -23,6 +23,7 @@ final class ModuleReleaseManager
         private readonly ModuleFileStore $files,
         private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
         private readonly ModuleMenuSynchronizer $menus,
+        private readonly ModuleNodeSynchronizer $nodes,
         private readonly ModuleOperationCoordinator $operations,
     ) {}
 
@@ -238,6 +239,11 @@ final class ModuleReleaseManager
                     $manifest,
                     $oldReleaseId === null && in_array($oldStatus, ['installed', 'enabled', 'disabled'], true)
                 );
+                $this->nodes->sync($manifest);
+                if ($targetStatus === 'disabled') {
+                    $this->menus->hide($manifest->name());
+                    $this->nodes->hide($manifest->name());
+                }
                 if ($oldReleaseId !== null) {
                     SystemModuleRelease::query()->whereKey($oldReleaseId)->update(['status' => 'superseded']);
                 }

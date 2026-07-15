@@ -13,7 +13,7 @@ trait CreatesModuleTestSchema
 {
     protected function createEasyAdminHostTables(): void
     {
-        if (!Schema::hasTable('system_menu')) {
+        if (! Schema::hasTable('system_menu')) {
             Schema::create('system_menu', function (Blueprint $table) {
                 $table->id();
                 $table->unsignedBigInteger('pid')->default(0);
@@ -29,17 +29,22 @@ trait CreatesModuleTestSchema
             });
         }
 
-        if (!Schema::hasTable('system_node')) {
+        if (! Schema::hasTable('system_node')) {
             Schema::create('system_node', function (Blueprint $table) {
                 $table->id();
+                $table->string('owner_module', 80)->default('core')->index();
+                $table->string('managed_hash', 64)->nullable();
                 $table->string('node', 255)->unique();
                 $table->string('title', 120)->nullable();
                 $table->unsignedTinyInteger('type')->default(2);
                 $table->unsignedTinyInteger('is_auth')->default(1);
+                $table->unsignedTinyInteger('status')->default(1)->index();
+                $table->unsignedBigInteger('create_time')->nullable();
+                $table->unsignedBigInteger('update_time')->nullable();
             });
         }
 
-        if (!Schema::hasTable('system_admin')) {
+        if (! Schema::hasTable('system_admin')) {
             Schema::create('system_admin', function (Blueprint $table) {
                 $table->id();
                 $table->unsignedTinyInteger('status')->default(1);
@@ -47,13 +52,13 @@ trait CreatesModuleTestSchema
             });
         }
 
-        if (!Schema::hasTable('system_auth')) {
+        if (! Schema::hasTable('system_auth')) {
             Schema::create('system_auth', function (Blueprint $table) {
                 $table->id();
             });
         }
 
-        if (!Schema::hasTable('system_auth_node')) {
+        if (! Schema::hasTable('system_auth_node')) {
             Schema::create('system_auth_node', function (Blueprint $table) {
                 $table->id();
                 $table->unsignedBigInteger('auth_id');

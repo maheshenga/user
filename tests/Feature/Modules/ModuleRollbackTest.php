@@ -2,11 +2,11 @@
 
 namespace Tests\Feature\Modules;
 
-use App\Models\SystemModuleOperation;
-use App\Modules\ModuleFileStore;
-use App\Modules\ModuleRollbacker;
+use App\Models\SystemModule;
 use App\Models\SystemModuleMigration;
 use App\Models\SystemModuleVersion;
+use App\Modules\ModuleFileStore;
+use App\Modules\ModuleRollbacker;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -64,7 +64,7 @@ class ModuleRollbackTest extends TestCase
 
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.2.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
-        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+        SystemModule::query()->where('name', 'blog')->update([
             'version' => '1.2.0',
             'config_json' => json_decode($this->manifest('blog', '1.2.0'), true, 512, JSON_THROW_ON_ERROR),
         ]);
@@ -92,7 +92,7 @@ class ModuleRollbackTest extends TestCase
             'active_key' => null,
         ]);
         $this->assertNull(
-            \App\Models\SystemModule::query()->where('name', 'blog')->value('active_operation_id')
+            SystemModule::query()->where('name', 'blog')->value('active_operation_id')
         );
     }
 
@@ -112,14 +112,14 @@ class ModuleRollbackTest extends TestCase
         ]);
 
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.2.0'));
-        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+        SystemModule::query()->where('name', 'blog')->update([
             'version' => '1.2.0',
             'config_json' => json_decode($this->manifest('blog', '1.2.0'), true, 512, JSON_THROW_ON_ERROR),
         ]);
 
         app(ModuleRollbacker::class)->rollback('blog');
 
-        $restored = \App\Models\SystemModule::query()->where('name', 'blog')->firstOrFail();
+        $restored = SystemModule::query()->where('name', 'blog')->firstOrFail();
         $this->assertSame('History Title', $restored->title);
         $this->assertSame('1.1.0', $restored->version);
         $this->assertSame(str_replace('\\', '/', $modulePath), str_replace('\\', '/', (string) $restored->path));
@@ -134,7 +134,7 @@ class ModuleRollbackTest extends TestCase
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
 
         foreach (['discovered', 'uninstalled', 'failed'] as $status) {
-            \App\Models\SystemModule::query()->where('name', 'blog')->update([
+            SystemModule::query()->where('name', 'blog')->update([
                 'status' => $status,
                 'version' => '1.1.0',
                 'last_error' => null,
@@ -214,7 +214,7 @@ class ModuleRollbackTest extends TestCase
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
-        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+        SystemModule::query()->where('name', 'blog')->update([
             'version' => '1.1.0',
             'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
         ]);
@@ -238,7 +238,7 @@ class ModuleRollbackTest extends TestCase
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
         $this->writeMigration($modulePath, '2026_07_04_000002_create_added_table.php', 'added_rollback_remove');
         $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000002_create_added_table.php', 2);
-        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+        SystemModule::query()->where('name', 'blog')->update([
             'version' => '1.1.0',
             'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
         ]);
@@ -271,7 +271,7 @@ class ModuleRollbackTest extends TestCase
         $this->writeMigration($modulePath, '2026_07_04_000003_create_second_added_table.php', 'second_added_manual_rollback');
         $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000002_create_first_added_table.php', 2);
         $this->runAndRecordMigration($modulePath, 'blog', '2026_07_04_000003_create_second_added_table.php', 2);
-        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+        SystemModule::query()->where('name', 'blog')->update([
             'version' => '1.1.0',
             'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
         ]);
@@ -314,7 +314,7 @@ class ModuleRollbackTest extends TestCase
             'batch' => 2,
             'ran_at' => time(),
         ]);
-        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+        SystemModule::query()->where('name', 'blog')->update([
             'version' => '1.1.0',
             'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
         ]);
@@ -434,7 +434,7 @@ class ModuleRollbackTest extends TestCase
             'batch' => 2,
             'ran_at' => time(),
         ]);
-        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+        SystemModule::query()->where('name', 'blog')->update([
             'version' => '1.1.0',
             'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
         ]);
@@ -489,11 +489,12 @@ class ModuleRollbackTest extends TestCase
         unlink($modulePath.DIRECTORY_SEPARATOR.'old.txt');
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'module.json', $this->manifest('blog', '1.1.0'));
         file_put_contents($modulePath.DIRECTORY_SEPARATOR.'current.txt', 'current');
-        \App\Models\SystemModule::query()->where('name', 'blog')->update([
+        SystemModule::query()->where('name', 'blog')->update([
             'version' => '1.1.0',
             'config_json' => json_decode($this->manifest('blog', '1.1.0'), true, 512, JSON_THROW_ON_ERROR),
         ]);
 
+        Cache::shouldReceive('flush')->once()->andReturnTrue();
         Cache::shouldReceive('forget')
             ->once()
             ->with(config('modules.cache_key'))

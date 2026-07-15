@@ -120,7 +120,7 @@ define(["jquery", "easy-admin"], function ($, ea) {
                             var rawName = d.name || '';
                             var name = escapeAttr(rawName);
                             var buttons = [
-                                '<a class="layui-btn layui-btn-xs" data-open="' + moduleUrl(init.detail_url, rawName) + '" data-title="模块详情">详情</a>',
+                                '<a class="layui-btn layui-btn-xs" data-open="' + moduleUrl(init.detail_url, rawName) + '" data-title="模块审核详情" data-width="92%" data-height="90%" data-review-detail="1">审核详情</a>',
                                 '<a class="layui-btn layui-btn-normal layui-btn-xs" data-open="' + moduleUrl(init.logs_url, rawName) + '" data-title="模块日志">日志</a>'
                             ];
                             if (d.pending_release_status === 'pending_review' || d.pending_release_status === 'rejected') {

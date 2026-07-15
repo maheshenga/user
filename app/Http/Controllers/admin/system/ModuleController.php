@@ -11,6 +11,7 @@ use App\Models\SystemModuleRelease;
 use App\Modules\ModuleInstaller;
 use App\Modules\ModuleManager;
 use App\Modules\ModuleReleaseManager;
+use App\Modules\ModuleReleaseSigner;
 use App\Modules\ModuleRepository;
 use App\Modules\ModuleReviewService;
 use App\Modules\ModuleRollbacker;
@@ -80,15 +81,19 @@ class ModuleController extends AdminController
             return $this->error('模块不存在');
         }
 
+        $activeRelease = $module->active_release_id === null
+            ? null
+            : SystemModuleRelease::query()->find($module->active_release_id);
+        $pendingRelease = $module->pending_release_id === null
+            ? null
+            : SystemModuleRelease::query()->find($module->pending_release_id);
+
         return $this->fetch('', [
             'module' => $module,
             'metadata' => $module->config_json ?: [],
-            'activeRelease' => $module->active_release_id === null
-                ? null
-                : SystemModuleRelease::query()->find($module->active_release_id),
-            'pendingRelease' => $module->pending_release_id === null
-                ? null
-                : SystemModuleRelease::query()->find($module->pending_release_id),
+            'activeRelease' => $activeRelease,
+            'pendingRelease' => $pendingRelease,
+            'reviewDetails' => $this->reviewDetails($module, $activeRelease, $pendingRelease),
         ]);
     }
 
@@ -274,6 +279,144 @@ class ModuleController extends AdminController
     private function moduleName(): string
     {
         return (string) request()->input('name', request()->input('module', ''));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function reviewDetails(
+        SystemModule $module,
+        ?SystemModuleRelease $activeRelease,
+        ?SystemModuleRelease $pendingRelease
+    ): array {
+        $activeManifest = is_array($activeRelease?->manifest_json)
+            ? $activeRelease->manifest_json
+            : (is_array($module->config_json) ? $module->config_json : []);
+        $pendingManifest = is_array($pendingRelease?->manifest_json)
+            ? $pendingRelease->manifest_json
+            : [];
+        $historyQuery = SystemModuleRelease::query()->where('module', $module->name);
+        $historyTotal = (clone $historyQuery)->count();
+
+        return [
+            'active' => $this->releaseSummary($activeRelease),
+            'pending' => $this->releaseSummary($pendingRelease),
+            'manifest_diff' => $this->manifestDiff(
+                $activeManifest,
+                $pendingRelease === null ? $activeManifest : $pendingManifest
+            ),
+            'active_manifest' => $activeManifest,
+            'pending_manifest' => $pendingManifest,
+            'release_history_total' => $historyTotal,
+            'release_history' => $historyQuery
+                ->orderByDesc('id')
+                ->limit(100)
+                ->get()
+                ->map(fn (SystemModuleRelease $release): array => $this->releaseSummary($release) ?? [])
+                ->all(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function releaseSummary(?SystemModuleRelease $release): ?array
+    {
+        if ($release === null) {
+            return null;
+        }
+
+        $signatureState = 'unsigned';
+        if (is_string($release->signature_hash) && $release->signature_hash !== '') {
+            try {
+                $signatureState = app(ModuleReleaseSigner::class)->verify($release) ? 'valid' : 'invalid';
+            } catch (Throwable) {
+                $signatureState = 'invalid';
+            }
+        }
+
+        return [
+            'id' => (int) $release->id,
+            'version' => (string) $release->version,
+            'status' => (string) $release->status,
+            'source_type' => (string) $release->source_type,
+            'trust_level' => (string) $release->trust_level,
+            'artifact_hash' => (string) $release->artifact_hash,
+            'signature_hash' => $release->signature_hash,
+            'signature_state' => $signatureState,
+            'uploaded_by' => $release->uploaded_by === null ? null : (int) $release->uploaded_by,
+            'reviewed_by' => $release->reviewed_by === null ? null : (int) $release->reviewed_by,
+            'reviewed_at' => $release->reviewed_at?->toDateTimeString(),
+            'review_reason' => $release->review_reason,
+            'activated_at' => $release->activated_at?->toDateTimeString(),
+            'created_at' => $release->created_at?->toDateTimeString(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $active
+     * @param  array<string, mixed>  $pending
+     * @return array<string, array<string, mixed>>
+     */
+    private function manifestDiff(array $active, array $pending): array
+    {
+        $activeApi = is_array($active['api'] ?? null) ? $active['api'] : [];
+        $pendingApi = is_array($pending['api'] ?? null) ? $pending['api'] : [];
+
+        return [
+            'permissions' => $this->listDiff($active['permissions'] ?? [], $pending['permissions'] ?? []),
+            'api_abilities' => $this->listDiff($activeApi['abilities'] ?? [], $pendingApi['abilities'] ?? []),
+            'external_domains' => $this->listDiff($active['external_domains'] ?? [], $pending['external_domains'] ?? []),
+            'dependencies' => $this->mapDiff($active['dependencies'] ?? [], $pending['dependencies'] ?? []),
+            'conflicts' => $this->mapDiff($active['conflicts'] ?? [], $pending['conflicts'] ?? []),
+            'api_quotas' => $this->mapDiff($activeApi['quotas'] ?? [], $pendingApi['quotas'] ?? []),
+        ];
+    }
+
+    /**
+     * @return array{added: array<int, string>, removed: array<int, string>, changed: array<string, never>}
+     */
+    private function listDiff(mixed $active, mixed $pending): array
+    {
+        $active = array_values(array_unique(array_filter(is_array($active) ? $active : [], 'is_string')));
+        $pending = array_values(array_unique(array_filter(is_array($pending) ? $pending : [], 'is_string')));
+        sort($active);
+        sort($pending);
+
+        return [
+            'added' => array_values(array_diff($pending, $active)),
+            'removed' => array_values(array_diff($active, $pending)),
+            'changed' => [],
+        ];
+    }
+
+    /**
+     * @return array{added: array<string, mixed>, removed: array<string, mixed>, changed: array<string, array{from: mixed, to: mixed}>}
+     */
+    private function mapDiff(mixed $active, mixed $pending): array
+    {
+        $active = is_array($active) ? $active : [];
+        $pending = is_array($pending) ? $pending : [];
+        $result = ['added' => [], 'removed' => [], 'changed' => []];
+
+        foreach ($pending as $key => $value) {
+            if (! array_key_exists($key, $active)) {
+                $result['added'][(string) $key] = $value;
+            } elseif ($active[$key] !== $value) {
+                $result['changed'][(string) $key] = ['from' => $active[$key], 'to' => $value];
+            }
+        }
+        foreach ($active as $key => $value) {
+            if (! array_key_exists($key, $pending)) {
+                $result['removed'][(string) $key] = $value;
+            }
+        }
+
+        ksort($result['added']);
+        ksort($result['removed']);
+        ksort($result['changed']);
+
+        return $result;
     }
 
     private function actorId(): ?int
