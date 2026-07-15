@@ -499,7 +499,6 @@ function expectAccountStatusScript(array $response, string $label): void
 function expectModuleCenterPage(array $response, string $label): void
 {
     expectAdminPageBody($response, $label);
-    expectBodyContains($response['body'], '模块中心', $label);
     expectBodyContains($response['body'], 'id="currentTable"', $label);
     expectBodyContains($response['body'], 'lay-filter="currentTable"', $label);
 }

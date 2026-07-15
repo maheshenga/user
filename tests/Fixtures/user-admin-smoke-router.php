@@ -334,11 +334,9 @@ if ($method === 'GET' && $path === '/admin/system/module/index') {
 <html>
 <head>
     <meta name="csrf-token" content="fixture-admin-token">
-    <title>模块中心</title>
 </head>
 <body>
 <main>
-    <h1>模块中心</h1>
     <table id="currentTable" lay-filter="currentTable"></table>
 </main>
 </body>

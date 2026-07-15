@@ -53,7 +53,7 @@ Remove the synthetic title and heading while preserving the authenticated HTML s
 Run:
 
 ```powershell
-E:\code\user\.tools\php-8.3.32\php.exe vendor\bin\phpunit tests\Feature\User\UserAdminSmokeScriptTest.php --filter test_user_admin_smoke_script_passes_against_fixture_server
+E:\code\user\.tools\php-8.3.32\php.exe -d extension=pdo_sqlite -d extension=sqlite3 vendor\bin\phpunit tests\Feature\User\UserAdminSmokeScriptTest.php --filter test_user_admin_smoke_script_passes_against_fixture_server
 ```
 
 Expected: FAIL because `expectModuleCenterPage` still requires `模块中心`.
@@ -76,7 +76,7 @@ function expectModuleCenterPage(array $response, string $label): void
 Run:
 
 ```powershell
-E:\code\user\.tools\php-8.3.32\php.exe vendor\bin\phpunit tests\Feature\User\UserAdminSmokeScriptTest.php tests\Feature\Modules\ModuleCenterControllerTest.php tests\Feature\User\DeployAcceptanceScriptTest.php
+E:\code\user\.tools\php-8.3.32\php.exe -d extension=pdo_sqlite -d extension=sqlite3 vendor\bin\phpunit tests\Feature\User\UserAdminSmokeScriptTest.php tests\Feature\Modules\ModuleCenterControllerTest.php tests\Feature\User\DeployAcceptanceScriptTest.php
 ```
 
 Expected: all tests pass with zero failures.
