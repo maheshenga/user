@@ -62,6 +62,7 @@ class UserVipActivationTest extends TestCase
             'source_type',
             'source_id',
             'vip_plan_id',
+            'vip_level',
             'before_expires_at',
             'after_expires_at',
             'duration_days',
@@ -71,6 +72,7 @@ class UserVipActivationTest extends TestCase
         $this->assertTrue(Schema::hasColumns('activation_code_batch', [
             'name',
             'vip_plan_id',
+            'vip_level',
             'duration_days',
             'total_count',
             'generated_count',
@@ -141,7 +143,7 @@ class UserVipActivationTest extends TestCase
 
     public function test_user_vip_record_uses_sql_datetime_format_for_expiry_columns(): void
     {
-        $record = new UserVipRecord();
+        $record = new UserVipRecord;
 
         $this->assertSame('Y-m-d H:i:s', $record->getDateFormat());
     }
@@ -165,6 +167,49 @@ class UserVipActivationTest extends TestCase
 
         $account = UserAccount::query()->findOrFail($user['user']['id']);
         $this->assertSame(3, (int) $account->vip_level);
+    }
+
+    public function test_expired_higher_level_does_not_leak_into_new_grant(): void
+    {
+        $user = $this->registerUser('expired-tier@example.com');
+        $premium = $this->createVipPlan('Premium VIP', 3, 1);
+        $basic = $this->createVipPlan('Basic VIP', 1, 30);
+
+        app(VipService::class)->grant($user['user']['id'], $premium->id, 'activation_code', 9001);
+        Carbon::setTestNow(Carbon::now()->addDays(2));
+
+        $grant = app(VipService::class)->grant($user['user']['id'], $basic->id, 'activation_code', 9002);
+
+        $this->assertSame(1, $grant['vip_level']);
+        $this->assertSame('2026-08-06 10:00:00', Carbon::parse($grant['vip_expires_at'])->format('Y-m-d H:i:s'));
+        $this->assertSame(1, (int) UserVipRecord::query()->findOrFail($grant['vip_record_id'])->vip_level);
+    }
+
+    public function test_duplicate_source_grant_is_idempotent(): void
+    {
+        $user = $this->registerUser('idempotent-vip@example.com');
+        $plan = $this->createVipPlan('Idempotent Monthly VIP', 1, 30);
+
+        $first = app(VipService::class)->grant($user['user']['id'], $plan->id, 'vip_order', 7001);
+        $second = app(VipService::class)->grant($user['user']['id'], $plan->id, 'vip_order', 7001);
+
+        $this->assertSame($first['vip_record_id'], $second['vip_record_id']);
+        $this->assertSame($first['vip_expires_at'], $second['vip_expires_at']);
+        $this->assertSame(1, UserVipRecord::query()->where('user_id', $user['user']['id'])->count());
+    }
+
+    public function test_vip_grant_source_cannot_be_reused_by_another_user(): void
+    {
+        $firstUser = $this->registerUser('vip-source-owner@example.com');
+        $secondUser = $this->registerUser('vip-source-attacker@example.com');
+        $plan = $this->createVipPlan('Source Ownership VIP', 1, 30);
+
+        app(VipService::class)->grant($firstUser['user']['id'], $plan->id, 'vip_order', 7101);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('VIP grant source already belongs to another user.');
+
+        app(VipService::class)->grant($secondUser['user']['id'], $plan->id, 'vip_order', 7101);
     }
 
     public function test_vip_service_summary_returns_current_status(): void
@@ -252,6 +297,43 @@ class UserVipActivationTest extends TestCase
             'redeem_ip' => '127.0.0.5',
         ]);
         $this->assertSame(1, UserVipRecord::query()->where('user_id', $user['user']['id'])->count());
+    }
+
+    public function test_activation_redemption_uses_immutable_batch_entitlement_snapshot(): void
+    {
+        $user = $this->registerUser('activation-snapshot@example.com');
+        $plan = $this->createVipPlan('Snapshot VIP', 2, 30);
+        $batch = app(ActivationCodeService::class)->createBatch([
+            'name' => 'Snapshot Campaign',
+            'vip_plan_id' => $plan->id,
+            'duration_days' => 7,
+            'total_count' => 1,
+            'status' => 'active',
+        ], 9);
+        $code = app(ActivationCodeService::class)->generateCodes($batch['id'], 1, 9)['codes'][0];
+
+        $plan->forceFill([
+            'level' => 5,
+            'duration_days' => 365,
+            'update_time' => time(),
+        ])->save();
+
+        $result = app(ActivationCodeService::class)->redeem([
+            'code' => $code,
+        ], $user['user']['id'], '127.0.0.10');
+
+        $this->assertSame(2, $result['vip']['vip_level']);
+        $this->assertSame('2026-07-12 10:00:00', Carbon::parse($result['vip']['vip_expires_at'])->format('Y-m-d H:i:s'));
+        $this->assertDatabaseHas('activation_code_batch', [
+            'id' => $batch['id'],
+            'vip_level' => 2,
+            'duration_days' => 7,
+        ]);
+        $this->assertDatabaseHas('user_vip_record', [
+            'id' => $result['vip']['vip_record_id'],
+            'vip_level' => 2,
+            'duration_days' => 7,
+        ]);
     }
 
     public function test_activation_service_rejects_reused_single_use_code_and_writes_failed_audit(): void

@@ -11,26 +11,55 @@ use InvalidArgumentException;
 
 final class VipService
 {
-    public function grant(int $userId, int $vipPlanId, string $sourceType, int $sourceId): array
-    {
-        return DB::transaction(function () use ($userId, $vipPlanId, $sourceType, $sourceId): array {
+    public function grant(
+        int $userId,
+        int $vipPlanId,
+        string $sourceType,
+        int $sourceId,
+        ?int $durationDays = null,
+        ?int $vipLevel = null
+    ): array {
+        return DB::transaction(function () use ($userId, $vipPlanId, $sourceType, $sourceId, $durationDays, $vipLevel): array {
             $user = UserAccount::query()->lockForUpdate()->find($userId);
             if ($user === null) {
                 throw new InvalidArgumentException('User not found.');
             }
 
+            $existing = UserVipRecord::query()
+                ->where('source_type', $sourceType)
+                ->where('source_id', $sourceId)
+                ->lockForUpdate()
+                ->first();
+            if ($existing !== null) {
+                if ((int) $existing->user_id !== $userId) {
+                    throw new InvalidArgumentException('VIP grant source already belongs to another user.');
+                }
+
+                return $this->publicGrant($user, $existing);
+            }
+
             $plan = VipPlan::query()->find($vipPlanId);
-            if ($plan === null || $plan->status !== 'active') {
+            $hasCompleteSnapshot = $durationDays !== null && $vipLevel !== null;
+            if ($plan === null || (! $hasCompleteSnapshot && $plan->status !== 'active')) {
                 throw new InvalidArgumentException('VIP plan is not active.');
+            }
+
+            $grantDurationDays = $durationDays ?? (int) $plan->duration_days;
+            $grantVipLevel = $vipLevel ?? (int) $plan->level;
+            if ($grantDurationDays <= 0 || $grantVipLevel <= 0) {
+                throw new InvalidArgumentException('VIP entitlement snapshot is invalid.');
             }
 
             $now = Carbon::now();
             $beforeExpiresAt = $user->vip_expires_at === null ? null : Carbon::parse($user->vip_expires_at);
-            $startsAt = $beforeExpiresAt !== null && $beforeExpiresAt->greaterThan($now)
+            $hasActiveVip = $beforeExpiresAt !== null && $beforeExpiresAt->greaterThan($now);
+            $startsAt = $hasActiveVip
                 ? $beforeExpiresAt->copy()
                 : $now->copy();
-            $afterExpiresAt = $startsAt->copy()->addDays((int) $plan->duration_days);
-            $vipLevel = max((int) $user->vip_level, (int) $plan->level);
+            $afterExpiresAt = $startsAt->copy()->addDays($grantDurationDays);
+            $effectiveVipLevel = $hasActiveVip
+                ? max((int) $user->vip_level, $grantVipLevel)
+                : $grantVipLevel;
             $timestamp = time();
 
             $record = UserVipRecord::query()->create([
@@ -38,15 +67,16 @@ final class VipService
                 'source_type' => $sourceType,
                 'source_id' => $sourceId,
                 'vip_plan_id' => $plan->id,
+                'vip_level' => $grantVipLevel,
                 'before_expires_at' => $beforeExpiresAt,
                 'after_expires_at' => $afterExpiresAt,
-                'duration_days' => (int) $plan->duration_days,
+                'duration_days' => $grantDurationDays,
                 'status' => 'active',
                 'create_time' => $timestamp,
             ]);
 
             $user->forceFill([
-                'vip_level' => $vipLevel,
+                'vip_level' => $effectiveVipLevel,
                 'vip_expires_at' => $afterExpiresAt,
                 'update_time' => $timestamp,
             ])->save();

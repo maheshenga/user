@@ -26,7 +26,7 @@
 - Consumes: `VipService::grant(int, int, string, int, ?int, ?int): array`
 - Produces: regression coverage for expiry-aware levels, snapshots, and source idempotency.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Add tests equivalent to:
 
@@ -58,7 +58,7 @@ public function test_duplicate_source_grant_is_idempotent(): void
 
 Add an activation redemption test that creates a 7-day, level-2 batch from a 30-day plan, edits the plan to level 5 and 365 days, then verifies the grant still lasts 7 days at level 2. Assert both batch and VIP record snapshots.
 
-- [ ] **Step 2: Run the focused test file**
+- [x] **Step 2: Run the focused test file**
 
 Run:
 
@@ -77,15 +77,15 @@ Expected: new assertions fail because `vip_level` snapshot storage and snapshot-
 **Interfaces:**
 - Produces: `activation_code_batch.vip_level`, `user_vip_record.vip_level`, and unique `user_vip_record(source_type, source_id)`.
 
-- [ ] **Step 1: Add the migration**
+- [x] **Step 1: Add the migration**
 
 Add `vip_level` to both snapshot tables, backfill each from `vip_plan`, validate duplicate VIP sources, and add the unique source index. Use `Schema::hasColumn()` guards and row-by-row portable backfills so SQLite and MySQL follow the same path.
 
-- [ ] **Step 2: Add the model cast**
+- [x] **Step 2: Add the model cast**
 
 Cast `vip_level` and `duration_days` to integers on `ActivationCodeBatch`; cast `vip_level` and `duration_days` on `UserVipRecord`.
 
-- [ ] **Step 3: Run the focused test file**
+- [x] **Step 3: Run the focused test file**
 
 Expected: schema assertions pass while behavior tests still fail.
 
@@ -98,11 +98,11 @@ Expected: schema assertions pass while behavior tests still fail.
 **Interfaces:**
 - Produces: `VipService::grant(..., ?int $durationDays = null, ?int $vipLevel = null): array`.
 
-- [ ] **Step 1: Implement idempotent source lookup**
+- [x] **Step 1: Implement idempotent source lookup**
 
 After locking the user, query `UserVipRecord` by `source_type` and `source_id` with `lockForUpdate()`. Return the existing record when it belongs to the same user; reject a cross-user source collision.
 
-- [ ] **Step 2: Implement expiry-aware level selection**
+- [x] **Step 2: Implement expiry-aware level selection**
 
 Resolve `$grantDurationDays` and `$grantVipLevel` from explicit snapshots or the plan, require both to be positive, and calculate:
 
@@ -115,7 +115,7 @@ $effectiveVipLevel = $hasActiveVip
     : $grantVipLevel;
 ```
 
-- [ ] **Step 3: Pass batch snapshots during redemption**
+- [x] **Step 3: Pass batch snapshots during redemption**
 
 Capture `vip_level` at batch creation, expose it in `publicBatch()`, and call:
 
@@ -130,7 +130,7 @@ $this->vip->grant(
 );
 ```
 
-- [ ] **Step 4: Run focused and related tests**
+- [x] **Step 4: Run focused and related tests**
 
 Run the VIP activation, affiliate balance, Qingyu module, and admin activation test files. Expected: all pass.
 
@@ -139,15 +139,15 @@ Run the VIP activation, affiliate balance, Qingyu module, and admin activation t
 **Files:**
 - Review all files changed by Tasks 1-3.
 
-- [ ] **Step 1: Run formatting and complete test suite**
+- [x] **Step 1: Run formatting and complete test suite**
 
 Run Pint on changed PHP files, then PHPUnit. Expected: zero failures.
 
-- [ ] **Step 2: Inspect migration compatibility and diff**
+- [x] **Step 2: Inspect migration compatibility and diff**
 
 Verify SQLite and MySQL paths, response compatibility, no secrets, and no unrelated changes.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add app/User app/Models database/migrations tests/Feature/User docs/superpowers

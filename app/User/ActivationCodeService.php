@@ -36,12 +36,19 @@ final class ActivationCodeService
             throw new InvalidArgumentException('生成总数必须大于 0。');
         }
 
+        $durationDays = (int) ($payload['duration_days'] ?? $plan->duration_days);
+        $vipLevel = (int) $plan->level;
+        if ($durationDays <= 0 || $vipLevel <= 0) {
+            throw new InvalidArgumentException('VIP 权益配置无效。');
+        }
+
         $now = time();
         $batch = ActivationCodeBatch::query()->create([
             'owner_module' => $ownerModule,
             'name' => $name,
             'vip_plan_id' => $plan->id,
-            'duration_days' => (int) ($payload['duration_days'] ?? $plan->duration_days),
+            'vip_level' => $vipLevel,
+            'duration_days' => $durationDays,
             'total_count' => $totalCount,
             'generated_count' => 0,
             'status' => (string) ($payload['status'] ?? 'draft'),
@@ -155,7 +162,14 @@ final class ActivationCodeService
                 'update_time' => $now,
             ])->save();
 
-            $vip = $this->vip->grant($userId, (int) $batch->vip_plan_id, 'activation_code', (int) $code->id);
+            $vip = $this->vip->grant(
+                $userId,
+                (int) $batch->vip_plan_id,
+                'activation_code',
+                (int) $code->id,
+                (int) $batch->duration_days > 0 ? (int) $batch->duration_days : null,
+                (int) $batch->vip_level > 0 ? (int) $batch->vip_level : null,
+            );
             $commissions = $this->affiliate->createForActivationCode(
                 buyerUserId: $userId,
                 activationCodeId: (int) $code->id,
@@ -306,6 +320,7 @@ final class ActivationCodeService
             'owner_module' => (string) ($batch->owner_module ?: 'core'),
             'name' => $batch->name,
             'vip_plan_id' => (int) $batch->vip_plan_id,
+            'vip_level' => (int) $batch->vip_level,
             'duration_days' => (int) $batch->duration_days,
             'total_count' => (int) $batch->total_count,
             'generated_count' => (int) $batch->generated_count,

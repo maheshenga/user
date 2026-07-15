@@ -11,6 +11,8 @@ class ActivationCodeBatch extends BaseModel
     public static function bootSoftDeletes() {}
 
     protected $casts = [
+        'vip_level' => 'integer',
+        'duration_days' => 'integer',
         'is_commissionable' => 'boolean',
         'first_level_reward' => 'decimal:2',
         'second_level_reward' => 'decimal:2',
