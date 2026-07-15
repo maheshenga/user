@@ -9,6 +9,7 @@ return [
     'production_requires_signature_for' => ['partner', 'community'],
     'production_in_process_trust_levels' => ['core', 'official', 'private'],
     'signing_key' => env('MODULE_SIGNING_KEY', ''),
+    'registration_ticket_key' => env('MODULE_REGISTRATION_TICKET_KEY', ''),
     'reserved_admin_prefixes' => [],
     'allowed_permissions' => [
         'menu:write',

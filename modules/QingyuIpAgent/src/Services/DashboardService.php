@@ -4,8 +4,9 @@ namespace Modules\QingyuIpAgent\Services;
 
 use App\Models\ActivationCodeBatch;
 use App\Models\ActivationCodeRedemption;
-use App\Models\UserAccount;
+use App\Models\UserModuleMembership;
 use App\Models\UserVipRecord;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Schema;
 
 class DashboardService
@@ -22,22 +23,30 @@ class DashboardService
 
     private function memberCount(): int
     {
-        if (! Schema::hasTable('user_account')) {
+        if (! Schema::hasTable('user_module_membership')) {
             return 0;
         }
 
-        return (int) UserAccount::query()->where('source_module', 'qingyu_ip_agent')->count();
+        return (int) $this->memberships()->count();
     }
 
     private function vipRecordCount(): int
     {
-        if (! Schema::hasTable('user_vip_record') || ! Schema::hasTable('user_account')) {
+        if (! Schema::hasTable('user_vip_record') || ! Schema::hasTable('user_module_membership')) {
             return 0;
         }
 
         return (int) UserVipRecord::query()
-            ->whereIn('user_id', UserAccount::query()->select('id')->where('source_module', 'qingyu_ip_agent'))
+            ->whereIn('user_id', $this->memberships()->select('user_id'))
             ->count();
+    }
+
+    private function memberships(): Builder
+    {
+        return UserModuleMembership::query()
+            ->where('module', 'qingyu_ip_agent')
+            ->where('status', 'active')
+            ->whereNull('revoked_at');
     }
 
     private function ownedCount(string $model, string $table): int

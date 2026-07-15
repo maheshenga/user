@@ -5,13 +5,16 @@ namespace App\Http\Controllers\Api\V1;
 use App\Models\UserAccount;
 use App\Models\UserApiSession;
 use App\User\ModuleApiPolicy;
+use App\User\ModuleRegistrationTicketService;
 use App\User\PasswordResetService;
 use App\User\UserApiException;
 use App\User\UserApiProfileService;
 use App\User\UserApiTokenService;
 use App\User\UserAuthService;
+use App\User\UserModuleMembershipService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use InvalidArgumentException;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -23,7 +26,8 @@ class AuthController extends ApiController
         UserAuthService $auth,
         UserApiTokenService $tokens,
         UserApiProfileService $profiles,
-        ModuleApiPolicy $modules
+        ModuleApiPolicy $modules,
+        ModuleRegistrationTicketService $tickets
     ): JsonResponse {
         $validator = Validator::make($request->all(), $this->credentialRules(true));
         if ($validator->fails()) {
@@ -33,36 +37,90 @@ class AuthController extends ApiController
         $payload = $validator->validated();
 
         try {
-            $modules->assertAvailable($payload['module']);
-            $registered = $auth->registerWithToken(
-                $payload,
-                $request->ip(),
-                $payload['module'],
-                fn (UserAccount $user): array => $tokens->issue(
-                    $user,
-                    $payload['module'],
-                    $this->device($payload),
-                    $request->ip(),
-                    (string) $request->userAgent()
-                )
-            );
-            $user = UserAccount::query()->findOrFail((int) $registered['user']['id']);
+            return DB::transaction(function () use ($payload, $request, $auth, $tokens, $profiles, $modules, $tickets): JsonResponse {
+                $claims = $tickets->consume((string) $payload['registration_ticket']);
+                if (is_string($claims['invite_code'] ?? null)) {
+                    $payload['invite_code'] = $claims['invite_code'];
+                }
 
-            return $this->success(
-                $profiles->payload($user) + ['tokens' => $registered['tokens']],
-                '注册成功。',
-                201
+                return $this->registerForResolvedModule(
+                    $request,
+                    $payload,
+                    (string) $claims['module'],
+                    $auth,
+                    $tokens,
+                    $profiles,
+                    $modules
+                );
+            });
+        } catch (UserApiException $exception) {
+            return $this->apiException($exception);
+        } catch (InvalidArgumentException $exception) {
+            return $this->registrationException($exception);
+        }
+    }
+
+    public function registerForModule(
+        Request $request,
+        string $module,
+        UserAuthService $auth,
+        UserApiTokenService $tokens,
+        UserApiProfileService $profiles,
+        ModuleApiPolicy $modules
+    ): JsonResponse {
+        $validator = Validator::make($request->all(), $this->credentialRules(true, true));
+        if ($validator->fails()) {
+            return $this->validationError($validator);
+        }
+
+        try {
+            return $this->registerForResolvedModule(
+                $request,
+                $validator->validated(),
+                $module,
+                $auth,
+                $tokens,
+                $profiles,
+                $modules
             );
         } catch (UserApiException $exception) {
             return $this->apiException($exception);
         } catch (InvalidArgumentException $exception) {
-            $duplicate = str_contains($exception->getMessage(), '已存在');
+            return $this->registrationException($exception);
+        }
+    }
 
-            return $this->error(
-                $exception->getMessage(),
-                $duplicate ? 409 : 422,
-                $duplicate ? 'account_exists' : 'registration_failed'
-            );
+    public function issueRegistrationTicket(
+        Request $request,
+        string $module,
+        ModuleApiPolicy $modules,
+        ModuleRegistrationTicketService $tickets
+    ): JsonResponse {
+        $validator = Validator::make($request->all(), [
+            'invite_code' => 'nullable|string|max:40',
+            'campaign' => 'nullable|string|max:120',
+            'expires_in' => 'nullable|integer|min:60|max:1800',
+        ]);
+        if ($validator->fails()) {
+            return $this->validationError($validator);
+        }
+
+        try {
+            $modules->assertAvailable($module);
+            $payload = $validator->validated();
+            $expiresAt = now()->addSeconds((int) ($payload['expires_in'] ?? 300));
+            $claims = array_filter([
+                'invite_code' => $payload['invite_code'] ?? null,
+                'campaign' => $payload['campaign'] ?? null,
+            ], static fn (mixed $value): bool => $value !== null && $value !== '');
+            $ticket = $tickets->issue($module, $claims, $expiresAt);
+
+            return $this->success([
+                'ticket' => $ticket,
+                'expires_at' => $expiresAt->toIso8601String(),
+            ], '注册票据已签发。', 201);
+        } catch (UserApiException $exception) {
+            return $this->apiException($exception);
         }
     }
 
@@ -70,7 +128,9 @@ class AuthController extends ApiController
         Request $request,
         UserAuthService $auth,
         UserApiTokenService $tokens,
-        UserApiProfileService $profiles
+        UserApiProfileService $profiles,
+        ModuleApiPolicy $modules,
+        UserModuleMembershipService $memberships
     ): JsonResponse {
         $validator = Validator::make($request->all(), $this->credentialRules(false));
         if ($validator->fails()) {
@@ -80,29 +140,67 @@ class AuthController extends ApiController
         $payload = $validator->validated();
 
         try {
-            $authenticated = $auth->authenticate($payload, $request->ip());
-            $user = UserAccount::query()->findOrFail((int) $authenticated['user']['id']);
-            $tokenBundle = $tokens->issue(
-                $user,
-                $payload['module'],
-                $this->device($payload),
-                $request->ip(),
-                (string) $request->userAgent()
-            );
+            $module = (string) $payload['module'];
+            $modules->assertAvailable($module);
 
-            return $this->success($profiles->payload($user) + ['tokens' => $tokenBundle], '登录成功。');
+            return $this->loginForResolvedModule(
+                $request,
+                $payload,
+                $module,
+                false,
+                $auth,
+                $tokens,
+                $profiles,
+                $memberships
+            );
         } catch (UserApiException $exception) {
             return $this->apiException($exception);
         } catch (InvalidArgumentException $exception) {
-            $message = $exception->getMessage();
-            if (str_contains($message, '15 分钟')) {
-                return $this->error($message, 429, 'login_rate_limited');
-            }
-            if (str_contains($message, '不可登录')) {
-                return $this->error($message, 403, 'account_unavailable');
+            return $this->loginException($exception);
+        }
+    }
+
+    public function loginForModule(
+        Request $request,
+        string $module,
+        UserAuthService $auth,
+        UserApiTokenService $tokens,
+        UserApiProfileService $profiles,
+        ModuleApiPolicy $modules,
+        UserModuleMembershipService $memberships
+    ): JsonResponse {
+        $validator = Validator::make($request->all(), $this->credentialRules(false, true));
+        if ($validator->fails()) {
+            return $this->validationError($validator);
+        }
+
+        try {
+            $modules->assertAvailable($module);
+            $result = DB::transaction(function () use ($request, $validator, $module, $auth, $tokens, $profiles, $memberships): array {
+                try {
+                    return ['response' => $this->loginForResolvedModule(
+                        $request,
+                        $validator->validated(),
+                        $module,
+                        true,
+                        $auth,
+                        $tokens,
+                        $profiles,
+                        $memberships
+                    )];
+                } catch (InvalidArgumentException $exception) {
+                    return ['error' => $exception];
+                }
+            });
+            if (($result['error'] ?? null) instanceof InvalidArgumentException) {
+                throw $result['error'];
             }
 
-            return $this->error($message, 401, 'invalid_credentials');
+            return $result['response'];
+        } catch (UserApiException $exception) {
+            return $this->apiException($exception);
+        } catch (InvalidArgumentException $exception) {
+            return $this->loginException($exception);
         }
     }
 
@@ -193,26 +291,114 @@ class AuthController extends ApiController
     /**
      * @return array<string, mixed>
      */
-    private function credentialRules(bool $registration): array
+    private function credentialRules(bool $registration, bool $routeBound = false): array
     {
         $rules = [
             'password' => 'required|string|min:6|max:72',
-            'module' => 'required|string|max:80',
             'device_id' => 'required|string|max:128',
             'device_name' => 'nullable|string|max:160',
         ];
 
         if ($registration) {
-            return $rules + [
+            $rules += [
                 'mobile' => 'nullable|string|max:32|required_without:email',
                 'email' => 'nullable|email|max:180|required_without:mobile',
                 'invite_code' => 'nullable|string|max:40',
             ];
+
+            return $routeBound ? $rules : $rules + [
+                'registration_ticket' => 'required|string|max:8192',
+            ];
         }
 
-        return $rules + [
+        $rules += [
             'account' => 'required|string|max:180',
         ];
+
+        return $routeBound ? $rules : $rules + [
+            'module' => 'required|string|max:80',
+        ];
+    }
+
+    private function registerForResolvedModule(
+        Request $request,
+        array $payload,
+        string $module,
+        UserAuthService $auth,
+        UserApiTokenService $tokens,
+        UserApiProfileService $profiles,
+        ModuleApiPolicy $modules
+    ): JsonResponse {
+        $modules->assertAvailable($module);
+        $registered = $auth->registerWithToken(
+            $payload,
+            $request->ip(),
+            $module,
+            fn (UserAccount $user): array => $tokens->issue(
+                $user,
+                $module,
+                $this->device($payload),
+                $request->ip(),
+                (string) $request->userAgent()
+            )
+        );
+        $user = UserAccount::query()->findOrFail((int) $registered['user']['id']);
+
+        return $this->success(
+            $profiles->payload($user) + ['tokens' => $registered['tokens']],
+            '注册成功。',
+            201
+        );
+    }
+
+    private function loginForResolvedModule(
+        Request $request,
+        array $payload,
+        string $module,
+        bool $joinModule,
+        UserAuthService $auth,
+        UserApiTokenService $tokens,
+        UserApiProfileService $profiles,
+        UserModuleMembershipService $memberships
+    ): JsonResponse {
+        $authenticated = $auth->authenticate($payload, $request->ip());
+        $user = UserAccount::query()->findOrFail((int) $authenticated['user']['id']);
+        if ($joinModule) {
+            $memberships->join((int) $user->id, $module, 'route_login');
+        }
+        $tokenBundle = $tokens->issue(
+            $user,
+            $module,
+            $this->device($payload),
+            $request->ip(),
+            (string) $request->userAgent()
+        );
+
+        return $this->success($profiles->payload($user) + ['tokens' => $tokenBundle], '登录成功。');
+    }
+
+    private function registrationException(InvalidArgumentException $exception): JsonResponse
+    {
+        $duplicate = str_contains($exception->getMessage(), '已存在');
+
+        return $this->error(
+            $exception->getMessage(),
+            $duplicate ? 409 : 422,
+            $duplicate ? 'account_exists' : 'registration_failed'
+        );
+    }
+
+    private function loginException(InvalidArgumentException $exception): JsonResponse
+    {
+        $message = $exception->getMessage();
+        if (str_contains($message, '15 分钟')) {
+            return $this->error($message, 429, 'login_rate_limited');
+        }
+        if (str_contains($message, '不可登录')) {
+            return $this->error($message, 403, 'account_unavailable');
+        }
+
+        return $this->error($message, 401, 'invalid_credentials');
     }
 
     /**

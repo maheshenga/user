@@ -6,7 +6,9 @@ use App\Contracts\Modules\ActivationCodeGateway;
 use App\Contracts\Modules\VipGateway;
 use App\Models\UserAccount;
 use App\User\PasswordResetService;
+use App\User\UserApiException;
 use App\User\UserAuthService;
+use App\User\UserModuleMembershipService;
 use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 
@@ -16,6 +18,7 @@ class ClientApiService
 
     public function __construct(
         private readonly UserAuthService $auth,
+        private readonly UserModuleMembershipService $memberships,
         private readonly PasswordResetService $passwords,
         private readonly ActivationCodeGateway $activationCodes,
         private readonly VipGateway $vip,
@@ -55,7 +58,9 @@ class ClientApiService
     {
         return $this->recorded('client.login', null, null, $payload, function () use ($payload, $ip): array {
             $result = $this->auth->login($payload, $ip);
-            if ((string) ($result['user']['source_module'] ?? 'core') !== self::MODULE) {
+            try {
+                $this->memberships->assertActive((int) $result['user']['id'], self::MODULE);
+            } catch (UserApiException) {
                 $this->auth->logout();
                 throw new InvalidArgumentException('账号或密码错误。');
             }
@@ -206,8 +211,13 @@ class ClientApiService
         if (
             $account === null
             || ! in_array((string) $account->status, ['active'], true)
-            || (string) ($account->source_module ?: 'core') !== self::MODULE
         ) {
+            session()->forget('user');
+            throw new InvalidArgumentException('请先登录。');
+        }
+        try {
+            $this->memberships->assertActive((int) $account->id, self::MODULE);
+        } catch (UserApiException) {
             session()->forget('user');
             throw new InvalidArgumentException('请先登录。');
         }
@@ -231,8 +241,12 @@ class ClientApiService
         if (
             $account === null
             || ! in_array((string) $account->status, ['active'], true)
-            || (string) ($account->source_module ?: 'core') !== self::MODULE
         ) {
+            throw new InvalidArgumentException('请先登录。');
+        }
+        try {
+            $this->memberships->assertActive((int) $account->id, self::MODULE);
+        } catch (UserApiException) {
             throw new InvalidArgumentException('请先登录。');
         }
 

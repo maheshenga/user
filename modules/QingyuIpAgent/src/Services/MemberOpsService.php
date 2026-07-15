@@ -4,6 +4,7 @@ namespace Modules\QingyuIpAgent\Services;
 
 use App\Contracts\Modules\VipGateway;
 use App\Models\UserAccount;
+use Illuminate\Database\Eloquent\Builder;
 
 class MemberOpsService
 {
@@ -16,7 +17,7 @@ class MemberOpsService
 
     public function paginate(array $filters, int $page, int $limit): array
     {
-        $query = UserAccount::query()->where('source_module', self::MODULE);
+        $query = $this->membersQuery();
         if (! empty($filters['keyword'])) {
             $keyword = (string) $filters['keyword'];
             $query->where(function ($query) use ($keyword): void {
@@ -41,14 +42,14 @@ class MemberOpsService
 
     public function detail(int $userId): array
     {
-        $user = UserAccount::query()->where('source_module', self::MODULE)->findOrFail($userId);
+        $user = $this->membersQuery()->findOrFail($userId);
 
         return $this->publicUser($user) + ['vip' => $this->vip->summary($userId)];
     }
 
     public function grantVip(int $userId, int $vipPlanId, int $adminId): array
     {
-        UserAccount::query()->where('source_module', self::MODULE)->findOrFail($userId);
+        $this->membersQuery()->findOrFail($userId);
 
         try {
             $result = $this->vip->grant($userId, $vipPlanId, 'qingyu_ip_agent_admin_grant', $adminId);
@@ -81,6 +82,15 @@ class MemberOpsService
             'vip_expires_at' => $user->vip_expires_at?->toDateTimeString(),
             'create_time' => (string) $user->create_time,
         ];
+    }
+
+    private function membersQuery(): Builder
+    {
+        return UserAccount::query()->whereHas('moduleMemberships', function (Builder $query): void {
+            $query->where('module', self::MODULE)
+                ->where('status', 'active')
+                ->whereNull('revoked_at');
+        });
     }
 
     private function maskMobile(string $value): ?string

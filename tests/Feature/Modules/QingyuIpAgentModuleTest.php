@@ -6,12 +6,12 @@ use App\Http\Middleware\CheckAuth;
 use App\Http\Middleware\CheckInstall;
 use App\Http\Middleware\RateLimiting;
 use App\Http\Middleware\SystemLog;
-use App\Models\UserAccount;
 use App\Models\SystemModule;
+use App\Models\UserAccount;
 use App\Models\VipPlan;
 use App\Modules\ModuleAutoloader;
-use App\Modules\ModuleInstaller;
 use App\Modules\ModuleExecutionContext;
+use App\Modules\ModuleInstaller;
 use App\Modules\ModuleManager;
 use App\Modules\ModuleRepository;
 use App\Modules\ModuleViewRegistrar;
@@ -19,6 +19,7 @@ use App\Providers\AppServiceProvider;
 use App\User\ActivationCodeService;
 use App\User\UserApiTokenService;
 use App\User\UserAuthService;
+use App\User\UserModuleMembershipService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -469,17 +470,40 @@ class QingyuIpAgentModuleTest extends TestCase
             'email' => 'qingyu-owner@example.com',
             'password' => 'secret123',
         ], '127.0.0.1', 'qingyu_ip_agent');
-        $coreUser = app(UserAuthService::class)->register([
-            'email' => 'core-owner@example.com',
+        $coreMember = app(UserAuthService::class)->register([
+            'email' => 'core-member@example.com',
             'password' => 'secret123',
         ], '127.0.0.1', 'core');
+        $nonMember = app(UserAuthService::class)->register([
+            'email' => 'core-non-member@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1', 'core');
+        app(UserModuleMembershipService::class)->grant(
+            (int) $coreMember['user']['id'],
+            'qingyu_ip_agent',
+            'admin_grant',
+            1
+        );
 
         $members = app(MemberOpsService::class)->paginate([], 1, 20);
-        $this->assertSame(1, $members['total']);
-        $this->assertSame('qingyu_ip_agent', $members['list'][0]['source_module']);
+        $this->assertSame(2, $members['total']);
+        $memberIds = array_column($members['list'], 'id');
+        $this->assertContains((int) $qingyuUser['user']['id'], $memberIds);
+        $this->assertContains((int) $coreMember['user']['id'], $memberIds);
+        $this->assertNotContains((int) $nonMember['user']['id'], $memberIds);
+        $this->assertSame(
+            'core',
+            collect($members['list'])->firstWhere('id', (int) $coreMember['user']['id'])['source_module']
+        );
+        $this->assertSame(
+            (int) $coreMember['user']['id'],
+            $runAsModule(
+                fn (): array => app(MemberOpsService::class)->detail((int) $coreMember['user']['id'])
+            )['id']
+        );
         try {
-            app(MemberOpsService::class)->detail((int) $coreUser['user']['id']);
-            $this->fail('Expected Qingyu member detail to reject a core user.');
+            app(MemberOpsService::class)->detail((int) $nonMember['user']['id']);
+            $this->fail('Expected Qingyu member detail to reject a non-member.');
         } catch (ModelNotFoundException) {
             $this->addToAssertionCount(1);
         }
@@ -515,7 +539,7 @@ class QingyuIpAgentModuleTest extends TestCase
             'owner_module' => 'qingyu_ip_agent',
         ]);
         $this->assertSame(1, app(ActivationCodeOpsService::class)->batches([], 1, 20)['total']);
-        $this->assertSame(1, app(DashboardService::class)->summary()['member_count']);
+        $this->assertSame(2, app(DashboardService::class)->summary()['member_count']);
         $this->assertSame(1, app(DashboardService::class)->summary()['activation_batch_count']);
 
         try {
@@ -645,6 +669,36 @@ class QingyuIpAgentModuleTest extends TestCase
             ->assertJsonPath('code', 0)
             ->assertJsonPath('msg', '账号或密码错误。')
             ->assertSessionMissing('user');
+    }
+
+    public function test_qingyu_legacy_client_login_accepts_core_attributed_member(): void
+    {
+        $this->withoutMiddleware([
+            CheckInstall::class,
+            RateLimiting::class,
+            SystemLog::class,
+            CheckAuth::class,
+        ]);
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+        $registered = app(UserAuthService::class)->register([
+            'email' => 'core-attributed-qingyu-member@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1', 'core');
+        app(UserModuleMembershipService::class)->grant(
+            (int) $registered['user']['id'],
+            'qingyu_ip_agent',
+            'admin_grant',
+            1
+        );
+
+        $this->postJson('/admin/qingyu_ip_agent/client/login', [
+            'account' => 'core-attributed-qingyu-member@example.com',
+            'password' => 'secret123',
+        ])->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertJsonPath('data.user.source_module', 'core')
+            ->assertSessionHas('user.email', 'core-attributed-qingyu-member@example.com');
     }
 
     public function test_qingyu_ip_agent_client_route_redeems_activation_code_and_records_safe_audit(): void

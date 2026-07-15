@@ -14,7 +14,8 @@ final class UserAuthService
     public function __construct(
         private readonly InviteService $invites,
         private readonly RiskService $risk,
-        private readonly UserPasswordHasher $passwords
+        private readonly UserPasswordHasher $passwords,
+        private readonly UserModuleMembershipService $memberships
     ) {}
 
     public function register(array $payload, string $ip, string $sourceModule = 'core'): array
@@ -36,8 +37,7 @@ final class UserAuthService
         string $ip,
         string $sourceModule,
         ?callable $afterCreate
-    ): array
-    {
+    ): array {
         $mobile = $this->normalizeNullableString($payload['mobile'] ?? null);
         $email = $this->normalizeEmail($payload['email'] ?? null);
         $password = (string) ($payload['password'] ?? '');
@@ -78,6 +78,7 @@ final class UserAuthService
 
                 $defaultInviteCode = $this->invites->createDefaultCode($user);
                 $inviteRelation = $this->invites->bindRegistration($user, $inviteCode);
+                $this->memberships->grant((int) $user->id, $sourceModule, 'registration');
                 $afterCreateResult = $afterCreate === null ? null : $afterCreate($user);
 
                 return [$user, $defaultInviteCode, $inviteRelation, $afterCreateResult];

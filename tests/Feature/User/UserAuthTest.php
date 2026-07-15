@@ -132,6 +132,12 @@ class UserAuthTest extends TestCase
             'source_module' => 'core',
             'register_ip' => '127.0.0.1',
         ]);
+        $this->assertDatabaseHas('user_module_membership', [
+            'user_id' => $result['user']['id'],
+            'module' => 'core',
+            'status' => 'active',
+            'join_source' => 'registration',
+        ]);
 
         $rawPassword = DB::table('user_account')->where('mobile', '13800000001')->value('password');
 
@@ -205,6 +211,12 @@ class UserAuthTest extends TestCase
         $this->assertDatabaseHas('user_account', [
             'email' => 'module-register@example.com',
             'source_module' => 'vip_center',
+        ]);
+        $this->assertDatabaseHas('user_module_membership', [
+            'user_id' => $result['user']['id'],
+            'module' => 'vip_center',
+            'status' => 'active',
+            'join_source' => 'registration',
         ]);
     }
 

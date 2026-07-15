@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Laravel\Sanctum\Contracts\HasApiTokens as HasApiTokensContract;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -46,5 +47,10 @@ class UserAccount extends BaseModel implements AuthenticatableContract, HasApiTo
         $this->{$column} = $time;
         $this->syncOriginalAttributes([$column]);
         $this->fireModelEvent('trashed', false);
+    }
+
+    public function moduleMemberships(): HasMany
+    {
+        return $this->hasMany(UserModuleMembership::class, 'user_id');
     }
 }

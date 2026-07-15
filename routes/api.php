@@ -9,6 +9,13 @@ Route::prefix('auth')->middleware(CheckInstall::class)->group(function (): void 
     Route::middleware('throttle:20,1')->group(function (): void {
         Route::post('/register', [AuthController::class, 'register']);
         Route::post('/login', [AuthController::class, 'login']);
+        Route::prefix('modules/{module}')
+            ->where(['module' => '[a-z][a-z0-9._-]{0,79}'])
+            ->group(function (): void {
+                Route::post('/registration-ticket', [AuthController::class, 'issueRegistrationTicket']);
+                Route::post('/register', [AuthController::class, 'registerForModule']);
+                Route::post('/login', [AuthController::class, 'loginForModule']);
+            });
         Route::post('/refresh', [AuthController::class, 'refresh']);
         Route::post('/password/forgot', [AuthController::class, 'forgotPassword']);
         Route::post('/password/reset', [AuthController::class, 'resetPassword']);

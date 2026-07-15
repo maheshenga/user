@@ -2,28 +2,37 @@
 
 namespace Tests\Feature\User;
 
+use App\Models\ModuleRegistrationTicket;
 use App\Models\SystemModule;
 use App\Models\SystemModuleRelease;
 use App\Models\UserAccount;
 use App\Models\UserApiRefreshToken;
 use App\Models\UserApiSession;
 use App\Modules\ModuleInstaller;
+use App\User\ModuleRegistrationTicketService;
 use App\User\UserApiException;
 use App\User\UserApiTokenService;
 use App\User\UserAuthService;
+use App\User\UserModuleMembershipService;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
+use Tests\Concerns\CreatesModuleTestSchema;
 use Tests\TestCase;
 
 class UserApiTokenAuthTest extends TestCase
 {
+    use CreatesModuleTestSchema;
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+        $this->createEasyAdminHostTables();
+        Config::set('modules.registration_ticket_key', str_repeat('k', 32));
         $manifest = json_decode(
             file_get_contents(base_path('modules/QingyuIpAgent/module.json')) ?: '{}',
             true,
@@ -139,6 +148,61 @@ class UserApiTokenAuthTest extends TestCase
         $refresh = UserApiRefreshToken::query()->firstOrFail();
         $this->assertSame(hash('sha256', $tokens['refresh_token']), $refresh->token_hash);
         $this->assertNotSame($tokens['refresh_token'], $refresh->token_hash);
+    }
+
+    public function test_core_attributed_user_with_qingyu_membership_can_receive_qingyu_tokens(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'core-member@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+        $user = UserAccount::query()->where('email', 'core-member@example.com')->firstOrFail();
+        app(UserModuleMembershipService::class)->grant(
+            (int) $user->id,
+            'qingyu_ip_agent',
+            'module_join'
+        );
+
+        $tokens = app(UserApiTokenService::class)->issue(
+            $user,
+            'qingyu_ip_agent',
+            ['device_id' => 'core-member-device'],
+            '127.0.0.3',
+            'Core Member Test'
+        );
+
+        $this->assertSame('core', $user->refresh()->source_module);
+        $this->assertSame('Bearer', $tokens['token_type']);
+    }
+
+    public function test_qingyu_attribution_without_membership_cannot_receive_qingyu_tokens(): void
+    {
+        $user = UserAccount::query()->create([
+            'email' => 'attribution-only@example.com',
+            'password' => 'testing-password',
+            'nickname' => 'Attribution Only',
+            'status' => 'active',
+            'source_module' => 'qingyu_ip_agent',
+            'register_ip' => '127.0.0.1',
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+
+        try {
+            app(UserApiTokenService::class)->issue(
+                $user,
+                'qingyu_ip_agent',
+                ['device_id' => 'attribution-only-device'],
+                '127.0.0.3',
+                'Attribution Only Test'
+            );
+            $this->fail('Attribution alone must not authorize module token issue.');
+        } catch (UserApiException $exception) {
+            $this->assertSame(403, $exception->httpStatus());
+            $this->assertSame('module_membership_required', $exception->errorCode());
+        }
+
+        $this->assertDatabaseCount('user_api_sessions', 0);
     }
 
     public function test_refresh_rotation_consumes_old_refresh_and_replaces_access_token(): void
@@ -356,10 +420,9 @@ class UserApiTokenAuthTest extends TestCase
 
     public function test_api_registration_is_csrf_free_and_returns_token_bundle(): void
     {
-        $response = $this->postJson('/api/v1/auth/register', [
+        $response = $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/register', [
             'email' => 'api-register@example.com',
             'password' => 'secret123',
-            'module' => 'qingyu_ip_agent',
             'device_id' => 'api-register-device',
             'device_name' => 'API Register Desktop',
         ]);
@@ -376,14 +439,197 @@ class UserApiTokenAuthTest extends TestCase
         $response->assertSessionMissing('user');
     }
 
+    public function test_generic_api_registration_requires_a_signed_ticket(): void
+    {
+        $this->postJson('/api/v1/auth/register', [
+            'email' => 'unsigned-register@example.com',
+            'password' => 'secret123',
+            'module' => 'qingyu_ip_agent',
+            'device_id' => 'unsigned-register-device',
+        ])->assertUnprocessable()
+            ->assertJsonPath('code', 'validation_failed');
+
+        $this->assertDatabaseMissing('user_account', ['email' => 'unsigned-register@example.com']);
+    }
+
+    public function test_route_bound_registration_creates_membership_and_ignores_payload_module(): void
+    {
+        $response = $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/register', [
+            'email' => 'route-register@example.com',
+            'password' => 'secret123',
+            'module' => 'core',
+            'device_id' => 'route-register-device',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.user.email', 'route-register@example.com')
+            ->assertJsonPath('data.user.source_module', 'qingyu_ip_agent')
+            ->assertJsonPath('data.tokens.token_type', 'Bearer');
+        $userId = (int) $response->json('data.user.id');
+        $this->assertDatabaseHas('user_module_membership', [
+            'user_id' => $userId,
+            'module' => 'qingyu_ip_agent',
+            'status' => 'active',
+            'join_source' => 'registration',
+        ]);
+    }
+
+    public function test_route_bound_ticket_issue_and_generic_registration_are_single_use(): void
+    {
+        $issued = $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/registration-ticket', [
+            'invite_code' => null,
+            'campaign' => 'desktop-launch',
+            'expires_in' => 300,
+        ])->assertCreated();
+        $ticket = $issued->json('data.ticket');
+        $this->assertIsString($ticket);
+
+        $payload = [
+            'email' => 'ticket-register@example.com',
+            'password' => 'secret123',
+            'registration_ticket' => $ticket,
+            'device_id' => 'ticket-register-device',
+        ];
+        $this->postJson('/api/v1/auth/register', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.user.source_module', 'qingyu_ip_agent');
+
+        $this->postJson('/api/v1/auth/register', array_replace($payload, ['email' => 'ticket-replay@example.com']))
+            ->assertConflict()
+            ->assertJsonPath('code', 'registration_ticket_replayed');
+    }
+
+    public function test_ticket_consumption_account_and_membership_roll_back_when_token_issue_fails(): void
+    {
+        $ticket = app(ModuleRegistrationTicketService::class)->issue(
+            'qingyu_ip_agent',
+            [],
+            now()->addMinutes(5)
+        );
+        $module = SystemModule::query()->where('name', 'qingyu_ip_agent')->firstOrFail();
+        $manifest = $module->config_json;
+        $manifest['api']['abilities'] = [];
+        $module->update(['config_json' => $manifest]);
+
+        $this->postJson('/api/v1/auth/register', [
+            'email' => 'ticket-token-failure@example.com',
+            'password' => 'secret123',
+            'registration_ticket' => $ticket,
+            'device_id' => 'ticket-token-failure-device',
+        ])->assertForbidden()
+            ->assertJsonPath('code', 'module_not_allowed');
+
+        $this->assertDatabaseMissing('user_account', ['email' => 'ticket-token-failure@example.com']);
+        $this->assertDatabaseCount('user_module_membership', 0);
+        $this->assertNull(ModuleRegistrationTicket::query()->firstOrFail()->consumed_at);
+    }
+
+    public function test_route_bound_login_joins_a_second_module_without_changing_attribution(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'route-join@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+        $user = UserAccount::query()->where('email', 'route-join@example.com')->firstOrFail();
+
+        $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/login', [
+            'account' => 'route-join@example.com',
+            'password' => 'secret123',
+            'module' => 'core',
+            'device_id' => 'route-join-device',
+        ])->assertOk()
+            ->assertJsonPath('data.tokens.token_type', 'Bearer');
+
+        $this->assertSame('core', $user->refresh()->source_module);
+        $this->assertDatabaseHas('user_module_membership', [
+            'user_id' => $user->id,
+            'module' => 'qingyu_ip_agent',
+            'status' => 'active',
+            'join_source' => 'route_login',
+        ]);
+    }
+
+    public function test_route_bound_login_rolls_back_membership_when_token_issue_fails(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'route-join-rollback@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+        $user = UserAccount::query()->where('email', 'route-join-rollback@example.com')->firstOrFail();
+        $module = SystemModule::query()->where('name', 'qingyu_ip_agent')->firstOrFail();
+        $manifest = $module->config_json;
+        $manifest['api']['abilities'] = [];
+        $module->update(['config_json' => $manifest]);
+
+        $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/login', [
+            'account' => 'route-join-rollback@example.com',
+            'password' => 'secret123',
+            'device_id' => 'route-join-rollback-device',
+        ])->assertForbidden()
+            ->assertJsonPath('code', 'module_not_allowed');
+
+        $this->assertDatabaseMissing('user_module_membership', [
+            'user_id' => $user->id,
+            'module' => 'qingyu_ip_agent',
+        ]);
+        $this->assertNull($user->refresh()->last_login_at);
+        $this->assertDatabaseCount('user_login_log', 0);
+    }
+
+    public function test_route_bound_login_does_not_reactivate_revoked_membership(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'route-revoked@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+        $user = UserAccount::query()->where('email', 'route-revoked@example.com')->firstOrFail();
+        $memberships = app(UserModuleMembershipService::class);
+        $memberships->grant((int) $user->id, 'qingyu_ip_agent', 'admin_grant', 1);
+        $memberships->revoke((int) $user->id, 'qingyu_ip_agent');
+
+        $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/login', [
+            'account' => 'route-revoked@example.com',
+            'password' => 'secret123',
+            'device_id' => 'route-revoked-device',
+        ])->assertForbidden()
+            ->assertJsonPath('code', 'module_membership_revoked');
+
+        $this->assertDatabaseHas('user_module_membership', [
+            'user_id' => $user->id,
+            'module' => 'qingyu_ip_agent',
+            'status' => 'revoked',
+        ]);
+        $this->assertDatabaseCount('user_api_sessions', 0);
+    }
+
+    public function test_route_bound_login_preserves_failed_login_log_for_rate_limiting(): void
+    {
+        app(UserAuthService::class)->register([
+            'email' => 'route-login-failure@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1');
+
+        $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/login', [
+            'account' => 'route-login-failure@example.com',
+            'password' => 'wrong-password',
+            'device_id' => 'route-login-failure-device',
+        ])->assertUnauthorized()
+            ->assertJsonPath('code', 'invalid_credentials');
+
+        $this->assertDatabaseHas('user_login_log', [
+            'account' => 'route-login-failure@example.com',
+            'login_type' => 'email',
+            'result' => 'failed',
+        ]);
+    }
+
     public function test_api_registration_does_not_create_account_for_disabled_module(): void
     {
         SystemModule::query()->where('name', 'qingyu_ip_agent')->update(['status' => 'disabled']);
 
-        $this->postJson('/api/v1/auth/register', [
+        $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/register', [
             'email' => 'disabled-module-orphan@example.com',
             'password' => 'secret123',
-            'module' => 'qingyu_ip_agent',
             'device_id' => 'disabled-module-orphan-device',
         ])->assertForbidden()
             ->assertJsonPath('code', 'module_unavailable');
@@ -398,15 +644,15 @@ class UserApiTokenAuthTest extends TestCase
         $manifest['api']['abilities'] = [];
         $module->update(['config_json' => $manifest]);
 
-        $this->postJson('/api/v1/auth/register', [
+        $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/register', [
             'email' => 'token-failure-orphan@example.com',
             'password' => 'secret123',
-            'module' => 'qingyu_ip_agent',
             'device_id' => 'token-failure-orphan-device',
         ])->assertForbidden()
             ->assertJsonPath('code', 'module_not_allowed');
 
         $this->assertDatabaseMissing('user_account', ['email' => 'token-failure-orphan@example.com']);
+        $this->assertDatabaseCount('user_module_membership', 0);
         $this->assertDatabaseCount('user_api_sessions', 0);
         $this->assertDatabaseCount('personal_access_tokens', 0);
     }
@@ -439,10 +685,9 @@ class UserApiTokenAuthTest extends TestCase
 
     public function test_api_refresh_rotates_tokens_and_rejects_old_access_token(): void
     {
-        $registration = $this->postJson('/api/v1/auth/register', [
+        $registration = $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/register', [
             'email' => 'api-refresh@example.com',
             'password' => 'secret123',
-            'module' => 'qingyu_ip_agent',
             'device_id' => 'api-refresh-device',
         ])->assertCreated();
         $oldAccess = $registration->json('data.tokens.access_token');
@@ -466,10 +711,9 @@ class UserApiTokenAuthTest extends TestCase
 
     public function test_api_logout_revokes_the_current_access_and_refresh_session(): void
     {
-        $registration = $this->postJson('/api/v1/auth/register', [
+        $registration = $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/register', [
             'email' => 'api-logout@example.com',
             'password' => 'secret123',
-            'module' => 'qingyu_ip_agent',
             'device_id' => 'api-logout-device',
         ])->assertCreated();
         $access = $registration->json('data.tokens.access_token');
@@ -561,12 +805,11 @@ class UserApiTokenAuthTest extends TestCase
         $payload = [
             'email' => 'api-errors@example.com',
             'password' => 'secret123',
-            'module' => 'qingyu_ip_agent',
             'device_id' => 'api-errors-device',
         ];
-        $this->postJson('/api/v1/auth/register', $payload)->assertCreated();
+        $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/register', $payload)->assertCreated();
 
-        $this->postJson('/api/v1/auth/register', $payload)
+        $this->postJson('/api/v1/auth/modules/qingyu_ip_agent/register', $payload)
             ->assertConflict()
             ->assertJsonPath('code', 'account_exists');
 

@@ -9,7 +9,10 @@ use Throwable;
 
 final class ModuleApiPolicy
 {
-    public function __construct(private readonly ModuleRuntimeEligibility $eligibility) {}
+    public function __construct(
+        private readonly ModuleRuntimeEligibility $eligibility,
+        private readonly UserModuleMembershipService $memberships
+    ) {}
 
     public function assertAvailable(string $module): SystemModule
     {
@@ -23,9 +26,7 @@ final class ModuleApiPolicy
     public function assertUserAccess(string $module, UserAccount $user): SystemModule
     {
         $record = $this->assertAvailable($module);
-        if ((string) ($user->source_module ?: 'core') !== $module) {
-            throw new UserApiException('账号不属于当前模块。', 403, 'module_account_mismatch');
-        }
+        $this->memberships->assertActive((int) $user->id, $module);
 
         return $record;
     }
