@@ -58,16 +58,29 @@ final class ModuleInstaller
             $this->manifestPolicy->validate($manifest);
             $this->dependencyGraph->assertUpgradeCompatible($manifest);
             $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $name);
+            if ($current === null) {
+                throw new InvalidArgumentException("模块 [{$name}] 安装记录不存在。");
+            }
             $this->repository->upsertDiscovered($manifest);
             $this->versions->record($manifest);
-            $this->menus->sync($manifest);
-            $this->nodes->sync($manifest);
+            if ($this->executionPolicy->isExecutionInProcessAllowed($current)) {
+                $this->menus->sync($manifest);
+                $this->nodes->sync($manifest);
+                $this->migrations->runPending($manifest);
+            } else {
+                $this->menus->hide($name);
+                $this->nodes->hide($name);
+            }
             if ($newState === 'disabled') {
                 $this->menus->hide($name);
                 $this->nodes->hide($name);
             }
-            $this->migrations->runPending($manifest);
             $this->repository->setStatus($name, $newState);
+        }, function () use ($name): void {
+            $module = $this->repository->installed($name);
+            if ($module !== null && ! in_array($module->status, ['pending_review', 'rejected'], true)) {
+                $this->executionPolicy->assertExecutionAllowed($module);
+            }
         });
     }
 
@@ -88,8 +101,6 @@ final class ModuleInstaller
                 throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$module->status}] 不允许启用。");
             }
 
-            $this->executionPolicy->assertInProcessAllowed($module);
-
             if (
                 app()->environment('production')
                 && Schema::hasTable('system_module_release')
@@ -104,9 +115,19 @@ final class ModuleInstaller
             $this->manifestPolicy->validate($manifest);
             $this->dependencyGraph->assertUpgradeCompatible($manifest);
             $this->dependencyGraph->activationOrder($name);
-            $this->menus->sync($manifest);
-            $this->nodes->sync($manifest);
+            if ($this->executionPolicy->isExecutionInProcessAllowed($module)) {
+                $this->menus->sync($manifest);
+                $this->nodes->sync($manifest);
+            } else {
+                $this->menus->hide($name);
+                $this->nodes->hide($name);
+            }
             $this->repository->setStatus($name, 'enabled');
+        }, function () use ($name): void {
+            $module = $this->repository->installed($name);
+            if ($module !== null && in_array($module->status, ['installed', 'disabled'], true)) {
+                $this->executionPolicy->assertExecutionAllowed($module);
+            }
         });
     }
 
@@ -172,6 +193,7 @@ final class ModuleInstaller
 
     /**
      * @param  callable(): void  $operation
+     * @param  null|callable(): void  $preflight
      */
     private function runLifecycleAction(
         string $action,
@@ -179,7 +201,8 @@ final class ModuleInstaller
         ?string $oldState,
         ?string $newState,
         ?int $actorId,
-        callable $operation
+        callable $operation,
+        ?callable $preflight = null
     ): void {
         $this->operations->run($name, $action, $actorId, function (string $operationId) use (
             $action,
@@ -187,13 +210,17 @@ final class ModuleInstaller
             $oldState,
             $newState,
             $actorId,
-            $operation
+            $operation,
+            $preflight
         ): void {
             $currentState = $this->repository->installed($name)?->status ?? $oldState;
             $this->operations->transition($operationId, $currentState, $newState);
             $this->operations->stage($operationId, 'executing_lifecycle');
 
             try {
+                if ($preflight !== null) {
+                    $preflight();
+                }
                 DB::transaction(function () use ($action, $name, $currentState, $newState, $actorId, $operation): void {
                     $operation();
                     $this->repository->log($action, $name, $currentState, $newState, 'success', null, $actorId);

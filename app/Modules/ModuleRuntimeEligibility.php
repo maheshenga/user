@@ -19,6 +19,22 @@ final class ModuleRuntimeEligibility
 
     public function assertEligible(string|SystemModule $module, bool $forceIntegrityCheck = false): SystemModule
     {
+        $record = $this->enabledRecord($module);
+        $this->executionPolicy->assertInProcessAllowed($record);
+
+        return $this->assertReleaseAndManifest($record, $forceIntegrityCheck);
+    }
+
+    public function assertExecutable(string|SystemModule $module, bool $forceIntegrityCheck = false): SystemModule
+    {
+        $record = $this->enabledRecord($module);
+        $this->executionPolicy->assertExecutionAllowed($record);
+
+        return $this->assertReleaseAndManifest($record, $forceIntegrityCheck);
+    }
+
+    private function enabledRecord(string|SystemModule $module): SystemModule
+    {
         $record = is_string($module)
             ? SystemModule::query()->where('name', $module)->first()
             : $module;
@@ -28,7 +44,11 @@ final class ModuleRuntimeEligibility
             throw new InvalidArgumentException("模块 [{$name}] 当前未启用。");
         }
 
-        $this->executionPolicy->assertInProcessAllowed($record);
+        return $record;
+    }
+
+    private function assertReleaseAndManifest(SystemModule $record, bool $forceIntegrityCheck): SystemModule
+    {
 
         if ($record->active_release_id === null) {
             if (app()->environment('production') && Schema::hasTable('system_module_release')) {

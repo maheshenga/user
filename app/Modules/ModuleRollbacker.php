@@ -18,6 +18,7 @@ final class ModuleRollbacker
         private readonly ModuleMigrationRunner $migrations,
         private readonly ModuleArtifactHasher $hasher,
         private readonly ModuleManifestPolicy $policy,
+        private readonly ModuleExecutionPolicy $executionPolicy,
         private readonly ModuleDependencyGraph $dependencyGraph,
         private readonly ModuleReleaseSigner $signer,
         private readonly ModuleMenuSynchronizer $menus,
@@ -48,10 +49,15 @@ final class ModuleRollbacker
             throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$status}] 不允许回滚。");
         }
 
-        if ($module->active_release_id !== null && $this->previousRelease($name, (int) $module->active_release_id) !== null) {
-            $this->rollbackRelease($module, $status, $actorId);
+        if ($module->active_release_id !== null) {
+            if ($this->previousRelease($name, (int) $module->active_release_id) !== null) {
+                $this->rollbackRelease($module, $status, $actorId);
 
-            return;
+                return;
+            }
+            if (! $this->executionPolicy->isExecutionInProcessAllowed($module)) {
+                throw new RuntimeException("模块 [{$name}] 没有可供外部 Worker 回滚的已审核历史制品。");
+            }
         }
 
         $restoreSource = null;
@@ -140,13 +146,19 @@ final class ModuleRollbacker
             $targetManifest = $this->verifiedManifest($target);
             $this->assertManifestName($targetManifest, (string) $module->name);
             $this->dependencyGraph->assertUpgradeCompatible($targetManifest);
-            $this->migrations->assertMissingReversible($currentManifest, $targetManifest);
-            if ($this->migrations->missingMigrationCount($currentManifest, $targetManifest) > 1) {
-                throw new RuntimeException('需要人工回滚：自动回滚最多支持一个缺失迁移。');
+            $this->executionPolicy->assertReleaseExecutionAllowed($module, $target);
+            $inProcess = $this->executionPolicy->isReleaseInProcessAllowed($module, $target);
+            if ($inProcess) {
+                $this->migrations->assertMissingReversible($currentManifest, $targetManifest);
+                if ($this->migrations->missingMigrationCount($currentManifest, $targetManifest) > 1) {
+                    throw new RuntimeException('需要人工回滚：自动回滚最多支持一个缺失迁移。');
+                }
             }
 
-            DB::transaction(function () use ($module, $status, $actorId, $current, $target, $currentManifest, $targetManifest): void {
-                $this->migrations->rollbackMissingFrom($currentManifest, $targetManifest);
+            DB::transaction(function () use ($module, $status, $actorId, $current, $target, $currentManifest, $targetManifest, $inProcess): void {
+                if ($inProcess) {
+                    $this->migrations->rollbackMissingFrom($currentManifest, $targetManifest);
+                }
                 $current->forceFill(['status' => 'superseded'])->save();
                 $target->forceFill(['status' => 'active', 'activated_at' => now()])->save();
                 $module->forceFill([
@@ -166,8 +178,13 @@ final class ModuleRollbacker
                     'last_error' => null,
                     'update_time' => time(),
                 ])->save();
-                $this->menus->sync($targetManifest);
-                $this->nodes->sync($targetManifest);
+                if ($inProcess) {
+                    $this->menus->sync($targetManifest);
+                    $this->nodes->sync($targetManifest);
+                } else {
+                    $this->menus->hide((string) $module->name);
+                    $this->nodes->hide((string) $module->name);
+                }
                 if ($status === 'disabled') {
                     $this->menus->hide((string) $module->name);
                     $this->nodes->hide((string) $module->name);

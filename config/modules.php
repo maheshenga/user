@@ -48,6 +48,28 @@ return [
         return $keys;
     })(),
     'signing_key' => env('MODULE_SIGNING_KEY', ''),
+    'worker' => [
+        'url' => env('MODULE_WORKER_URL', ''),
+        'protocol_version' => env('MODULE_WORKER_PROTOCOL_VERSION', '1.0'),
+        'active_key_id' => env('MODULE_WORKER_ACTIVE_KEY_ID', ''),
+        'keys' => (static function (): array {
+            $decoded = json_decode((string) env('MODULE_WORKER_KEYS', '{}'), true);
+            if (! is_array($decoded)) {
+                return [];
+            }
+
+            return array_filter(
+                $decoded,
+                static fn (mixed $key, mixed $keyId): bool => is_string($keyId) && is_string($key) && trim($keyId) !== '',
+                ARRAY_FILTER_USE_BOTH
+            );
+        })(),
+        'timeout_seconds' => max(1, (int) env('MODULE_WORKER_TIMEOUT_SECONDS', 10)),
+        'connect_timeout_seconds' => max(1, (int) env('MODULE_WORKER_CONNECT_TIMEOUT_SECONDS', 3)),
+        'max_response_bytes' => max(1, (int) env('MODULE_WORKER_MAX_RESPONSE_BYTES', 1048576)),
+        'clock_skew_seconds' => max(1, (int) env('MODULE_WORKER_CLOCK_SKEW_SECONDS', 300)),
+        'health_cache_seconds' => max(0, (int) env('MODULE_WORKER_HEALTH_CACHE_SECONDS', 30)),
+    ],
     'registration_ticket_key' => env('MODULE_REGISTRATION_TICKET_KEY', ''),
     'legacy_client_routes' => [
         'qingyu_ip_agent' => [

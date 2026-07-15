@@ -17,7 +17,7 @@ final class ModuleApiPolicy
     public function assertAvailable(string $module): SystemModule
     {
         try {
-            return $this->eligibility->assertEligible($module);
+            return $this->eligibility->assertExecutable($module);
         } catch (Throwable) {
             throw new UserApiException('模块当前未启用。', 403, 'module_unavailable');
         }

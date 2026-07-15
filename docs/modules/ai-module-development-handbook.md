@@ -1128,11 +1128,12 @@ AI 完成任何调用宿主用户域能力的模块后，必须逐项确认：
 
 - ZIP 上传只暂存到 `storage/modules/releases/{module}/{version}-{sha256}`，不得覆盖正在运行的模块目录。
 - 每个版本必须独立审核；审核记录绑定 `module + version + artifact_hash`。
-- `partner`、`community` 制品在生产环境必须有宿主 HMAC 签名；签名密钥只能来自服务端环境变量。
+- `partner`、`community` 制品在生产环境必须有宿主 HMAC 签名；每条签名必须保存 `key_id`，新发布使用 `MODULE_SIGNING_ACTIVE_KEY_ID` 指向的活动密钥，历史发布只能使用 `MODULE_SIGNING_KEYS` 中仍保留的验证密钥。
 - 审核通过后，由 `system_module.active_release_id` 和 `system_module.path` 原子切换活动版本。
 - 回滚只能切换到历史已审核制品；不可逆迁移必须阻止自动回滚。
 - 普通请求可按 `MODULE_INTEGRITY_CACHE_SECONDS` 短时复用制品哈希校验；部署、巡检和故障排查必须运行 `php artisan system:module-health` 强制重新计算完整哈希。
-- 模块制品是受信任的进程内 PHP 代码，不是沙箱。管理员必须审核文件访问、网络访问、命令执行、反射、动态包含和依赖代码。
+- `core`、`official`、`private` 制品经过审核后可以在宿主进程运行，但能力检查不是 PHP 沙箱；管理员仍必须审核文件访问、网络访问、命令执行、反射、动态包含和依赖代码。
+- `partner`、`community` 在生产环境禁止进入 Laravel 进程，只能通过兼容且健康的外部 Worker 执行。宿主不得加载其 Provider、路由、控制器、节点扫描器或 PHP 迁移。
 - 禁用或卸载模块会隐藏其托管菜单并撤销该模块全部 API 设备会话；业务数据保留。
 - 生产环境中的 `installed`、`enabled`、`disabled` 旧模块必须先运行 `module:release-adopt-enabled --admin-id={管理员ID}` 纳入不可变发布历史；未绑定活动制品的模块不能启用或加载。
 - EasyAdmin 动态后台路由包含运行时闭包，不兼容 Laravel 路由序列化；部署时必须执行 `php artisan route:clear`，禁止执行 `route:cache`。`config:cache` 和 `view:cache` 可以继续使用。
@@ -1151,6 +1152,9 @@ AI 完成任何调用宿主用户域能力的模块后，必须逐项确认：
 - 只能声明 `config/user_api.php` 的 `allowed_abilities` 中已有能力。
 - 必须包含 `module:{module_name}` 能力。
 - 配额必须是正整数；服务端配置可以进一步收紧，模块不能自行提高生产配额。
+- `schema_version` 必须位于宿主 `supported_manifest_schema_versions` 中；不能用未知版本绕过校验。
+- 使用宿主 Gateway 的模块必须在 `gateway_versions` 中逐项声明契约版本。声明权限但遗漏对应 Gateway 版本会在暂存阶段失败。
+- `dependencies` 使用 `{模块名: 版本约束}`，`conflicts` 使用相同结构。依赖环、反向依赖破坏和双向冲突都会阻止生命周期操作。
 
 ### 24.3 宿主 Gateway
 
@@ -1166,6 +1170,19 @@ AI 完成任何调用宿主用户域能力的模块后，必须逐项确认：
 | `NotificationGateway` | 向宿主通知 outbox 写入模块归属消息。 |
 
 模块服务构造函数必须类型提示契约接口。禁止模块 `new Host*Gateway()`、直接解析实现类或绕过 Gateway 改宿主表。
+
+`gateway_versions` 示例：
+
+```json
+{
+  "gateway_versions": {
+    "member": "1.0",
+    "vip": "1.0",
+    "balance": "1.0",
+    "audit": "1.0"
+  }
+}
+```
 
 ### 24.4 Bearer API
 
@@ -1192,6 +1209,14 @@ AI 完成任何调用宿主用户域能力的模块后，必须逐项确认：
 - `MODULE_LEGACY_CLIENT_SUNSET` 使用 RFC 7231 HTTP-date。上线前先发布支持规范 API 的客户端，观察旧协议日志降为零，再关闭开关；保留一个版本周期后才能删除旧控制器和路由。
 - 关闭、恢复或延后下线日期都必须经过管理员变更审核，并在发布记录中写明影响版本、回滚条件和验证结果。
 
+#### 24.4.2 模块注册票据与会员资格
+
+- `user_account.source_module` 是不可变注册归因，不是模块访问授权条件，任何代码都不得用它代替权限判断。
+- 用户访问一个或多个模块由 `user_module_membership` 表示；授权必须检查对应会员资格为 `active`。
+- 模块专属注册只能使用受信任的路由绑定，或先调用 `POST /api/v1/auth/modules/{module}/registration-tickets` 获取短期单次票据。
+- 注册票据绑定模块、声明、过期时间和唯一 ID；消费后不能重放，篡改、过期或跨模块使用必须失败。
+- 账号、邀请关系、初始会员资格、票据消费和令牌签发必须处于同一数据库事务，任一步失败都要完整回滚。
+
 ### 24.5 数据归属
 
 - 会员归属使用 `user_account.source_module`，注册后不得覆盖。
@@ -1208,11 +1233,80 @@ AI 完成任何调用宿主用户域能力的模块后，必须逐项确认：
 - 响应和审计日志必须包含请求 ID；审计日志还要记录稳定错误码和耗时。
 - 客户端遇到 401 最多刷新重试一次，重试必须复用原请求 ID。
 
-### 24.7 AI 交付检查
+### 24.7 外部 Worker 执行协议
+
+生产环境中的 `partner`、`community` 必须声明外部执行契约：
+
+```json
+{
+  "execution": {"mode": "external_worker"},
+  "worker": {
+    "protocol_version": "1.0",
+    "operations": ["content.parse", "content.rewrite"]
+  }
+}
+```
+
+内部进程模块声明 `"execution": {"mode": "in_process"}`，不应伪造 Worker 操作列表。
+
+宿主配置：
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `MODULE_WORKER_URL` | 独立 Worker 根地址；生产必须是 HTTPS。 |
+| `MODULE_WORKER_PROTOCOL_VERSION` | 宿主支持的协议版本，当前为 `1.0`。 |
+| `MODULE_WORKER_ACTIVE_KEY_ID` | 新请求使用的通信签名密钥 ID。 |
+| `MODULE_WORKER_KEYS` | JSON 密钥环；可同时保留活动密钥和轮换期旧密钥。 |
+| `MODULE_WORKER_TIMEOUT_SECONDS` | 单次请求总超时。 |
+| `MODULE_WORKER_CONNECT_TIMEOUT_SECONDS` | 建连超时。 |
+| `MODULE_WORKER_MAX_RESPONSE_BYTES` | 最大响应字节数。 |
+| `MODULE_WORKER_CLOCK_SKEW_SECONDS` | 签名时间戳允许偏差。 |
+
+固定端点：
+
+- `GET /v1/health` 返回 `status`、`protocol_version` 和按模块名索引的 `release_hash`、`operations`。
+- `POST /v1/invoke` 接收模块、制品哈希、信任级别、最小能力、操作、业务载荷和请求 ID，返回 `{ok:true,data:{...}}`。
+- 模块代码只能依赖 `ModuleWorkerClient`，禁止自行拼接 Worker URL、保存通信密钥或绕过宿主签名器。
+
+每个请求和响应必须包含并签名以下头：
+
+- `X-Module-Worker-Protocol`
+- `X-Module-Worker-Key-Id`
+- `X-Module-Worker-Timestamp`
+- `X-Module-Worker-Nonce`
+- `X-Module-Request-Id`
+- `X-Module-Name`
+- `X-Module-Release-Hash`
+- `X-Module-Worker-Body-SHA256`
+- `X-Module-Worker-Signature`
+
+Worker 必须在允许时间窗内保存并拒绝重复 nonce；签名、时间戳、请求 ID、正文哈希、协议版本或密钥 ID 不匹配时一律失败。宿主只在健康状态、协议版本、当前已审核制品哈希和全部声明操作同时匹配时允许激活、启用或回滚。Worker 不可用时必须 fail closed，不能回退到进程内 PHP。
+
+外部模块生命周期只切换审核制品和宿主状态，不执行模块 PHP 迁移、不扫描控制器节点、不注册 Provider/路由，也不暴露模块后台 PHP 菜单。需要宿主数据库能力时必须通过版本化 Gateway 或单独审核的宿主迁移交付。
+
+### 24.8 外部域名与最小数据
+
+- `external_domains` 只列业务必需的精确域名，不写协议、路径、通配符 IP 或用户可控主机名。
+- 进程内模块和 Worker 都必须按该列表限制出站访问；重定向后的最终域名也要重新校验。
+- 宿主只向 Worker 发送当前操作需要的字段和声明能力，不发送数据库凭据、宿主签名密钥、刷新令牌、密码、完整激活码或无关会员资料。
+- 新增域名、操作或能力属于安全边界变更，必须升级模块版本并重新管理员审核，不能通过运行时配置静默扩权。
+
+### 24.9 版本、迭代与密钥轮换
+
+- Manifest、Gateway、Bearer API 和 Worker 协议分别版本化；兼容性必须在暂存和激活前验证，不能把宿主版本号当成所有协议版本。
+- 新协议先由宿主和 Worker 同时支持，再升级模块声明；旧协议只能在调用量归零且回滚窗口结束后移除。
+- Worker 通信密钥与发布签名密钥是两个独立密钥环，禁止复用。轮换时先加入新密钥并保留旧验证密钥，再切换活动 `key_id`，确认旧请求和历史发布不再需要后才移除旧密钥。
+- 每次模块迭代都必须提高语义版本，生成新制品哈希，重新审核，并记录新增操作、能力、Gateway 版本、外部域名、数据迁移和回滚条件。
+- Worker 响应结构、最大尺寸、超时和错误码变更必须有契约测试；禁止只改 Worker 而不更新宿主测试与手册。
+
+### 24.10 AI 交付检查
 
 - 新版本是否生成独立制品并重新由管理员审核。
 - 是否只依赖 Gateway 契约，没有直接访问宿主核心表和内部服务。
 - 是否声明最小能力、外部域名、依赖、冲突和配额。
+- 第三方模块是否声明 Worker 协议和非空操作列表，并证明不会加载任何模块 PHP。
+- Worker 请求是否包含签名、时间戳、nonce、请求 ID、制品哈希和正文哈希，响应是否同样验签并限制大小。
+- 是否把 `source_module` 仅用于归因，并通过活动 `user_module_membership` 授权。
 - 所有列表、详情、统计和写操作是否按模块归属隔离。
 - 所有写操作和高成本操作是否具备请求 ID、幂等、配额、稳定错误码和审计关联。
 - 模块禁用、卸载、升级失败和回滚时，菜单、令牌、迁移与数据状态是否符合预期。

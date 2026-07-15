@@ -8,6 +8,7 @@ use App\Contracts\Modules\AuditGateway;
 use App\Contracts\Modules\BalanceGateway;
 use App\Contracts\Modules\InvitationGateway;
 use App\Contracts\Modules\MemberGateway;
+use App\Contracts\Modules\ModuleWorkerClient;
 use App\Contracts\Modules\NotificationGateway;
 use App\Contracts\Modules\VipGateway;
 use App\Modules\Host\HostActivationCodeGateway;
@@ -18,10 +19,11 @@ use App\Modules\Host\HostInvitationGateway;
 use App\Modules\Host\HostMemberGateway;
 use App\Modules\Host\HostNotificationGateway;
 use App\Modules\Host\HostVipGateway;
-use App\Modules\ModuleServiceProviderRegistrar;
 use App\Modules\ModuleExecutionContext;
 use App\Modules\ModuleOperationCoordinator;
+use App\Modules\ModuleServiceProviderRegistrar;
 use App\Modules\ModuleViewRegistrar;
+use App\Modules\Worker\HttpModuleWorkerClient;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -41,6 +43,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(AffiliateGateway::class, HostAffiliateGateway::class);
         $this->app->bind(AuditGateway::class, HostAuditGateway::class);
         $this->app->bind(NotificationGateway::class, HostNotificationGateway::class);
+        $this->app->bind(ModuleWorkerClient::class, HttpModuleWorkerClient::class);
     }
 
     /**

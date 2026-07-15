@@ -64,7 +64,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $this->assertSame('qingyu_ip_agent', $manifest->name());
         $this->assertSame('轻语IP智能体', $manifest->title());
         $this->assertSame('qingyu_ip_agent', $manifest->adminPrefix());
-        $this->assertSame('1.5.0', $manifest->version());
+        $this->assertSame('1.6.0', $manifest->version());
         $this->assertSame('private', $manifest->type());
         $this->assertContains('menu:write', $manifest->permissions());
         $this->assertContains('node:write', $manifest->permissions());

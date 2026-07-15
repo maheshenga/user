@@ -16,6 +16,7 @@ final class ModuleReleaseManager
         private readonly ModuleArtifactHasher $hasher,
         private readonly ModuleArtifactStore $artifacts,
         private readonly ModuleManifestPolicy $policy,
+        private readonly ModuleExecutionPolicy $executionPolicy,
         private readonly ModuleDependencyGraph $dependencyGraph,
         private readonly ModuleMigrationRunner $migrations,
         private readonly ModuleVersionRecorder $versions,
@@ -211,6 +212,8 @@ final class ModuleReleaseManager
         $manifest = ModuleManifest::fromFile(rtrim((string) $release->artifact_path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json');
         $this->policy->validate($manifest);
         $this->dependencyGraph->assertUpgradeCompatible($manifest);
+        $this->executionPolicy->assertReleaseExecutionAllowed($module, $release);
+        $inProcess = $this->executionPolicy->isReleaseInProcessAllowed($module, $release);
         $actualHash = $this->hasher->hashDirectory((string) $release->artifact_path);
         if (! hash_equals((string) $release->artifact_hash, $actualHash)) {
             throw new RuntimeException("模块 [{$name}] 制品完整性校验失败。");
@@ -226,7 +229,9 @@ final class ModuleReleaseManager
 
         $migrationBatch = null;
         try {
-            $migrationBatch = $this->migrations->runPending($manifest);
+            if ($inProcess) {
+                $migrationBatch = $this->migrations->runPending($manifest);
+            }
             $this->operations->stage($operationId, 'activating');
 
             DB::transaction(function () use (
@@ -237,13 +242,19 @@ final class ModuleReleaseManager
                 $oldReleaseId,
                 $oldStatus,
                 $oldVersion,
-                $actorId
+                $actorId,
+                $inProcess
             ): void {
-                $this->menus->sync(
-                    $manifest,
-                    $oldReleaseId === null && in_array($oldStatus, ['installed', 'enabled', 'disabled'], true)
-                );
-                $this->nodes->sync($manifest);
+                if ($inProcess) {
+                    $this->menus->sync(
+                        $manifest,
+                        $oldReleaseId === null && in_array($oldStatus, ['installed', 'enabled', 'disabled'], true)
+                    );
+                    $this->nodes->sync($manifest);
+                } else {
+                    $this->menus->hide($manifest->name());
+                    $this->nodes->hide($manifest->name());
+                }
                 if ($targetStatus === 'disabled') {
                     $this->menus->hide($manifest->name());
                     $this->nodes->hide($manifest->name());

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.6.0 - 2026-07-15
+
+- Declared `execution.mode=in_process` explicitly for the private Qingyu module.
+- Kept Qingyu on the reviewed Laravel execution path; it does not use or fall back to the external Worker contract.
+- Documented the new execution boundary for administrator review and future module iterations.
+
+Upgrade notes:
+
+- Version `1.6.0` changes the reviewed Manifest and requires a fresh administrator review of its exact immutable artifact hash.
+- Verify that the release remains `private` and `execution.mode` remains `in_process` before approval.
+- Do not reuse the `1.5.0` approval or artifact signature for this release.
+
 ## 1.5.0 - 2026-07-14
 
 - Bound members, activation batches, codes, and redemptions to `qingyu_ip_agent` ownership.

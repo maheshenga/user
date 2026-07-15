@@ -1,12 +1,14 @@
 # Qingyu IP Agent Review Checklist
 
-Current review target: `1.5.0`
+Current review target: `1.6.0`
 
 Record and approve the exact SHA-256 artifact hash shown by the module center. Do not reuse an earlier version approval.
 
 - `module.json` name is `qingyu_ip_agent`.
 - `admin_prefix` is `qingyu_ip_agent` and does not collide with reserved prefixes.
 - Module type is `private`.
+- `execution.mode` is `in_process`; the module does not declare or fall back to external Worker operations.
+- The `1.6.0` immutable artifact hash and signature are newly generated and are not reused from `1.5.0`.
 - Menus are declared in `module.json`.
 - Controllers use `ControllerAnnotation` and actions use `NodeAnnotation`.
 - Dangerous actions require POST.

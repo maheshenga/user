@@ -33,12 +33,12 @@ class ModuleExecutionPolicyTest extends TestCase
         $this->createEasyAdminHostTables();
     }
 
-    public function test_production_rejects_enabling_a_community_module_in_process(): void
+    public function test_production_rejects_enabling_a_community_module_without_eligible_worker(): void
     {
         $this->assertProductionEnableRejected('community_module', 'community');
     }
 
-    public function test_production_rejects_enabling_a_partner_module_in_process(): void
+    public function test_production_rejects_enabling_a_partner_module_without_eligible_worker(): void
     {
         $this->assertProductionEnableRejected('partner_module', 'partner');
     }
@@ -92,6 +92,15 @@ class ModuleExecutionPolicyTest extends TestCase
         $this->assertFalse(app(ModuleExecutionPolicy::class)->isInProcessAllowed($module));
     }
 
+    public function test_production_never_allows_community_in_process_even_if_misconfigured(): void
+    {
+        $module = $this->createModule('misconfigured_community', 'community', 'disabled');
+        Config::set('modules.production_in_process_trust_levels', ['core', 'official', 'private', 'community']);
+        $this->app['env'] = 'production';
+
+        $this->assertFalse(app(ModuleExecutionPolicy::class)->isInProcessAllowed($module));
+    }
+
     public function test_production_uses_type_for_legacy_empty_trust_level(): void
     {
         $module = $this->createModule('legacy_private', 'private', 'disabled');
@@ -110,18 +119,25 @@ class ModuleExecutionPolicyTest extends TestCase
             app(ModuleInstaller::class)->enable($name, 1);
             $this->fail("Expected [{$trustLevel}] module enablement to be rejected.");
         } catch (InvalidArgumentException $exception) {
-            $this->assertStringContainsString('不允许在生产环境主进程内运行', $exception->getMessage());
+            $this->assertStringContainsString('未绑定可供 Worker 执行的已审核制品', $exception->getMessage());
         }
 
         $this->assertSame('disabled', $module->refresh()->status);
         $this->assertStringContainsString(
-            '不允许在生产环境主进程内运行',
+            '未绑定可供 Worker 执行的已审核制品',
             (string) $module->last_error
         );
         $this->assertDatabaseHas('system_module_log', [
             'module' => $name,
             'action' => 'enable',
             'result' => 'failed',
+        ]);
+        $this->assertDatabaseHas('system_module_operation', [
+            'module' => $name,
+            'action' => 'enable',
+            'stage' => 'failed',
+            'status' => 'failed',
+            'actor_id' => 1,
         ]);
     }
 
