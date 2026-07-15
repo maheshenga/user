@@ -7,6 +7,7 @@ return [
     'allowed_types' => ['core', 'official', 'partner', 'community', 'private'],
     'local_unsigned_types' => ['core', 'official', 'private'],
     'production_requires_signature_for' => ['partner', 'community'],
+    'production_in_process_trust_levels' => ['core', 'official', 'private'],
     'signing_key' => env('MODULE_SIGNING_KEY', ''),
     'reserved_admin_prefixes' => [],
     'allowed_permissions' => [

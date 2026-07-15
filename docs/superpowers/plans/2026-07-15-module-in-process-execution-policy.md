@@ -27,19 +27,19 @@
 - Consumes: `ModuleInstaller::enable(string $name, ?int $actorId = null): void` and `ModuleManager::enabled(bool $forceIntegrityCheck = false): array`.
 - Produces: behavioral coverage for the new `ModuleExecutionPolicy` contract.
 
-- [ ] **Step 1: Add production enable rejection tests**
+- [x] **Step 1: Add production enable rejection tests**
 
 Create disabled `community` and `partner` `SystemModule` rows, set `$this->app['env'] = 'production'`, call `ModuleInstaller::enable()`, and assert an `InvalidArgumentException` containing `不允许在主进程内运行` while status remains `disabled`.
 
-- [ ] **Step 2: Add stale runtime row rejection test**
+- [x] **Step 2: Add stale runtime row rejection test**
 
 Create an enabled `community` row, call `ModuleManager::enabled()`, assert the module is absent, and assert `last_error` contains the policy message.
 
-- [ ] **Step 3: Add trusted and non-production compatibility tests**
+- [x] **Step 3: Add trusted and non-production compatibility tests**
 
 Install a valid immutable `private` fixture before switching to production, assert it can be enabled, and directly assert a development `community` row is accepted by `ModuleExecutionPolicy`.
 
-- [ ] **Step 4: Run the focused test and verify RED**
+- [x] **Step 4: Run the focused test and verify RED**
 
 Run:
 
@@ -61,7 +61,7 @@ Expected: failure because `App\Modules\ModuleExecutionPolicy` does not exist and
 - Produces: `ModuleExecutionPolicy::isInProcessAllowed(SystemModule $module): bool`.
 - Produces: `ModuleExecutionPolicy::assertInProcessAllowed(SystemModule $module): void`.
 
-- [ ] **Step 1: Add the production allowlist configuration**
+- [x] **Step 1: Add the production allowlist configuration**
 
 Add:
 
@@ -69,7 +69,7 @@ Add:
 'production_in_process_trust_levels' => ['core', 'official', 'private'],
 ```
 
-- [ ] **Step 2: Implement the focused policy**
+- [x] **Step 2: Implement the focused policy**
 
 The policy returns `true` outside production. In production it normalizes the configured allowlist to unique non-empty strings, evaluates `trust_level` with a legacy `type` fallback, and throws:
 
@@ -77,15 +77,15 @@ The policy returns `true` outside production. In production it normalizes the co
 模块 [name] 的信任级别 [level] 不允许在生产环境主进程内运行；请使用独立模块执行服务。
 ```
 
-- [ ] **Step 3: Enforce policy during enablement**
+- [x] **Step 3: Enforce policy during enablement**
 
 Inject `ModuleExecutionPolicy` into `ModuleInstaller` and call `assertInProcessAllowed()` after lifecycle status validation and before immutable release checks, manifest loading, menu synchronization, and status mutation.
 
-- [ ] **Step 4: Enforce policy during runtime discovery**
+- [x] **Step 4: Enforce policy during runtime discovery**
 
 Inject `ModuleExecutionPolicy` into `ModuleManager` and call `assertInProcessAllowed()` inside the existing `try` at the beginning of `manifestFromRow()`. Preserve the current catch behavior that writes `last_error` and returns `null`.
 
-- [ ] **Step 5: Run the focused test and verify GREEN**
+- [x] **Step 5: Run the focused test and verify GREEN**
 
 Run the Task 1 command and expect all policy tests to pass.
 
@@ -94,27 +94,27 @@ Run the Task 1 command and expect all policy tests to pass.
 **Files:**
 - Review: all files changed by Tasks 1 and 2.
 
-- [ ] **Step 1: Run formatting checks**
+- [x] **Step 1: Run formatting checks**
 
 ```bash
 php vendor/bin/pint --test app/Modules/ModuleExecutionPolicy.php app/Modules/ModuleInstaller.php app/Modules/ModuleManager.php config/modules.php tests/Feature/Modules/ModuleExecutionPolicyTest.php
 ```
 
-- [ ] **Step 2: Run module regressions**
+- [x] **Step 2: Run module regressions**
 
 ```bash
 APP_TIMEZONE=Asia/Shanghai DB_CONNECTION=sqlite DB_DATABASE=:memory: php vendor/bin/phpunit tests/Feature/Modules/ModuleExecutionPolicyTest.php tests/Feature/Modules/ModuleReleaseTest.php tests/Feature/Modules/ModuleRuntimeTest.php tests/Feature/Modules/QingyuIpAgentModuleTest.php
 ```
 
-- [ ] **Step 3: Inspect behavior and security boundaries**
+- [x] **Step 3: Inspect behavior and security boundaries**
 
 Confirm production is fail-closed, non-production behavior is unchanged, internal private modules pass, both enforcement points use one policy, lifecycle failures are audited, and no migration or secret is introduced.
 
-- [ ] **Step 4: Inspect the diff**
+- [x] **Step 4: Inspect the diff**
 
 Run `git diff --check`, inspect `git diff --stat` and `git diff`, and scan staged content for credentials or private keys.
 
-- [ ] **Step 5: Commit implementation**
+- [x] **Step 5: Commit implementation**
 
 ```bash
 git add app/Modules/ModuleExecutionPolicy.php app/Modules/ModuleInstaller.php app/Modules/ModuleManager.php config/modules.php tests/Feature/Modules/ModuleExecutionPolicyTest.php docs/superpowers/plans/2026-07-15-module-in-process-execution-policy.md

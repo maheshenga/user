@@ -13,6 +13,7 @@ final class ModuleManager
 {
     public function __construct(
         private readonly ModuleRepository $repository,
+        private readonly ModuleExecutionPolicy $executionPolicy,
         private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
         private readonly ModuleArtifactHasher $hasher,
         private readonly ModuleReleaseSigner $signer,
@@ -91,6 +92,8 @@ final class ModuleManager
     private function manifestFromRow(SystemModule $module, bool $forceIntegrityCheck = false): ?ModuleManifest
     {
         try {
+            $this->executionPolicy->assertInProcessAllowed($module);
+
             if ($module->active_release_id === null) {
                 if (app()->environment('production') && Schema::hasTable('system_module_release')) {
                     throw new InvalidArgumentException("模块 [{$module->name}] 未绑定已审核的不可变制品。");

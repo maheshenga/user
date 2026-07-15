@@ -13,6 +13,7 @@ final class ModuleInstaller
 {
     public function __construct(
         private readonly ModuleManager $manager,
+        private readonly ModuleExecutionPolicy $executionPolicy,
         private readonly ModuleRepository $repository,
         private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
         private readonly ModuleVersionRecorder $versions,
@@ -74,6 +75,9 @@ final class ModuleInstaller
             if (! in_array($module->status, ['installed', 'disabled'], true)) {
                 throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$module->status}] 不允许启用。");
             }
+
+            $this->executionPolicy->assertInProcessAllowed($module);
+
             if (
                 app()->environment('production')
                 && Schema::hasTable('system_module_release')
