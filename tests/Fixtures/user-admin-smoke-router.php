@@ -13,7 +13,7 @@ if (! isset($_COOKIE['ADMINSMOKESESSID'])) {
     ]);
 }
 
-$stateFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'user-admin-smoke-' . hash('sha256', $sessionId) . '.json';
+$stateFile = sys_get_temp_dir().DIRECTORY_SEPARATOR.'user-admin-smoke-'.hash('sha256', $sessionId).'.json';
 $state = is_file($stateFile) ? json_decode((string) file_get_contents($stateFile), true) : [];
 
 if (! is_array($state)) {
@@ -37,10 +37,10 @@ $json = static function (array $payload, int $status = 200): void {
 $html = static function (string $title): void {
     header('Content-Type: text/html; charset=UTF-8');
     echo '<!doctype html><html><head><meta name="csrf-token" content="fixture-admin-token"><title>'
-        . htmlspecialchars($title, ENT_QUOTES, 'UTF-8')
-        . '</title></head><body><main>'
-        . htmlspecialchars($title, ENT_QUOTES, 'UTF-8')
-        . '</main></body></html>';
+        .htmlspecialchars($title, ENT_QUOTES, 'UTF-8')
+        .'</title></head><body><main>'
+        .htmlspecialchars($title, ENT_QUOTES, 'UTF-8')
+        .'</main></body></html>';
 };
 
 $input = static function (): array {
@@ -85,7 +85,7 @@ $userOpsChildren = static function (string $mode): array {
     }
 
     return array_map(
-        static fn (string $path, string $title): array => ['title' => $title, 'href' => '/admin/' . $path],
+        static fn (string $path, string $title): array => ['title' => $title, 'href' => '/admin/'.$path],
         array_keys($paths),
         array_values($paths)
     );
@@ -93,6 +93,7 @@ $userOpsChildren = static function (string $mode): array {
 
 if ($method === 'GET' && $path === '/admin/login') {
     $html('Admin Login');
+
     return;
 }
 
@@ -105,6 +106,7 @@ if ($method === 'POST' && $path === '/admin/login') {
             'msg' => 'invalid csrf token',
             '__token__' => 'fixture-admin-token',
         ]);
+
         return;
     }
 
@@ -114,6 +116,7 @@ if ($method === 'POST' && $path === '/admin/login') {
             'msg' => 'username and password are required',
             '__token__' => 'fixture-admin-token',
         ]);
+
         return;
     }
 
@@ -125,12 +128,14 @@ if ($method === 'POST' && $path === '/admin/login') {
         'url' => '/admin',
         '__token__' => 'fixture-admin-token-refreshed',
     ]);
+
     return;
 }
 
 if (! $state['logged_in']) {
     http_response_code(401);
     echo 'Unauthorized';
+
     return;
 }
 
@@ -175,6 +180,7 @@ define(["jquery", "easy-admin"], function ($, ea) {
     };
 });
 JS;
+
     return;
 }
 
@@ -200,6 +206,7 @@ define(["jquery", "easy-admin"], function ($, ea) {
 
     return {
         index: function () {
+            var reviewButton = '<a data-review-detail="1">审核详情</a>';
             $('body').on('click', '[data-module-action]', function () {
                 ea.request.post({url: init.approve_url});
             });
@@ -210,6 +217,7 @@ define(["jquery", "easy-admin"], function ($, ea) {
     };
 });
 JS;
+
     return;
 }
 
@@ -249,6 +257,7 @@ if ($method === 'GET' && $path === '/admin/ajax/initAdmin') {
         'homeInfo' => ['title' => 'Home', 'href' => '/admin'],
         'menuInfo' => $menuInfo,
     ]);
+
     return;
 }
 
@@ -275,6 +284,7 @@ if ($method === 'GET' && $path === '/admin/user/dashboard/index' && $isJsonReque
         'data' => $metrics,
         '__token__' => 'fixture-admin-token-refreshed',
     ]);
+
     return;
 }
 
@@ -289,6 +299,7 @@ if ($method === 'POST' && $path === '/admin/user/account/modify') {
             'msg' => '用户账号管理仅允许修改账号状态。',
             '__token__' => 'fixture-admin-token-refreshed',
         ]);
+
         return;
     }
 
@@ -298,6 +309,7 @@ if ($method === 'POST' && $path === '/admin/user/account/modify') {
             'msg' => '账号状态值无效。',
             '__token__' => 'fixture-admin-token-refreshed',
         ]);
+
         return;
     }
 
@@ -306,6 +318,7 @@ if ($method === 'POST' && $path === '/admin/user/account/modify') {
         'msg' => '保存成功',
         '__token__' => 'fixture-admin-token-refreshed',
     ]);
+
     return;
 }
 
@@ -331,6 +344,7 @@ if ($method === 'GET' && $path === '/admin/system/module/index') {
 </body>
 </html>
 HTML;
+
     return;
 }
 
@@ -338,12 +352,14 @@ if ($method === 'GET' && in_array($path, $userOpsPagePaths, true)) {
     if ($mode === 'page-error' && $path === '/admin/user/account/index') {
         header('Content-Type: text/html; charset=UTF-8');
         echo '<!doctype html><html><body><div class="system-message error"><h1>No permission</h1></div></body></html>';
+
         return;
     }
 
     if ($mode === 'login-shell-page' && $path === '/admin/user/account/index') {
         header('Content-Type: text/html; charset=UTF-8');
         echo '<!doctype html><html><head><title>Admin Login</title><link rel="stylesheet" href="/static/admin/css/login.css"></head><body><form id="loginForm"><input name="username"><input name="password"></form></body></html>';
+
         return;
     }
 
@@ -377,10 +393,12 @@ if ($method === 'GET' && in_array($path, $userOpsPagePaths, true)) {
 </body>
 </html>
 HTML;
+
         return;
     }
 
     $html($path);
+
     return;
 }
 
