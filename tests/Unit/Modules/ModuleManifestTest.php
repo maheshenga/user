@@ -2,13 +2,75 @@
 
 namespace Tests\Unit\Modules;
 
+use App\Modules\ModuleContractRegistry;
 use App\Modules\ModuleManifest;
+use Illuminate\Support\Facades\Config;
 use InvalidArgumentException;
 use JsonException;
 use Tests\TestCase;
 
 class ModuleManifestTest extends TestCase
 {
+    public function test_contract_registry_accepts_supported_manifest_and_gateway_versions(): void
+    {
+        $this->assertTrue(class_exists(ModuleContractRegistry::class));
+        Config::set('modules.supported_manifest_schema_versions', ['1.0']);
+        Config::set('modules.supported_gateway_versions', ['member' => ['1.0']]);
+        $manifest = $this->contractManifest([
+            'schema_version' => '1.0',
+            'gateway_versions' => ['member' => '1.0'],
+        ]);
+
+        app(ModuleContractRegistry::class)->assertManifestSupported($manifest);
+
+        $this->assertSame('1.0', $manifest->schemaVersion());
+        $this->assertSame(['member' => '1.0'], $manifest->gatewayVersions());
+    }
+
+    public function test_contract_registry_rejects_unsupported_manifest_schema_version(): void
+    {
+        $this->assertTrue(class_exists(ModuleContractRegistry::class));
+        Config::set('modules.supported_manifest_schema_versions', ['1.0']);
+        $manifest = $this->contractManifest(['schema_version' => '2.0']);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('不支持的 Manifest schema 版本：2.0');
+
+        app(ModuleContractRegistry::class)->assertManifestSupported($manifest);
+    }
+
+    public function test_contract_registry_rejects_unsupported_gateway_version(): void
+    {
+        $this->assertTrue(class_exists(ModuleContractRegistry::class));
+        Config::set('modules.supported_manifest_schema_versions', ['1.0']);
+        Config::set('modules.supported_gateway_versions', ['member' => ['1.0']]);
+        $manifest = $this->contractManifest([
+            'gateway_versions' => ['member' => '2.0'],
+        ]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('不支持的 Gateway 契约版本：member@2.0');
+
+        app(ModuleContractRegistry::class)->assertManifestSupported($manifest);
+    }
+
+    public function test_contract_registry_requires_gateway_version_for_declared_host_capability(): void
+    {
+        $this->assertTrue(class_exists(ModuleContractRegistry::class));
+        Config::set('modules.supported_manifest_schema_versions', ['1.0']);
+        Config::set('modules.supported_gateway_versions', ['member' => ['1.0']]);
+        Config::set('modules.gateway_permission_contracts', ['user:read' => 'member']);
+        $manifest = $this->contractManifest([
+            'permissions' => ['user:read'],
+            'gateway_versions' => [],
+        ]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Gateway 契约版本未声明：member');
+
+        app(ModuleContractRegistry::class)->assertManifestSupported($manifest);
+    }
+
     public function test_manifest_is_loaded_and_normalized(): void
     {
         $manifest = ModuleManifest::fromFile(base_path('tests/Fixtures/modules/Blog/module.json'));
@@ -207,6 +269,30 @@ class ModuleManifestTest extends TestCase
             } catch (InvalidArgumentException $exception) {
                 $this->assertSame('module.json 字段格式无效：name', $exception->getMessage());
             }
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    private function contractManifest(array $overrides): ModuleManifest
+    {
+        $path = base_path('storage/framework/testing-contract-module.json');
+        $manifest = array_replace_recursive([
+            'schema_version' => '1.0',
+            'name' => 'contract_module',
+            'title' => 'Contract Module',
+            'vendor' => 'easyadmin8',
+            'version' => '1.0.0',
+            'type' => 'private',
+            'core_version' => '^8.0',
+            'namespace' => 'Modules\\ContractModule',
+            'admin_prefix' => 'contract_module',
+            'gateway_versions' => [],
+        ], $overrides);
+        file_put_contents($path, json_encode($manifest, JSON_THROW_ON_ERROR));
+
+        try {
+            return ModuleManifest::fromFile($path);
         } finally {
             @unlink($path);
         }

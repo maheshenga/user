@@ -18,6 +18,7 @@ final class ModuleRollbacker
         private readonly ModuleMigrationRunner $migrations,
         private readonly ModuleArtifactHasher $hasher,
         private readonly ModuleManifestPolicy $policy,
+        private readonly ModuleDependencyGraph $dependencyGraph,
         private readonly ModuleReleaseSigner $signer,
         private readonly ModuleMenuSynchronizer $menus,
         private readonly ModuleNodeSynchronizer $nodes,
@@ -62,6 +63,8 @@ final class ModuleRollbacker
             $backup = $this->latestBackup($name);
             $target = ModuleManifest::fromFile($backup.DIRECTORY_SEPARATOR.'module.json');
             $this->assertManifestName($target, $name);
+            $this->policy->validate($target);
+            $this->dependencyGraph->assertUpgradeCompatible($target);
 
             $currentPath = rtrim((string) $module->path, DIRECTORY_SEPARATOR);
             $current = ModuleManifest::fromFile($currentPath.DIRECTORY_SEPARATOR.'module.json');
@@ -136,6 +139,7 @@ final class ModuleRollbacker
             $currentManifest = $this->verifiedManifest($current);
             $targetManifest = $this->verifiedManifest($target);
             $this->assertManifestName($targetManifest, (string) $module->name);
+            $this->dependencyGraph->assertUpgradeCompatible($targetManifest);
             $this->migrations->assertMissingReversible($currentManifest, $targetManifest);
             if ($this->migrations->missingMigrationCount($currentManifest, $targetManifest) > 1) {
                 throw new RuntimeException('需要人工回滚：自动回滚最多支持一个缺失迁移。');

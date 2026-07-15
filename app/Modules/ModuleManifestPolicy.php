@@ -7,8 +7,11 @@ use InvalidArgumentException;
 
 final class ModuleManifestPolicy
 {
+    public function __construct(private readonly ModuleContractRegistry $contracts) {}
+
     public function validate(ModuleManifest $manifest): void
     {
+        $this->contracts->assertManifestSupported($manifest);
         $this->assertType($manifest);
         $this->assertVersion($manifest->version(), '模块版本');
         $this->assertNamespace($manifest->namespace());

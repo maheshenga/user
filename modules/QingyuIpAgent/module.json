@@ -51,6 +51,16 @@
       "content.rewrite": 100
     }
   },
+  "gateway_versions": {
+    "member": "1.0",
+    "invitation": "1.0",
+    "vip": "1.0",
+    "activation_code": "1.0",
+    "balance": "1.0",
+    "affiliate": "1.0",
+    "audit": "1.0",
+    "notification": "1.0"
+  },
   "database": {
     "tables": [
       "qingyu_ip_agent_settings",

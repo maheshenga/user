@@ -13,6 +13,7 @@ final class ModuleManager
         private readonly ModuleRepository $repository,
         private readonly ModuleRuntimeEligibility $eligibility,
         private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
+        private readonly ModuleContractRegistry $contracts,
     ) {}
 
     /**
@@ -107,7 +108,10 @@ final class ModuleManager
     private function loadManifest(string $manifestPath): ?ModuleManifest
     {
         try {
-            return ModuleManifest::fromFile($manifestPath);
+            $manifest = ModuleManifest::fromFile($manifestPath);
+            $this->contracts->assertManifestSupported($manifest);
+
+            return $manifest;
         } catch (InvalidArgumentException) {
             return null;
         }

@@ -14,6 +14,8 @@ final class ModuleInstaller
     public function __construct(
         private readonly ModuleManager $manager,
         private readonly ModuleExecutionPolicy $executionPolicy,
+        private readonly ModuleManifestPolicy $manifestPolicy,
+        private readonly ModuleDependencyGraph $dependencyGraph,
         private readonly ModuleRepository $repository,
         private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
         private readonly ModuleVersionRecorder $versions,
@@ -53,6 +55,8 @@ final class ModuleInstaller
                 throw new InvalidArgumentException("模块 [{$name}] 必须先通过审核才能安装。");
             }
 
+            $this->manifestPolicy->validate($manifest);
+            $this->dependencyGraph->assertUpgradeCompatible($manifest);
             $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $name);
             $this->repository->upsertDiscovered($manifest);
             $this->versions->record($manifest);
@@ -97,6 +101,9 @@ final class ModuleInstaller
             $manifest = ModuleManifest::fromFile(
                 rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json'
             );
+            $this->manifestPolicy->validate($manifest);
+            $this->dependencyGraph->assertUpgradeCompatible($manifest);
+            $this->dependencyGraph->activationOrder($name);
             $this->menus->sync($manifest);
             $this->nodes->sync($manifest);
             $this->repository->setStatus($name, 'enabled');
@@ -118,6 +125,7 @@ final class ModuleInstaller
                 throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$module->status}] 不允许禁用。");
             }
 
+            $this->dependencyGraph->assertCanDisable($name);
             $this->menus->hide($name);
             $this->nodes->hide($name);
             $this->apiTokens->revokeModule($name);
@@ -140,6 +148,7 @@ final class ModuleInstaller
                 throw new InvalidArgumentException("模块 [{$name}] 当前状态 [{$module->status}] 不允许卸载。");
             }
 
+            $this->dependencyGraph->assertCanDisable($name);
             $this->menus->hide($name);
             $this->nodes->hide($name);
             $this->apiTokens->revokeModule($name);

@@ -89,6 +89,11 @@ final class ModuleManifest
         return (string) $this->data['name'];
     }
 
+    public function schemaVersion(): string
+    {
+        return (string) $this->data['schema_version'];
+    }
+
     public function title(): string
     {
         return (string) $this->data['title'];
@@ -203,6 +208,16 @@ final class ModuleManifest
         $quotas = is_array($api) && is_array($api['quotas'] ?? null) ? $api['quotas'] : [];
 
         return $quotas;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function gatewayVersions(): array
+    {
+        return is_array($this->data['gateway_versions'] ?? null)
+            ? $this->data['gateway_versions']
+            : [];
     }
 
     /**

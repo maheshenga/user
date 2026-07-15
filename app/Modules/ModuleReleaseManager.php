@@ -16,6 +16,7 @@ final class ModuleReleaseManager
         private readonly ModuleArtifactHasher $hasher,
         private readonly ModuleArtifactStore $artifacts,
         private readonly ModuleManifestPolicy $policy,
+        private readonly ModuleDependencyGraph $dependencyGraph,
         private readonly ModuleMigrationRunner $migrations,
         private readonly ModuleVersionRecorder $versions,
         private readonly ModuleRepository $repository,
@@ -94,6 +95,7 @@ final class ModuleReleaseManager
     ): SystemModuleRelease {
         $this->operations->stage($operationId, 'validating');
         $this->policy->validate($manifest);
+        $this->dependencyGraph->assertUpgradeCompatible($manifest);
         $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $manifest->name());
         $current = $this->repository->installed($manifest->name());
         if ($current !== null && in_array((string) $current->status, ['installed', 'enabled', 'disabled'], true)) {
@@ -207,6 +209,7 @@ final class ModuleReleaseManager
 
         $manifest = ModuleManifest::fromFile(rtrim((string) $release->artifact_path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json');
         $this->policy->validate($manifest);
+        $this->dependencyGraph->assertUpgradeCompatible($manifest);
         $actualHash = $this->hasher->hashDirectory((string) $release->artifact_path);
         if (! hash_equals((string) $release->artifact_hash, $actualHash)) {
             throw new RuntimeException("模块 [{$name}] 制品完整性校验失败。");
