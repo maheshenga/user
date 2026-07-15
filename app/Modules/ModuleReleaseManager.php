@@ -23,6 +23,7 @@ final class ModuleReleaseManager
         private readonly ModuleFileStore $files,
         private readonly ReservedAdminPrefixRegistry $reservedPrefixes,
         private readonly ModuleMenuSynchronizer $menus,
+        private readonly ModuleOperationCoordinator $operations,
     ) {}
 
     public function stageZip(string $zipPath, ?string $expectedName = null, ?int $actorId = null): SystemModuleRelease
@@ -69,6 +70,28 @@ final class ModuleReleaseManager
         string $trustLevel = 'private',
         ?int $actorId = null
     ): SystemModuleRelease {
+        return $this->operations->run(
+            $manifest->name(),
+            'stage_release',
+            $actorId,
+            fn (string $operationId): SystemModuleRelease => $this->stageManifestLocked(
+                $manifest,
+                $sourceType,
+                $trustLevel,
+                $actorId,
+                $operationId
+            )
+        );
+    }
+
+    private function stageManifestLocked(
+        ModuleManifest $manifest,
+        string $sourceType,
+        string $trustLevel,
+        ?int $actorId,
+        string $operationId
+    ): SystemModuleRelease {
+        $this->operations->stage($operationId, 'validating');
         $this->policy->validate($manifest);
         $this->reservedPrefixes->assertAllowed($manifest->adminPrefix(), $manifest->name());
         $current = $this->repository->installed($manifest->name());
@@ -85,8 +108,9 @@ final class ModuleReleaseManager
         $artifactPath = $this->artifacts->stage($manifest, $hash);
         $artifactManifest = ModuleManifest::fromFile($artifactPath.DIRECTORY_SEPARATOR.'module.json');
         $artifactPath = $artifactManifest->path();
+        $this->operations->stage($operationId, 'persisting_release');
 
-        return DB::transaction(function () use ($artifactManifest, $artifactPath, $hash, $sourceType, $trustLevel, $actorId, $current): SystemModuleRelease {
+        $release = DB::transaction(function () use ($artifactManifest, $artifactPath, $hash, $sourceType, $trustLevel, $actorId, $current): SystemModuleRelease {
             $release = SystemModuleRelease::query()->firstOrCreate(
                 [
                     'module' => $artifactManifest->name(),
@@ -149,9 +173,23 @@ final class ModuleReleaseManager
 
             return $release->refresh();
         });
+
+        $this->operations->stage($operationId, 'staged');
+
+        return $release;
     }
 
     public function activateApproved(string $name, ?int $actorId = null): void
+    {
+        $this->operations->run(
+            $name,
+            'activate_release',
+            $actorId,
+            fn (string $operationId) => $this->activateApprovedLocked($name, $actorId, $operationId)
+        );
+    }
+
+    private function activateApprovedLocked(string $name, ?int $actorId, string $operationId): void
     {
         $module = $this->repository->installed($name);
         if ($module === null || $module->pending_release_id === null) {
@@ -177,11 +215,14 @@ final class ModuleReleaseManager
         $targetStatus = in_array($oldStatus, ['installed', 'enabled', 'disabled'], true) ? $oldStatus : 'installed';
         $oldVersion = (string) $module->version;
         $oldReleaseId = $module->active_release_id;
+        $this->operations->transition($operationId, $oldStatus, $targetStatus);
+        $this->operations->stage($operationId, 'migrating');
         $module->forceFill(['status' => 'upgrading', 'update_time' => time()])->save();
 
         $migrationBatch = null;
         try {
             $migrationBatch = $this->migrations->runPending($manifest);
+            $this->operations->stage($operationId, 'activating');
 
             DB::transaction(function () use (
                 $module,
@@ -270,6 +311,7 @@ final class ModuleReleaseManager
             throw $failure;
         }
 
+        $this->operations->stage($operationId, 'activated');
         $this->clearCaches();
     }
 

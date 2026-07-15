@@ -138,7 +138,9 @@ class ModuleUpgradeTest extends TestCase
         $this->writeModule('Blog', $this->manifest('blog', '1.1.0'));
 
         $lockDir = storage_path('modules/locks');
-        mkdir($lockDir, 0777, true);
+        if (! is_dir($lockDir)) {
+            mkdir($lockDir, 0777, true);
+        }
         $lock = fopen($lockDir.DIRECTORY_SEPARATOR.'blog.lock', 'c');
         $this->assertIsResource($lock);
         $this->assertTrue(flock($lock, LOCK_EX | LOCK_NB));
@@ -147,7 +149,7 @@ class ModuleUpgradeTest extends TestCase
             app(ModuleUpgrader::class)->upgradeLocal('blog');
             $this->fail('Expected local upgrade to reject a busy module lock.');
         } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('模块 [blog] 正在升级中，请稍后再试。', $exception->getMessage());
+            $this->assertStringContainsString('Module [blog] already has an active lifecycle operation.', $exception->getMessage());
         } finally {
             flock($lock, LOCK_UN);
             fclose($lock);

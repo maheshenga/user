@@ -20,12 +20,17 @@ final class ModuleRollbacker
         private readonly ModuleManifestPolicy $policy,
         private readonly ModuleReleaseSigner $signer,
         private readonly ModuleMenuSynchronizer $menus,
+        private readonly ModuleOperationCoordinator $operations,
     ) {}
 
     public function rollback(string $name, ?int $actorId = null): void
     {
-        $this->withModuleLock($name, function () use ($name, $actorId): void {
+        $this->operations->run($name, 'rollback', $actorId, function (string $operationId) use ($name, $actorId): void {
+            $status = $this->repository->installed($name)?->status;
+            $this->operations->transition($operationId, $status, $status);
+            $this->operations->stage($operationId, 'rolling_back');
             $this->rollbackLocked($name, $actorId);
+            $this->operations->stage($operationId, 'rolled_back');
         });
     }
 
@@ -257,48 +262,4 @@ final class ModuleRollbacker
         Cache::forget('version');
     }
 
-    /**
-     * @param  callable(): void  $operation
-     */
-    private function withModuleLock(string $module, callable $operation): void
-    {
-        $dir = storage_path('modules/locks');
-        if (! is_dir($dir) && ! mkdir($dir, 0777, true) && ! is_dir($dir)) {
-            throw new RuntimeException("无法创建模块锁目录：{$dir}");
-        }
-
-        $path = $dir.DIRECTORY_SEPARATOR.$this->safeLockSegment($module).'.lock';
-        $handle = fopen($path, 'c');
-        if ($handle === false) {
-            throw new RuntimeException("无法打开模块锁：{$path}");
-        }
-
-        try {
-            $deadline = microtime(true) + 2.0;
-            do {
-                if (flock($handle, LOCK_EX | LOCK_NB)) {
-                    try {
-                        $operation();
-                    } finally {
-                        flock($handle, LOCK_UN);
-                    }
-
-                    return;
-                }
-
-                usleep(50_000);
-            } while (microtime(true) < $deadline);
-
-            throw new RuntimeException("模块 [{$module}] 正在升级中，请稍后再试。");
-        } finally {
-            fclose($handle);
-        }
-    }
-
-    private function safeLockSegment(string $value): string
-    {
-        $safe = preg_replace('/[^A-Za-z0-9_.-]/', '_', $value) ?? '_';
-
-        return in_array($safe, ['', '.', '..'], true) ? '_' : $safe;
-    }
 }

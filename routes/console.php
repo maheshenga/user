@@ -5,6 +5,7 @@ use App\Modules\ModuleCenterMenuService;
 use App\Modules\ModuleInstaller;
 use App\Modules\ModuleManager;
 use App\Modules\ModuleManifest;
+use App\Modules\ModuleOperationRecovery;
 use App\Modules\ModuleReleaseManager;
 use App\Modules\ModuleRepository;
 use App\Modules\ModuleReviewService;
@@ -20,6 +21,42 @@ use Illuminate\Support\Facades\Schema;
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Artisan::command('system:module-operations:recover {--minutes=15} {--json}', function (): int {
+    if (! Schema::hasTable('system_module_operation')) {
+        $this->error('Module operation records are not installed. Run database migrations first.');
+
+        return Command::FAILURE;
+    }
+
+    $minutes = filter_var($this->option('minutes'), FILTER_VALIDATE_INT);
+    if ($minutes === false || $minutes < 1 || $minutes > 10080) {
+        $this->error('The stale threshold must be between 1 and 10080 minutes.');
+
+        return Command::FAILURE;
+    }
+
+    $result = app(ModuleOperationRecovery::class)->recoverStale(now()->subMinutes($minutes));
+    if ((bool) $this->option('json')) {
+        $this->line(json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+    } else {
+        foreach ($result['operations'] as $operation) {
+            $this->line(
+                $operation['module'].' '.$operation['action']
+                .' operation='.$operation['id']
+                .' restored='.($operation['restored'] ? 'yes' : 'no')
+            );
+        }
+        $this->info(
+            'examined='.$result['examined']
+            .' recovered='.$result['recovered']
+            .' restored='.$result['restored']
+            .' skipped='.$result['skipped']
+        );
+    }
+
+    return Command::SUCCESS;
+})->purpose('Recover stale module lifecycle operation markers without reversing migrations');
 
 $modulePersistenceTables = static fn (): array => [
     'system_module',

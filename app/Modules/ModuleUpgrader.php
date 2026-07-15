@@ -4,13 +4,13 @@ namespace App\Modules;
 
 use App\Models\SystemModule;
 use InvalidArgumentException;
-use RuntimeException;
 
 final class ModuleUpgrader
 {
     public function __construct(
         private readonly ModuleRepository $repository,
         private readonly ModuleReleaseManager $releases,
+        private readonly ModuleOperationCoordinator $operations,
     ) {}
 
     public function upgradeLocal(string $name, ?int $actorId = null): void
@@ -19,7 +19,8 @@ final class ModuleUpgrader
             throw new InvalidArgumentException('生产环境禁止从可变本地目录直接升级模块，请上传 ZIP 制品并重新审核。');
         }
 
-        $this->withModuleLock($name, function () use ($name, $actorId): void {
+        $this->operations->run($name, 'upgrade_local', $actorId, function (string $operationId) use ($name, $actorId): void {
+            $this->operations->stage($operationId, 'validating_upgrade');
             $module = $this->installedModule($name);
             $manifest = ModuleManifest::fromFile(
                 rtrim((string) $module->path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'module.json'
@@ -27,6 +28,7 @@ final class ModuleUpgrader
             $this->assertManifestName($manifest, $name);
             $this->assertUpgradeable((string) $module->status, (string) $module->version, $manifest);
             $this->releases->stageManifest($manifest, 'local', 'private', $actorId);
+            $this->operations->stage($operationId, 'upgrade_staged');
         });
     }
 
@@ -65,48 +67,4 @@ final class ModuleUpgrader
         }
     }
 
-    /**
-     * @param  callable(): void  $operation
-     */
-    private function withModuleLock(string $module, callable $operation): void
-    {
-        $dir = storage_path('modules/locks');
-        if (! is_dir($dir) && ! mkdir($dir, 0777, true) && ! is_dir($dir)) {
-            throw new RuntimeException("无法创建模块锁目录：{$dir}");
-        }
-
-        $path = $dir.DIRECTORY_SEPARATOR.$this->safeLockSegment($module).'.lock';
-        $handle = fopen($path, 'c');
-        if ($handle === false) {
-            throw new RuntimeException("无法打开模块锁：{$path}");
-        }
-
-        try {
-            $deadline = microtime(true) + 2.0;
-            do {
-                if (flock($handle, LOCK_EX | LOCK_NB)) {
-                    try {
-                        $operation();
-                    } finally {
-                        flock($handle, LOCK_UN);
-                    }
-
-                    return;
-                }
-
-                usleep(50_000);
-            } while (microtime(true) < $deadline);
-
-            throw new RuntimeException("模块 [{$module}] 正在升级中，请稍后再试。");
-        } finally {
-            fclose($handle);
-        }
-    }
-
-    private function safeLockSegment(string $value): string
-    {
-        $safe = preg_replace('/[^A-Za-z0-9_.-]/', '_', $value) ?? '_';
-
-        return in_array($safe, ['', '.', '..'], true) ? '_' : $safe;
-    }
 }

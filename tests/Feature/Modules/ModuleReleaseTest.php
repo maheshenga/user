@@ -3,6 +3,7 @@
 namespace Tests\Feature\Modules;
 
 use App\Models\SystemModule;
+use App\Models\SystemModuleOperation;
 use App\Models\SystemModuleRelease;
 use App\Modules\ModuleArtifactHasher;
 use App\Modules\ModuleArtifactStore;
@@ -232,6 +233,13 @@ class ModuleReleaseTest extends TestCase
         $this->assertSame('active', $release->status);
         $this->assertSame(7, $release->reviewed_by);
         $this->assertNotNull($release->signature_hash);
+        $this->assertNull($module->active_operation_id);
+        $this->assertTrue(SystemModuleOperation::query()
+            ->where('module', 'blog')
+            ->where('action', 'activate_release')
+            ->where('status', 'succeeded')
+            ->whereNull('active_key')
+            ->exists());
     }
 
     public function test_failed_activation_compensates_migrations_when_menu_sync_fails(): void
@@ -523,6 +531,13 @@ PHP;
         $this->assertSame((int) $firstReleaseId, (int) $module->active_release_id);
         $this->assertSame('version-1.0.0', file_get_contents($module->path.DIRECTORY_SEPARATOR.'active.txt'));
         $this->assertSame('active', SystemModuleRelease::query()->findOrFail($firstReleaseId)->status);
+        $this->assertNull($module->active_operation_id);
+        $this->assertTrue(SystemModuleOperation::query()
+            ->where('module', 'blog')
+            ->where('action', 'rollback')
+            ->where('status', 'succeeded')
+            ->whereNull('active_key')
+            ->exists());
     }
 
     public function test_failed_migration_batch_compensates_earlier_migrations(): void

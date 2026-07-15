@@ -20,6 +20,7 @@ use App\Modules\Host\HostNotificationGateway;
 use App\Modules\Host\HostVipGateway;
 use App\Modules\ModuleServiceProviderRegistrar;
 use App\Modules\ModuleExecutionContext;
+use App\Modules\ModuleOperationCoordinator;
 use App\Modules\ModuleViewRegistrar;
 use Illuminate\Support\ServiceProvider;
 
@@ -31,6 +32,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(ModuleExecutionContext::class, fn (): ModuleExecutionContext => new ModuleExecutionContext);
+        $this->app->scoped(ModuleOperationCoordinator::class, fn (): ModuleOperationCoordinator => new ModuleOperationCoordinator);
         $this->app->bind(MemberGateway::class, HostMemberGateway::class);
         $this->app->bind(InvitationGateway::class, HostInvitationGateway::class);
         $this->app->bind(VipGateway::class, HostVipGateway::class);

@@ -21,6 +21,7 @@ final class ModuleInstaller
         private readonly ModuleReleaseManager $releases,
         private readonly ModuleMenuSynchronizer $menus,
         private readonly UserApiTokenService $apiTokens,
+        private readonly ModuleOperationCoordinator $operations,
     ) {}
 
     public function install(string $name, ?int $actorId = null): void
@@ -65,7 +66,8 @@ final class ModuleInstaller
         $module = $this->repository->installed($name);
         $oldState = $module?->status;
 
-        $this->runLifecycleAction('enable', $name, $oldState, 'enabled', $actorId, function () use ($module, $name): void {
+        $this->runLifecycleAction('enable', $name, $oldState, 'enabled', $actorId, function () use ($name): void {
+            $module = $this->repository->installed($name);
             if ($module === null) {
                 throw new InvalidArgumentException("模块未安装：{$name}");
             }
@@ -99,7 +101,8 @@ final class ModuleInstaller
         $module = $this->repository->installed($name);
         $oldState = $module?->status;
 
-        $this->runLifecycleAction('disable', $name, $oldState, 'disabled', $actorId, function () use ($module, $name): void {
+        $this->runLifecycleAction('disable', $name, $oldState, 'disabled', $actorId, function () use ($name): void {
+            $module = $this->repository->installed($name);
             if ($module === null) {
                 throw new InvalidArgumentException("模块未安装：{$name}");
             }
@@ -119,7 +122,8 @@ final class ModuleInstaller
         $module = $this->repository->installed($name);
         $oldState = $module?->status;
 
-        $this->runLifecycleAction('uninstall', $name, $oldState, 'uninstalled', $actorId, function () use ($module, $name): void {
+        $this->runLifecycleAction('uninstall', $name, $oldState, 'uninstalled', $actorId, function () use ($name): void {
+            $module = $this->repository->installed($name);
             if ($module === null) {
                 throw new InvalidArgumentException("模块未安装：{$name}");
             }
@@ -159,19 +163,33 @@ final class ModuleInstaller
         ?int $actorId,
         callable $operation
     ): void {
-        try {
-            DB::transaction(function () use ($action, $name, $oldState, $newState, $actorId, $operation): void {
-                $operation();
-                $this->repository->log($action, $name, $oldState, $newState, 'success', null, $actorId);
-            });
-        } catch (Throwable $exception) {
-            $this->repository->setLastError($name, $exception->getMessage());
-            $this->repository->log($action, $name, $oldState, $oldState, 'failed', $exception->getMessage(), $actorId);
+        $this->operations->run($name, $action, $actorId, function (string $operationId) use (
+            $action,
+            $name,
+            $oldState,
+            $newState,
+            $actorId,
+            $operation
+        ): void {
+            $currentState = $this->repository->installed($name)?->status ?? $oldState;
+            $this->operations->transition($operationId, $currentState, $newState);
+            $this->operations->stage($operationId, 'executing_lifecycle');
 
-            throw $exception;
-        }
+            try {
+                DB::transaction(function () use ($action, $name, $currentState, $newState, $actorId, $operation): void {
+                    $operation();
+                    $this->repository->log($action, $name, $currentState, $newState, 'success', null, $actorId);
+                });
+            } catch (Throwable $exception) {
+                $this->repository->setLastError($name, $exception->getMessage());
+                $this->repository->log($action, $name, $currentState, $currentState, 'failed', $exception->getMessage(), $actorId);
 
-        $this->repository->setLastError($name, null);
-        $this->clearCaches();
+                throw $exception;
+            }
+
+            $this->repository->setLastError($name, null);
+            $this->clearCaches();
+            $this->operations->stage($operationId, 'lifecycle_applied');
+        });
     }
 }

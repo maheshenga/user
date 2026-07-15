@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Modules;
 
+use App\Models\SystemModuleOperation;
 use App\Modules\ModuleFileStore;
 use App\Modules\ModuleRollbacker;
 use App\Models\SystemModuleMigration;
@@ -84,6 +85,15 @@ class ModuleRollbackTest extends TestCase
             'action' => 'rollback',
             'result' => 'success',
         ]);
+        $this->assertDatabaseHas('system_module_operation', [
+            'module' => 'blog',
+            'action' => 'rollback',
+            'status' => 'succeeded',
+            'active_key' => null,
+        ]);
+        $this->assertNull(
+            \App\Models\SystemModule::query()->where('name', 'blog')->value('active_operation_id')
+        );
     }
 
     public function test_rollback_restores_version_history_metadata_before_backup_manifest_metadata(): void
@@ -359,7 +369,9 @@ class ModuleRollbackTest extends TestCase
         app(ModuleFileStore::class)->backup($modulePath, 'blog', '1.0.0');
 
         $lockDir = storage_path('modules/locks');
-        mkdir($lockDir, 0777, true);
+        if (! is_dir($lockDir)) {
+            mkdir($lockDir, 0777, true);
+        }
         $lock = fopen($lockDir.DIRECTORY_SEPARATOR.'blog.lock', 'c');
         $this->assertIsResource($lock);
         $this->assertTrue(flock($lock, LOCK_EX | LOCK_NB));
@@ -368,7 +380,7 @@ class ModuleRollbackTest extends TestCase
             app(ModuleRollbacker::class)->rollback('blog');
             $this->fail('Expected rollback to reject a busy module lock.');
         } catch (RuntimeException $exception) {
-            $this->assertStringContainsString('模块 [blog] 正在升级中，请稍后再试。', $exception->getMessage());
+            $this->assertStringContainsString('Module [blog] already has an active lifecycle operation.', $exception->getMessage());
         } finally {
             flock($lock, LOCK_UN);
             fclose($lock);

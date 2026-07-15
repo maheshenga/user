@@ -13,10 +13,26 @@ final class ModuleReviewService
         private readonly ModuleReleaseManager $releases,
         private readonly ModuleManifestPolicy $policy,
         private readonly ModuleReleaseSigner $signer,
+        private readonly ModuleOperationCoordinator $operations,
     ) {}
 
     public function approve(string $name, ?int $actorId = null, ?string $trustLevel = null): void
     {
+        $this->operations->run(
+            $name,
+            'approve_release',
+            $actorId,
+            fn (string $operationId) => $this->approveLocked($name, $actorId, $trustLevel, $operationId)
+        );
+    }
+
+    private function approveLocked(
+        string $name,
+        ?int $actorId,
+        ?string $trustLevel,
+        string $operationId
+    ): void {
+        $this->operations->stage($operationId, 'reviewing');
         $module = $this->repository->installed($name);
         if ($module === null || $module->pending_release_id === null) {
             if ($module === null) {
@@ -44,6 +60,10 @@ final class ModuleReviewService
         if (! in_array($trustLevel, (array) config('modules.allowed_types', []), true)) {
             throw new InvalidArgumentException('模块信任级别无效。');
         }
+
+        $oldState = (string) $module->status;
+        $targetState = in_array($oldState, ['pending_review', 'rejected'], true) ? 'approved' : $oldState;
+        $this->operations->transition($operationId, $oldState, $targetState);
 
         DB::transaction(function () use ($module, $release, $trustLevel, $actorId): void {
             $oldState = (string) $module->status;
@@ -78,13 +98,27 @@ final class ModuleReviewService
                 (string) $release->version
             );
         });
+        $this->operations->stage($operationId, 'approved');
     }
 
     public function reject(string $name, string $reason, ?int $actorId = null): void
     {
+        $this->operations->run(
+            $name,
+            'reject_release',
+            $actorId,
+            fn (string $operationId) => $this->rejectLocked($name, $reason, $actorId, $operationId)
+        );
+    }
+
+    private function rejectLocked(string $name, string $reason, ?int $actorId, string $operationId): void
+    {
+        $this->operations->stage($operationId, 'reviewing');
         $module = $this->repository->installed($name);
         if ($module === null || $module->pending_release_id === null) {
+            $this->operations->transition($operationId, $module?->status, 'rejected');
             $this->repository->reject($name, $reason, $actorId);
+            $this->operations->stage($operationId, 'rejected');
 
             return;
         }
@@ -93,6 +127,10 @@ final class ModuleReviewService
         if (! in_array((string) $release->status, ['pending_review', 'approved'], true)) {
             throw new InvalidArgumentException("模块 [{$name}] 当前制品状态 [{$release->status}] 不允许审核拒绝。");
         }
+
+        $oldState = (string) $module->status;
+        $targetState = in_array($oldState, ['pending_review', 'approved'], true) ? 'rejected' : $oldState;
+        $this->operations->transition($operationId, $oldState, $targetState);
 
         DB::transaction(function () use ($module, $release, $reason, $actorId): void {
             $oldState = (string) $module->status;
@@ -120,5 +158,6 @@ final class ModuleReviewService
                 (string) $release->version
             );
         });
+        $this->operations->stage($operationId, 'rejected');
     }
 }
