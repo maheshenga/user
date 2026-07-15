@@ -24,9 +24,9 @@
 - Modify: `app/Models/ModuleApiRequest.php`
 - Create: `tests/Feature/Modules/ModuleApiRequestLeaseTest.php`
 
-- [ ] **Step 1: Write schema, active lease, stale reclaim, and ownership-loss tests**
-- [ ] **Step 2: Run tests and verify the missing lease behavior fails**
-- [ ] **Step 3: Add fields, indexes, casts, and legacy processing backfill**
+- [x] **Step 1: Write schema, active lease, stale reclaim, and ownership-loss tests**
+- [x] **Step 2: Run tests and verify the missing lease behavior fails**
+- [x] **Step 3: Add fields, indexes, casts, and legacy processing backfill**
 
 ### Task 2: Lease-Aware Claim and Finalization
 
@@ -34,15 +34,15 @@
 - Modify: `app/Modules/ModuleApiRequestService.php`
 - Modify: `config/modules.php`
 
-- [ ] **Step 1: Assign lease token and expiry when creating a request**
-- [ ] **Step 2: Reclaim matching expired processing records and increment attempts**
-- [ ] **Step 3: Keep active processing requests blocked**
-- [ ] **Step 4: Conditionally complete or fail only while the lease token is owned**
-- [ ] **Step 5: Return typed `request_lease_lost` on ownership loss**
+- [x] **Step 1: Assign lease token and expiry when creating a request**
+- [x] **Step 2: Reclaim matching expired processing records and increment attempts**
+- [x] **Step 3: Keep active processing requests blocked**
+- [x] **Step 4: Conditionally complete or fail only while the lease token is owned**
+- [x] **Step 5: Return typed `request_lease_lost` on ownership loss**
 
 ### Task 3: Verification and Commit
 
-- [ ] **Step 1: Run Pint and lease tests**
-- [ ] **Step 2: Run Qingyu API replay, quota, activation, parse, and rewrite regression tests**
-- [ ] **Step 3: Run migration up/down and inspect staged diff**
-- [ ] **Step 4: Commit with `fix: recover stale module API requests`**
+- [x] **Step 1: Run Pint and lease tests**
+- [x] **Step 2: Run Qingyu API replay, quota, activation, parse, and rewrite regression tests**
+- [x] **Step 3: Run migration up/down and inspect staged diff**
+- [x] **Step 4: Commit with `fix: recover stale module API requests`**

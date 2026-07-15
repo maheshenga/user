@@ -12,6 +12,8 @@ final class ModuleApiRequest extends Model
 
     protected $casts = [
         'response_json' => 'array',
+        'lease_expires_at' => 'datetime',
+        'attempt_count' => 'integer',
         'finished_at' => 'datetime',
     ];
 }

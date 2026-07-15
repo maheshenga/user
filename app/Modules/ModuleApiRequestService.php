@@ -37,15 +37,35 @@ final class ModuleApiRequestService
         callable $callback,
     ): array {
         $requestHash = hash('sha256', json_encode($this->canonical($payload), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-        $claim = DB::transaction(function () use ($module, $userId, $operation, $requestId, $requestHash): array {
+        $leaseToken = (string) Str::uuid();
+        $claim = DB::transaction(function () use ($module, $userId, $operation, $requestId, $requestHash, $leaseToken): array {
             UserAccount::query()->whereKey($userId)->lockForUpdate()->firstOrFail();
             $existing = ModuleApiRequest::query()
                 ->where('module', $module)
                 ->where('user_id', $userId)
                 ->where('operation', $operation)
                 ->where('request_id', $requestId)
+                ->lockForUpdate()
                 ->first();
             if ($existing !== null) {
+                if (
+                    hash_equals((string) $existing->request_hash, $requestHash)
+                    && $existing->status === 'processing'
+                    && ($existing->lease_expires_at === null || ! $existing->lease_expires_at->isFuture())
+                ) {
+                    $existing->forceFill([
+                        'lease_token' => $leaseToken,
+                        'lease_expires_at' => now()->addSeconds($this->leaseSeconds()),
+                        'attempt_count' => max(1, (int) $existing->attempt_count) + 1,
+                        'response_json' => null,
+                        'http_status' => null,
+                        'error_code' => null,
+                        'finished_at' => null,
+                    ])->save();
+
+                    return ['request' => $existing->refresh()];
+                }
+
                 return ['existing' => $existing];
             }
 
@@ -67,6 +87,9 @@ final class ModuleApiRequestService
                 'request_id' => $requestId,
                 'request_hash' => $requestHash,
                 'status' => 'processing',
+                'lease_token' => $leaseToken,
+                'lease_expires_at' => now()->addSeconds($this->leaseSeconds()),
+                'attempt_count' => 1,
             ])];
         });
 
@@ -82,20 +105,19 @@ final class ModuleApiRequestService
 
         try {
             $data = $callback();
-            $record->forceFill([
-                'status' => 'completed',
-                'response_json' => $data,
-                'http_status' => 200,
-                'finished_at' => now(),
-            ])->save();
+            $this->complete($record, $leaseToken, $data);
 
             return ['request_id' => $requestId, 'data' => $data, 'replayed' => false];
         } catch (ModuleApiException $exception) {
-            $this->recordFailure($record, $exception);
+            if (! $this->recordFailure($record, $leaseToken, $exception)) {
+                throw $this->leaseLost($exception);
+            }
             throw $exception;
         } catch (Throwable $exception) {
             $typed = new ModuleApiException('模块服务暂时不可用，请稍后重试。', 500, 'module_unavailable', $exception);
-            $this->recordFailure($record, $typed);
+            if (! $this->recordFailure($record, $leaseToken, $typed)) {
+                throw $this->leaseLost($exception);
+            }
             throw $typed;
         }
     }
@@ -124,16 +146,59 @@ final class ModuleApiRequestService
         ];
     }
 
-    private function recordFailure(ModuleApiRequest $record, ModuleApiException $exception): void
+    private function complete(ModuleApiRequest $record, string $leaseToken, array $data): void
+    {
+        $updated = ModuleApiRequest::query()
+            ->whereKey($record->id)
+            ->where('status', 'processing')
+            ->where('lease_token', $leaseToken)
+            ->update([
+                'status' => 'completed',
+                'response_json' => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
+                'http_status' => 200,
+                'error_code' => null,
+                'finished_at' => now(),
+                'lease_token' => null,
+                'lease_expires_at' => null,
+                'updated_at' => now(),
+            ]);
+        if ($updated !== 1) {
+            throw new ModuleApiException('模块请求执行租约已失效。', 409, 'request_lease_lost');
+        }
+    }
+
+    private function recordFailure(ModuleApiRequest $record, string $leaseToken, ModuleApiException $exception): bool
     {
         request()->attributes->set('module_error_code', $exception->errorCode());
-        $record->forceFill([
-            'status' => 'failed',
-            'response_json' => ['message' => $exception->getMessage()],
-            'http_status' => $exception->httpStatus(),
-            'error_code' => $exception->errorCode(),
-            'finished_at' => now(),
-        ])->save();
+        $updated = ModuleApiRequest::query()
+            ->whereKey($record->id)
+            ->where('status', 'processing')
+            ->where('lease_token', $leaseToken)
+            ->update([
+                'status' => 'failed',
+                'response_json' => json_encode(
+                    ['message' => $exception->getMessage()],
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+                ),
+                'http_status' => $exception->httpStatus(),
+                'error_code' => $exception->errorCode(),
+                'finished_at' => now(),
+                'lease_token' => null,
+                'lease_expires_at' => null,
+                'updated_at' => now(),
+            ]);
+
+        return $updated === 1;
+    }
+
+    private function leaseLost(?Throwable $previous = null): ModuleApiException
+    {
+        return new ModuleApiException('模块请求执行租约已失效。', 409, 'request_lease_lost', $previous);
+    }
+
+    private function leaseSeconds(): int
+    {
+        return max(30, min(3600, (int) config('modules.api_request_lease_seconds', 180)));
     }
 
     private function dailyQuota(string $module, string $operation): int
