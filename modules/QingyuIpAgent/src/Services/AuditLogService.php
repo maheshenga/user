@@ -6,17 +6,20 @@ use Modules\QingyuIpAgent\Models\QingyuIpAgentOperationLog;
 
 class AuditLogService
 {
-    private const SENSITIVE_KEYS = [
+    private const SENSITIVE_FRAGMENTS = [
         'password',
-        'password_again',
-        'currentpassword',
-        'newpassword',
+        'passwd',
         'token',
-        'access_token',
-        'refresh_token',
         'secret',
-        'code',
-        'activation_code',
+        'credential',
+    ];
+
+    private const SENSITIVE_EXACT_KEYS = [
+        'authorization',
+        'cookie',
+        'session',
+        'apikey',
+        'privatekey',
     ];
 
     public function record(
@@ -67,19 +70,31 @@ class AuditLogService
     {
         $masked = [];
         foreach ($payload as $key => $value) {
-            $lowerKey = strtolower((string) $key);
+            $canonicalKey = $this->canonicalKey($key);
+            if ($this->isSensitiveKey($canonicalKey)) {
+                $masked[$key] = is_array($value) || is_object($value)
+                    ? '******'
+                    : $this->maskSecret((string) $value, $canonicalKey);
+
+                continue;
+            }
+
             if (is_array($value)) {
                 $masked[$key] = $this->maskPayload($value);
 
                 continue;
             }
 
+            if (is_object($value)) {
+                $masked[$key] = $this->maskPayload((array) $value);
+
+                continue;
+            }
+
             $stringValue = is_scalar($value) || $value === null ? (string) $value : '[object]';
-            if (in_array($lowerKey, self::SENSITIVE_KEYS, true)) {
-                $masked[$key] = $this->maskSecret($stringValue, $lowerKey);
-            } elseif ($lowerKey === 'mobile') {
+            if ($canonicalKey === 'mobile') {
                 $masked[$key] = $this->maskMobile($stringValue);
-            } elseif ($lowerKey === 'email') {
+            } elseif ($canonicalKey === 'email') {
                 $masked[$key] = $this->maskEmail($stringValue);
             } else {
                 $masked[$key] = $value;
@@ -87,6 +102,30 @@ class AuditLogService
         }
 
         return $masked;
+    }
+
+    private function canonicalKey(string|int $key): string
+    {
+        return preg_replace('/[^a-z0-9]+/', '', strtolower((string) $key)) ?? '';
+    }
+
+    private function isSensitiveKey(string $key): bool
+    {
+        if ($key === 'code' || str_ends_with($key, 'code')) {
+            return true;
+        }
+
+        if (in_array($key, self::SENSITIVE_EXACT_KEYS, true)) {
+            return true;
+        }
+
+        foreach (self::SENSITIVE_FRAGMENTS as $fragment) {
+            if (str_contains($key, $fragment)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function maskSecret(string $value, string $key): string

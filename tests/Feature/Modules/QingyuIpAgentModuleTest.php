@@ -346,6 +346,12 @@ class QingyuIpAgentModuleTest extends TestCase
                 'newPassword' => 'new-secret123',
                 'token' => 'token-raw-value',
                 'code' => 'EA8-ABCD-EFGH-IJKL-MNPQ-RSTU-WXYZ',
+                'activationCode' => 'EA8-CAMEL-CASE-SECRET-9XYZ',
+                'refresh-token' => 'refresh-raw-456',
+                'api_key' => 'api-key-raw-value',
+                'clientSecret' => 'client-secret-raw-value',
+                'credentials' => ['raw' => 'credential-array-raw-value'],
+                'metadata' => ['sessionToken' => 'nested-session-raw-value'],
                 'safe_note' => 'visible',
             ],
             result: 'success'
@@ -359,9 +365,16 @@ class QingyuIpAgentModuleTest extends TestCase
         $this->assertStringNotContainsString('new-secret123', $payload);
         $this->assertStringNotContainsString('token-raw-value', $payload);
         $this->assertStringNotContainsString('EA8-ABCD-EFGH-IJKL-MNPQ-RSTU-WXYZ', $payload);
+        $this->assertStringNotContainsString('EA8-CAMEL-CASE-SECRET-9XYZ', $payload);
+        $this->assertStringNotContainsString('refresh-raw-456', $payload);
+        $this->assertStringNotContainsString('api-key-raw-value', $payload);
+        $this->assertStringNotContainsString('client-secret-raw-value', $payload);
+        $this->assertStringNotContainsString('credential-array-raw-value', $payload);
+        $this->assertStringNotContainsString('nested-session-raw-value', $payload);
         $this->assertStringContainsString('p***n@example.com', $payload);
         $this->assertStringContainsString('138****0001', $payload);
         $this->assertStringContainsString('EA8-****-WXYZ', $payload);
+        $this->assertStringContainsString('EA8-****-9XYZ', $payload);
         $this->assertStringContainsString('visible', $payload);
     }
 
