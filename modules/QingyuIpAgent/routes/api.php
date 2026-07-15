@@ -1,8 +1,31 @@
 <?php
 
+use App\Http\Middleware\CheckAuth;
 use App\Http\Middleware\CheckInstall;
+use App\Http\Middleware\CheckLogin;
+use App\Http\Middleware\LegacyModuleClientDeprecation;
+use App\Http\Middleware\RateLimiting;
+use App\Http\Middleware\SystemLog;
 use Illuminate\Support\Facades\Route;
 use Modules\QingyuIpAgent\Controllers\ApiController;
+use Modules\QingyuIpAgent\Controllers\ClientController;
+
+$legacyClientRoutes = (array) config('modules.legacy_client_routes.qingyu_ip_agent.successors', []);
+foreach ($legacyClientRoutes as $action => $successor) {
+    Route::match(
+        ['get', 'post'],
+        trim((string) config('admin.admin_alias_name', 'admin'), '/').'/qingyu_ip_agent/client/'.$action,
+        [ClientController::class, $action]
+    )->middleware([
+        'web',
+        CheckInstall::class,
+        RateLimiting::class,
+        CheckLogin::class,
+        SystemLog::class,
+        CheckAuth::class,
+        LegacyModuleClientDeprecation::class.':qingyu_ip_agent,'.$successor,
+    ]);
+}
 
 Route::prefix('api/v1/modules/qingyu-ip-agent')
     ->middleware(['api', CheckInstall::class])

@@ -1183,6 +1183,15 @@ AI 完成任何调用宿主用户域能力的模块后，必须逐项确认：
 
 模块业务接口使用 `/api/v1/modules/{module-slug}/*`。模块禁用后，签发、刷新和业务请求都必须返回 `module_unavailable`，并撤销对应设备会话。
 
+#### 24.4.1 旧客户端协议下线
+
+- 新客户端只能接入 `/api/v1/*` Bearer API；后台动态路由不能作为新的客户端协议。
+- 兼容期内，旧路由必须返回 `Deprecation: true`、RFC 7231 `Sunset` 和指向规范接口的 `Link: <...>; rel="successor-version"`。
+- 每次旧协议访问必须写结构化日志，至少包含模块、动作、结果、规范接口、请求方法和路径；禁止记录请求体、令牌、密码或激活码。
+- `MODULE_LEGACY_CLIENT_ROUTES_ENABLED=false` 为生产关闭开关。关闭后旧路由返回 HTTP 410、稳定错误码 `legacy_client_disabled` 和规范接口地址，不能静默回退到旧实现。
+- `MODULE_LEGACY_CLIENT_SUNSET` 使用 RFC 7231 HTTP-date。上线前先发布支持规范 API 的客户端，观察旧协议日志降为零，再关闭开关；保留一个版本周期后才能删除旧控制器和路由。
+- 关闭、恢复或延后下线日期都必须经过管理员变更审核，并在发布记录中写明影响版本、回滚条件和验证结果。
+
 ### 24.5 数据归属
 
 - 会员归属使用 `user_account.source_module`，注册后不得覆盖。

@@ -24,6 +24,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -699,6 +700,79 @@ class QingyuIpAgentModuleTest extends TestCase
             ->assertJsonPath('code', 1)
             ->assertJsonPath('data.user.source_module', 'core')
             ->assertSessionHas('user.email', 'core-attributed-qingyu-member@example.com');
+    }
+
+    public function test_qingyu_legacy_client_routes_emit_deprecation_headers_and_structured_audit(): void
+    {
+        $this->withoutMiddleware([
+            CheckInstall::class,
+            RateLimiting::class,
+            SystemLog::class,
+            CheckAuth::class,
+        ]);
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+        (new AppServiceProvider(app()))->boot();
+        $sunset = 'Thu, 31 Dec 2026 23:59:59 GMT';
+        Config::set('modules.legacy_client_routes.qingyu_ip_agent.enabled', true);
+        Config::set('modules.legacy_client_routes.qingyu_ip_agent.sunset', $sunset);
+        Log::spy();
+
+        $legacy = $this->getJson('/admin/qingyu_ip_agent/client/bootstrap');
+
+        $legacy->assertOk()
+            ->assertJsonPath('code', 1)
+            ->assertHeader('Deprecation', 'true')
+            ->assertHeader('Sunset', $sunset);
+        $this->assertStringContainsString(
+            '/api/v1/modules/qingyu-ip-agent/bootstrap',
+            (string) $legacy->headers->get('Link')
+        );
+
+        $canonical = $this->getJson('/api/v1/modules/qingyu-ip-agent/bootstrap');
+        $canonical->assertOk()->assertHeaderMissing('Deprecation');
+        Log::shouldHaveReceived('notice')->once()->withArgs(
+            fn (string $message, array $context): bool => $message === 'module_legacy_client_request'
+                && $context['module'] === 'qingyu_ip_agent'
+                && $context['action'] === 'bootstrap'
+                && $context['result'] === 'deprecated'
+                && $context['successor'] === '/api/v1/modules/qingyu-ip-agent/bootstrap'
+        );
+    }
+
+    public function test_qingyu_legacy_client_route_kill_switch_returns_versioned_migration_message(): void
+    {
+        $this->withoutMiddleware([
+            CheckInstall::class,
+            RateLimiting::class,
+            SystemLog::class,
+            CheckAuth::class,
+        ]);
+        $this->installApprovedModule('qingyu_ip_agent', 1);
+        app(ModuleInstaller::class)->enable('qingyu_ip_agent', 1);
+        (new AppServiceProvider(app()))->boot();
+        Config::set('modules.legacy_client_routes.qingyu_ip_agent.enabled', false);
+        Config::set('modules.legacy_client_routes.qingyu_ip_agent.sunset', 'Thu, 31 Dec 2026 23:59:59 GMT');
+        Log::spy();
+
+        $legacy = $this->getJson('/admin/qingyu_ip_agent/client/bootstrap');
+
+        $legacy->assertStatus(410)
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.code', 'legacy_client_disabled')
+            ->assertJsonPath('data.successor', '/api/v1/modules/qingyu-ip-agent/bootstrap')
+            ->assertHeader('Deprecation', 'true');
+        $this->assertStringContainsString('版本化 API', (string) $legacy->json('msg'));
+
+        $this->getJson('/api/v1/modules/qingyu-ip-agent/bootstrap')
+            ->assertOk()
+            ->assertHeaderMissing('Deprecation');
+        Log::shouldHaveReceived('notice')->once()->withArgs(
+            fn (string $message, array $context): bool => $message === 'module_legacy_client_request'
+                && $context['module'] === 'qingyu_ip_agent'
+                && $context['action'] === 'bootstrap'
+                && $context['result'] === 'blocked'
+        );
     }
 
     public function test_qingyu_ip_agent_client_route_redeems_activation_code_and_records_safe_audit(): void

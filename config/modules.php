@@ -10,6 +10,27 @@ return [
     'production_in_process_trust_levels' => ['core', 'official', 'private'],
     'signing_key' => env('MODULE_SIGNING_KEY', ''),
     'registration_ticket_key' => env('MODULE_REGISTRATION_TICKET_KEY', ''),
+    'legacy_client_routes' => [
+        'qingyu_ip_agent' => [
+            'enabled' => env('MODULE_LEGACY_CLIENT_ROUTES_ENABLED', true),
+            'sunset' => env('MODULE_LEGACY_CLIENT_SUNSET', 'Sun, 31 Jan 2027 00:00:00 GMT'),
+            'successors' => [
+                'bootstrap' => '/api/v1/modules/qingyu-ip-agent/bootstrap',
+                'register' => '/api/v1/auth/modules/qingyu_ip_agent/register',
+                'login' => '/api/v1/auth/modules/qingyu_ip_agent/login',
+                'profile' => '/api/v1/auth/profile',
+                'activate' => '/api/v1/modules/qingyu-ip-agent/activation-codes/redeem',
+                'parseContent' => '/api/v1/modules/qingyu-ip-agent/content/parse',
+                'rewrite' => '/api/v1/modules/qingyu-ip-agent/content/rewrite',
+                'sampleAudio' => '/api/v1/modules/qingyu-ip-agent/sample-audio',
+                'sendResetCode' => '/api/v1/auth/password/forgot',
+                'resetPassword' => '/api/v1/auth/password/reset',
+                'logout' => '/api/v1/auth/logout',
+                'updateProfile' => '/api/v1/auth/profile',
+                'updatePassword' => '/api/v1/auth/password/reset',
+            ],
+        ],
+    ],
     'reserved_admin_prefixes' => [],
     'allowed_permissions' => [
         'menu:write',
