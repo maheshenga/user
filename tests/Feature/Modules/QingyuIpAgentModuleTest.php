@@ -154,8 +154,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $user = app(UserAuthService::class)->register([
             'email' => 'module-scope@example.com',
             'password' => 'secret123',
-            'source_module' => 'qingyu_ip_agent',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'qingyu_ip_agent');
         $account = UserAccount::query()->findOrFail((int) $user['user']['id']);
         $wrongScope = $account->createToken(
             'wrong-module-scope',
@@ -194,8 +193,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $registered = app(UserAuthService::class)->register([
             'email' => 'api-activate@example.com',
             'password' => 'secret123',
-            'source_module' => 'qingyu_ip_agent',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'qingyu_ip_agent');
         $account = UserAccount::query()->findOrFail((int) $registered['user']['id']);
         $account->forceFill([
             'vip_level' => 1,
@@ -254,8 +252,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $registered = app(UserAuthService::class)->register([
             'email' => 'api-idempotent@example.com',
             'password' => 'secret123',
-            'source_module' => 'qingyu_ip_agent',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'qingyu_ip_agent');
         $account = UserAccount::query()->findOrFail((int) $registered['user']['id']);
         $account->forceFill([
             'vip_level' => 1,
@@ -315,8 +312,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $registered = app(UserAuthService::class)->register([
             'email' => 'api-typed-error@example.com',
             'password' => 'secret123',
-            'source_module' => 'qingyu_ip_agent',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'qingyu_ip_agent');
         $account = UserAccount::query()->findOrFail((int) $registered['user']['id']);
         $tokens = app(UserApiTokenService::class)->issue(
             $account,
@@ -454,13 +450,11 @@ class QingyuIpAgentModuleTest extends TestCase
         $qingyuUser = app(UserAuthService::class)->register([
             'email' => 'qingyu-owner@example.com',
             'password' => 'secret123',
-            'source_module' => 'qingyu_ip_agent',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'qingyu_ip_agent');
         $coreUser = app(UserAuthService::class)->register([
             'email' => 'core-owner@example.com',
             'password' => 'secret123',
-            'source_module' => 'core',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'core');
 
         $members = app(MemberOpsService::class)->paginate([], 1, 20);
         $this->assertSame(1, $members['total']);
@@ -622,8 +616,7 @@ class QingyuIpAgentModuleTest extends TestCase
         app(UserAuthService::class)->register([
             'email' => 'other-module-login@example.com',
             'password' => 'secret123',
-            'source_module' => 'core',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'core');
 
         $this->postJson('/admin/qingyu_ip_agent/client/login', [
             'account' => 'other-module-login@example.com',
@@ -648,8 +641,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $user = app(UserAuthService::class)->register([
             'email' => 'desktop-activate@example.com',
             'password' => 'secret123',
-            'source_module' => 'qingyu_ip_agent',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'qingyu_ip_agent');
         session(['user' => $user['user']]);
 
         $plan = VipPlan::query()->create([
@@ -710,8 +702,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $registered = app(UserAuthService::class)->register([
             'email' => 'desktop-parser@example.com',
             'password' => 'secret123',
-            'source_module' => 'qingyu_ip_agent',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'qingyu_ip_agent');
         $user = $registered['user'];
         DB::table('user_account')->where('id', $user['id'])->update([
             'vip_level' => 1,
@@ -770,8 +761,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $registered = app(UserAuthService::class)->register([
             'email' => 'desktop-parser-redirect@example.com',
             'password' => 'secret123',
-            'source_module' => 'qingyu_ip_agent',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'qingyu_ip_agent');
         $user = $registered['user'];
         DB::table('user_account')->where('id', $user['id'])->update([
             'vip_level' => 1,
@@ -814,8 +804,7 @@ class QingyuIpAgentModuleTest extends TestCase
         $registered = app(UserAuthService::class)->register([
             'email' => 'desktop-rewrite@example.com',
             'password' => 'secret123',
-            'source_module' => 'qingyu_ip_agent',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'qingyu_ip_agent');
         $user = $registered['user'];
         DB::table('user_account')->where('id', $user['id'])->update([
             'vip_level' => 1,

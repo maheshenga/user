@@ -140,8 +140,7 @@ class UserPasswordResetTest extends TestCase
         $registered = app(UserAuthService::class)->register([
             'mobile' => '13920000001',
             'password' => 'old-password',
-            'source_module' => 'qingyu_ip_agent',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'qingyu_ip_agent');
         $this->withSession(['user' => ['id' => $registered['user']['id']]]);
         $user = UserAccount::query()->findOrFail($registered['user']['id']);
         $tokens = app(UserApiTokenService::class)->issue(

@@ -27,15 +27,15 @@
 - Consumes: `UserAuthService::register(array $payload, string $ip): array`.
 - Produces: failing coverage for public and direct-service spoof attempts.
 
-- [ ] **Step 1: Add a public endpoint spoof regression test**
+- [x] **Step 1: Add a public endpoint spoof regression test**
 
 POST `/user/register` with a valid account and `source_module=qingyu_ip_agent`, then assert both the JSON response and `user_account.source_module` are `core`.
 
-- [ ] **Step 2: Add a direct-service spoof regression test**
+- [x] **Step 2: Add a direct-service spoof regression test**
 
 Call `UserAuthService::register()` with a payload containing `source_module=spoofed_module` but no explicit context argument, then assert the stored value is `core`.
 
-- [ ] **Step 3: Run the two tests and verify RED**
+- [x] **Step 3: Run the two tests and verify RED**
 
 ```bash
 APP_TIMEZONE=Asia/Shanghai DB_CONNECTION=sqlite DB_DATABASE=:memory: php vendor/bin/phpunit tests/Feature/User/UserAuthTest.php --filter source_module
@@ -54,15 +54,15 @@ Expected: both new tests fail because the current controller and service trust t
 **Interfaces:**
 - Produces: `UserAuthService::register(array $payload, string $ip, string $sourceModule = 'core'): array`.
 
-- [ ] **Step 1: Change the service contract**
+- [x] **Step 1: Change the service contract**
 
 Add the third argument with a `core` default and call `normalizeSourceModule($sourceModule)`. Remove all reads of `$payload['source_module']`.
 
-- [ ] **Step 2: Lock public registration to core**
+- [x] **Step 2: Lock public registration to core**
 
 Remove `source_module` from `request()->only()`, validation rules, and validation messages. Call the service with its default source context.
 
-- [ ] **Step 3: Pass versioned module context explicitly**
+- [x] **Step 3: Pass versioned module context explicitly**
 
 Keep validating `module` and calling `ModuleApiPolicy::assertAvailable()`, then call:
 
@@ -70,7 +70,7 @@ Keep validating `module` and calling `ModuleApiPolicy::assertAvailable()`, then 
 $registered = $auth->register($payload, $request->ip(), $payload['module']);
 ```
 
-- [ ] **Step 4: Pass the Qingyu constant explicitly**
+- [x] **Step 4: Pass the Qingyu constant explicitly**
 
 Remove payload mutation and call:
 
@@ -78,7 +78,7 @@ Remove payload mutation and call:
 $registered = $this->auth->register($payload, $ip, self::MODULE);
 ```
 
-- [ ] **Step 5: Run the spoof tests and verify GREEN**
+- [x] **Step 5: Run the spoof tests and verify GREEN**
 
 Run the Task 1 command and expect both spoof tests to pass.
 
@@ -89,39 +89,39 @@ Run the Task 1 command and expect both spoof tests to pass.
 - Modify: `tests/Feature/User/UserApiTokenAuthTest.php`
 - Modify: `tests/Feature/Modules/QingyuIpAgentModuleTest.php`
 
-- [ ] **Step 1: Update the source-attribution service test**
+- [x] **Step 1: Update the source-attribution service test**
 
 Pass `vip_center` as the third argument and keep assertions that it is stored and returned.
 
-- [ ] **Step 2: Update token test fixtures**
+- [x] **Step 2: Update token test fixtures**
 
 Where helpers intentionally create Qingyu-owned users, remove the payload key and pass `qingyu_ip_agent` as the third argument.
 
-- [ ] **Step 3: Update Qingyu module test fixtures**
+- [x] **Step 3: Update Qingyu module test fixtures**
 
 Convert intentional `qingyu_ip_agent` and explicit `core` setup calls to the third argument. Leave ordinary core registrations on the default.
 
-- [ ] **Step 4: Add explicit context validation coverage**
+- [x] **Step 4: Add explicit context validation coverage**
 
 Assert a valid explicit module source is persisted and an invalid explicit source still throws the existing Chinese validation error.
 
 ### Task 4: Review, Verify, and Commit
 
-- [ ] **Step 1: Run Pint on changed PHP files**
+- [x] **Step 1: Run Pint on changed PHP files**
 
-- [ ] **Step 2: Run `UserAuthTest`, `UserApiTokenAuthTest`, and `QingyuIpAgentModuleTest`**
+- [x] **Step 2: Run `UserAuthTest`, `UserApiTokenAuthTest`, and `QingyuIpAgentModuleTest`**
 
-- [ ] **Step 3: Run the complete user and module test directories**
+- [x] **Step 3: Run the complete user and module test directories**
 
 ```bash
 APP_TIMEZONE=Asia/Shanghai DB_CONNECTION=sqlite DB_DATABASE=:memory: php vendor/bin/phpunit tests/Feature/User tests/Feature/Modules tests/Unit/Modules
 ```
 
-- [ ] **Step 4: Review call sites and staged diff**
+- [x] **Step 4: Review call sites and staged diff**
 
 Confirm no production caller passes attribution inside payload, public registration is core, module policy still runs first, no migration is introduced, and staged content contains no credentials.
 
-- [ ] **Step 5: Commit implementation**
+- [x] **Step 5: Commit implementation**
 
 ```bash
 git commit -m "fix: protect registration source attribution"

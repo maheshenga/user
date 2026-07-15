@@ -34,10 +34,8 @@ class ClientApiService
 
     public function register(array $payload, string $ip): array
     {
-        $payload['source_module'] = 'qingyu_ip_agent';
-
         return $this->recorded('client.register', null, null, $payload, function () use ($payload, $ip): array {
-            $registered = $this->auth->register($payload, $ip);
+            $registered = $this->auth->register($payload, $ip, self::MODULE);
             $account = $payload['email'] ?? $payload['mobile'] ?? null;
 
             if (is_string($account) && trim($account) !== '' && ! empty($payload['password'])) {

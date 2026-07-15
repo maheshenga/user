@@ -15,16 +15,15 @@ final class UserAuthService
         private readonly InviteService $invites,
         private readonly RiskService $risk,
         private readonly UserPasswordHasher $passwords
-    ) {
-    }
+    ) {}
 
-    public function register(array $payload, string $ip): array
+    public function register(array $payload, string $ip, string $sourceModule = 'core'): array
     {
         $mobile = $this->normalizeNullableString($payload['mobile'] ?? null);
         $email = $this->normalizeEmail($payload['email'] ?? null);
         $password = (string) ($payload['password'] ?? '');
         $inviteCode = $this->normalizeNullableString($payload['invite_code'] ?? null);
-        $sourceModule = $this->normalizeSourceModule($payload['source_module'] ?? null);
+        $sourceModule = $this->normalizeSourceModule($sourceModule);
 
         if ($mobile === null && $email === null) {
             throw new InvalidArgumentException('请填写手机号或邮箱。');
@@ -238,7 +237,7 @@ final class UserAuthService
             return null;
         }
 
-        $message = strtolower($exception->getMessage() . ' ' . implode(' ', $exception->errorInfo ?? []));
+        $message = strtolower($exception->getMessage().' '.implode(' ', $exception->errorInfo ?? []));
 
         if ($mobile !== null && $this->mentionsUniqueColumn($message, 'mobile')) {
             return new InvalidArgumentException('手机号已存在。', 0, $exception);
@@ -269,7 +268,7 @@ final class UserAuthService
 
     private function isUniqueConstraintViolation(QueryException $exception): bool
     {
-        $message = strtolower($exception->getMessage() . ' ' . implode(' ', $exception->errorInfo ?? []));
+        $message = strtolower($exception->getMessage().' '.implode(' ', $exception->errorInfo ?? []));
 
         return $exception instanceof UniqueConstraintViolationException
             || str_contains($message, 'unique constraint')

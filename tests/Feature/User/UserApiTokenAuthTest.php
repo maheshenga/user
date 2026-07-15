@@ -576,8 +576,7 @@ class UserApiTokenAuthTest extends TestCase
         app(UserAuthService::class)->register([
             'email' => $email,
             'password' => 'secret123',
-            'source_module' => 'qingyu_ip_agent',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'qingyu_ip_agent');
 
         return UserAccount::query()->where('email', $email)->firstOrFail();
     }

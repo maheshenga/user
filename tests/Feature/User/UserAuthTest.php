@@ -2,17 +2,17 @@
 
 namespace Tests\Feature\User;
 
+use App\Http\Middleware\CheckInstall;
 use App\Models\UserAccount;
 use App\Models\UserLoginLog;
 use App\Models\UserProfile;
-use App\Http\Middleware\CheckInstall;
 use App\User\UserAuthService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 use Tests\TestCase;
 
@@ -198,14 +198,39 @@ class UserAuthTest extends TestCase
         $result = app(UserAuthService::class)->register([
             'email' => 'module-register@example.com',
             'password' => 'secret123',
-            'source_module' => 'vip_center',
-        ], '127.0.0.1');
+        ], '127.0.0.1', 'vip_center');
 
         $this->assertSame('vip_center', $result['user']['source_module']);
 
         $this->assertDatabaseHas('user_account', [
             'email' => 'module-register@example.com',
             'source_module' => 'vip_center',
+        ]);
+    }
+
+    public function test_registration_rejects_invalid_trusted_source_module(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('所属模块只能包含字母、数字、点、横线和下划线。');
+
+        app(UserAuthService::class)->register([
+            'email' => 'invalid-source@example.com',
+            'password' => 'secret123',
+        ], '127.0.0.1', '../invalid');
+    }
+
+    public function test_registration_payload_cannot_spoof_source_module(): void
+    {
+        $result = app(UserAuthService::class)->register([
+            'email' => 'source-spoof@example.com',
+            'password' => 'secret123',
+            'source_module' => 'spoofed_module',
+        ], '127.0.0.1');
+
+        $this->assertSame('core', $result['user']['source_module']);
+        $this->assertDatabaseHas('user_account', [
+            'email' => 'source-spoof@example.com',
+            'source_module' => 'core',
         ]);
     }
 
@@ -271,9 +296,13 @@ class UserAuthTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('code', 1)
             ->assertJsonPath('data.user.mobile', '13800000005')
-            ->assertJsonPath('data.user.source_module', 'invite_portal');
+            ->assertJsonPath('data.user.source_module', 'core');
 
         $this->assertArrayNotHasKey('password', $response->json('data.user'));
+        $this->assertDatabaseHas('user_account', [
+            'mobile' => '13800000005',
+            'source_module' => 'core',
+        ]);
     }
 
     public function test_login_endpoint_sets_user_session(): void

@@ -31,11 +31,10 @@ class AuthController extends ApiController
         }
 
         $payload = $validator->validated();
-        $payload['source_module'] = $payload['module'];
 
         try {
             $modules->assertAvailable($payload['module']);
-            $registered = $auth->register($payload, $request->ip());
+            $registered = $auth->register($payload, $request->ip(), $payload['module']);
             $user = UserAccount::query()->findOrFail((int) $registered['user']['id']);
             $tokenBundle = $tokens->issue(
                 $user,
