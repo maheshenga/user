@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\User;
 
+use App\Mail\UserNotificationMail;
 use App\Models\UserNotificationOutbox;
 use App\Models\UserPasswordReset;
+use App\Modules\Host\HostNotificationGateway;
 use App\User\NotificationOutboxDispatcher;
 use App\User\NotificationOutboxMaintenanceService;
 use App\User\PasswordResetService;
@@ -39,7 +41,10 @@ class UserPasswordResetNotificationTest extends TestCase
             'attempt_count',
             'last_error',
             'available_at',
+            'locked_at',
+            'lock_token',
             'sent_at',
+            'failed_at',
             'create_time',
             'update_time',
         ]));
@@ -144,7 +149,93 @@ class UserPasswordResetNotificationTest extends TestCase
         $this->assertArrayNotHasKey('token', $outbox->payload_json);
         $this->assertArrayNotHasKey('code', $outbox->payload_json);
         $this->assertArrayHasKey('password_reset_id', $outbox->payload_json);
+        $this->assertNull($outbox->lock_token);
+        $this->assertNull($outbox->locked_at);
         Mail::assertSentCount(1);
+    }
+
+    public function test_dispatcher_does_not_send_a_recently_claimed_row_twice(): void
+    {
+        Mail::fake();
+        $row = $this->createOutboxRow('processing', -1, 0);
+        $row->forceFill([
+            'lock_token' => 'active-worker',
+            'locked_at' => now(),
+        ])->save();
+
+        $result = app(NotificationOutboxDispatcher::class)->sendPending(10);
+
+        $this->assertSame(0, $result['sent']);
+        $this->assertSame('processing', $row->refresh()->status);
+        $this->assertSame('active-worker', $row->lock_token);
+        Mail::assertNothingSent();
+    }
+
+    public function test_dispatcher_recovers_an_expired_claim_and_sends_it(): void
+    {
+        Mail::fake();
+        $row = $this->createOutboxRow('processing', -10, 0);
+        $row->forceFill([
+            'lock_token' => 'stale-worker',
+            'locked_at' => now()->subMinutes(10),
+        ])->save();
+
+        $result = app(NotificationOutboxDispatcher::class)->sendPending(10);
+
+        $this->assertSame(1, $result['recovered']);
+        $this->assertSame(1, $result['sent']);
+        $this->assertSame('sent', $row->refresh()->status);
+        $this->assertNull($row->lock_token);
+        Mail::assertSentCount(1);
+    }
+
+    public function test_dispatcher_moves_exhausted_failure_to_terminal_status(): void
+    {
+        config(['user_notifications.max_attempts' => 2]);
+        $row = UserNotificationOutbox::query()->create([
+            'user_id' => 10,
+            'type' => 'unknown_type',
+            'channel' => 'email',
+            'recipient' => 'dead@example.com',
+            'recipient_mask' => 'd***@example.com',
+            'subject' => 'Dead row',
+            'payload_json' => ['message' => 'Invalid type'],
+            'status' => 'pending',
+            'attempt_count' => 1,
+            'available_at' => now(),
+            'create_time' => time(),
+            'update_time' => time(),
+        ]);
+
+        $result = app(NotificationOutboxDispatcher::class)->sendPending(10);
+
+        $this->assertSame(1, $result['failed']);
+        $this->assertSame(1, $result['dead']);
+        $this->assertSame('failed', $row->refresh()->status);
+        $this->assertSame(2, (int) $row->attempt_count);
+        $this->assertNotNull($row->failed_at);
+        $this->assertNull($row->lock_token);
+    }
+
+    public function test_dispatcher_sends_module_message_with_generic_template(): void
+    {
+        Mail::fake();
+        app(HostNotificationGateway::class)->enqueue(
+            'qingyu_ip_agent',
+            null,
+            'email',
+            'module@example.com',
+            '模块通知',
+            ['message' => '模块任务已经完成。']
+        );
+
+        $result = app(NotificationOutboxDispatcher::class)->sendPending(10);
+
+        $this->assertSame(1, $result['sent']);
+        Mail::assertSent(UserNotificationMail::class, function (UserNotificationMail $mail): bool {
+            return $mail->subjectLine === '模块通知'
+                && $mail->messageText === '模块任务已经完成。';
+        });
     }
 
     public function test_dispatcher_keeps_sms_pending_without_logging_secret_when_provider_is_missing(): void

@@ -186,7 +186,12 @@ Artisan::command('system:module-health', function (): int {
 
 Artisan::command('user:notifications:send {--limit=50}', function (): int {
     $result = app(NotificationOutboxDispatcher::class)->sendPending((int) $this->option('limit'));
-    $this->info('sent='.$result['sent'].' failed='.$result['failed']);
+    $this->info(
+        'sent='.$result['sent']
+        .' failed='.$result['failed']
+        .' dead='.$result['dead']
+        .' recovered='.$result['recovered']
+    );
 
     return Command::SUCCESS;
 })->purpose('Send pending user notification outbox rows');

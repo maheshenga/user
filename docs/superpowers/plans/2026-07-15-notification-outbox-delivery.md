@@ -24,9 +24,9 @@
 - Modify: `app/Models/UserNotificationOutbox.php`
 - Modify: `tests/Feature/User/UserPasswordResetNotificationTest.php`
 
-- [ ] **Step 1: Add failing schema, lease, stale recovery, terminal failure, and module-message tests**
-- [ ] **Step 2: Run the notification test and verify expected failures**
-- [ ] **Step 3: Add `locked_at`, `lock_token`, and `failed_at` with casts and indexes**
+- [x] **Step 1: Add failing schema, lease, stale recovery, terminal failure, and module-message tests**
+- [x] **Step 2: Run the notification test and verify expected failures**
+- [x] **Step 3: Add `locked_at`, `lock_token`, and `failed_at` with casts and indexes**
 
 ### Task 2: Generic Notification Mail
 
@@ -34,9 +34,9 @@
 - Create: `app/Mail/UserNotificationMail.php`
 - Modify: `app/User/NotificationOutboxDispatcher.php`
 
-- [ ] **Step 1: Route `password_reset` and `module:*` payloads to explicit messages**
-- [ ] **Step 2: Reject unknown types and missing module messages**
-- [ ] **Step 3: Keep password-reset secret cleanup after success**
+- [x] **Step 1: Route `password_reset` and `module:*` payloads to explicit messages**
+- [x] **Step 2: Reject unknown types and missing module messages**
+- [x] **Step 3: Keep password-reset secret cleanup after success**
 
 ### Task 3: Lease Claiming and Retry State Machine
 
@@ -44,14 +44,14 @@
 - Create: `config/user_notifications.php`
 - Modify: `app/User/NotificationOutboxDispatcher.php`
 
-- [ ] **Step 1: Recover expired processing rows**
-- [ ] **Step 2: Claim due rows in one transaction with a UUID token**
-- [ ] **Step 3: Finalize only rows owned by the worker claim**
-- [ ] **Step 4: Move exhausted rows to `failed` and preserve retryable pending behavior**
+- [x] **Step 1: Recover expired processing rows**
+- [x] **Step 2: Claim due rows in one transaction with a UUID token**
+- [x] **Step 3: Finalize only rows owned by the worker claim**
+- [x] **Step 4: Move exhausted rows to `failed` and preserve retryable pending behavior**
 
 ### Task 4: Verification and Commit
 
-- [ ] **Step 1: Run Pint and notification tests**
-- [ ] **Step 2: Run user-domain and module notification Gateway regression tests**
-- [ ] **Step 3: Run migration up/down and inspect staged diff**
-- [ ] **Step 4: Commit with `fix: harden notification outbox delivery`**
+- [x] **Step 1: Run Pint and notification tests**
+- [x] **Step 2: Run user-domain and module notification Gateway regression tests**
+- [x] **Step 3: Run migration up/down and inspect staged diff**
+- [x] **Step 4: Commit with `fix: harden notification outbox delivery`**

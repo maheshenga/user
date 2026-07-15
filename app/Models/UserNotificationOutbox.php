@@ -15,6 +15,8 @@ final class UserNotificationOutbox extends BaseModel
     protected $casts = [
         'payload_json' => 'encrypted:array',
         'available_at' => 'datetime',
+        'locked_at' => 'datetime',
         'sent_at' => 'datetime',
+        'failed_at' => 'datetime',
     ];
 }
