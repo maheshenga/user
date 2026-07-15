@@ -31,7 +31,8 @@ class DeployAcceptanceScriptTest extends TestCase
         $this->assertStringContainsString('artisan migrate --force', $output);
         $this->assertStringContainsString('artisan route:list --path=api/v1', $output);
         $this->assertStringContainsString('artisan system:module-menu:sync', $output);
-        $this->assertStringContainsString('artisan system:module-health', $output);
+        $this->assertStringContainsString('artisan system:module-health --json', $output);
+        $this->assertStringContainsString('artisan schedule:list', $output);
         $this->assertStringContainsString('DRY-RUN user portal smoke', $output);
         $this->assertStringContainsString('DRY-RUN user admin smoke', $output);
         $this->assertStringContainsString('scripts/user-portal-smoke.php', str_replace('\\', '/', $output));
@@ -71,7 +72,8 @@ class DeployAcceptanceScriptTest extends TestCase
         $this->assertStringContainsString('PASS artisan route:list --path=api/v1', $output);
         $this->assertStringContainsString('PASS artisan user:ops-menu:sync', $output);
         $this->assertStringContainsString('PASS artisan system:module-menu:sync', $output);
-        $this->assertStringContainsString('PASS artisan system:module-health', $output);
+        $this->assertStringContainsString('PASS artisan system:module-health --json', $output);
+        $this->assertStringContainsString('PASS artisan schedule:list', $output);
         $this->assertStringContainsString('PASS user portal smoke', $output);
         $this->assertStringContainsString('PASS user admin smoke', $output);
         $this->assertStringContainsString('OK deployment acceptance passed', $output);
@@ -84,15 +86,16 @@ class DeployAcceptanceScriptTest extends TestCase
         $this->assertSame(['route:list', '--path=api/v1'], array_slice($commands[2], 1));
         $this->assertSame(['user:ops-menu:sync'], array_slice($commands[3], 1));
         $this->assertSame(['system:module-menu:sync'], array_slice($commands[4], 1));
-        $this->assertSame(['system:module-health'], array_slice($commands[5], 1));
-        $this->assertStringEndsWith('scripts/user-portal-smoke.php', str_replace('\\', '/', $commands[6][0] ?? ''));
-        $this->assertContains('--base-url=http://127.0.0.1:8000', $commands[6]);
-        $this->assertContains('--email=smoke@example.test', $commands[6]);
-        $this->assertContains('--password=secret123', $commands[6]);
-        $this->assertStringEndsWith('scripts/user-admin-smoke.php', str_replace('\\', '/', $commands[7][0] ?? ''));
-        $this->assertContains('--admin-prefix=staff', $commands[7]);
-        $this->assertContains('--username=root', $commands[7]);
-        $this->assertContains('--password=topsecret', $commands[7]);
+        $this->assertSame(['system:module-health', '--json'], array_slice($commands[5], 1));
+        $this->assertSame(['schedule:list'], array_slice($commands[6], 1));
+        $this->assertStringEndsWith('scripts/user-portal-smoke.php', str_replace('\\', '/', $commands[7][0] ?? ''));
+        $this->assertContains('--base-url=http://127.0.0.1:8000', $commands[7]);
+        $this->assertContains('--email=smoke@example.test', $commands[7]);
+        $this->assertContains('--password=secret123', $commands[7]);
+        $this->assertStringEndsWith('scripts/user-admin-smoke.php', str_replace('\\', '/', $commands[8][0] ?? ''));
+        $this->assertContains('--admin-prefix=staff', $commands[8]);
+        $this->assertContains('--username=root', $commands[8]);
+        $this->assertContains('--password=topsecret', $commands[8]);
     }
 
     public function test_deploy_acceptance_surfaces_child_command_failure_with_observed_exit_code(): void
@@ -192,7 +195,8 @@ class DeployAcceptanceScriptTest extends TestCase
             'APP_LOCALE=zh_CN',
             'APP_TIMEZONE=Asia/Shanghai',
             'SESSION_ENCRYPT=true',
-            'MODULE_SIGNING_KEY='.str_repeat('k', 64),
+            'MODULE_SIGNING_ACTIVE_KEY_ID=release-v1',
+            'MODULE_SIGNING_KEYS={"release-v1":"'.str_repeat('k', 64).'"}',
             'DB_CONNECTION=mysql',
             'DB_USERNAME=easyadmin_prod',
             'DB_PASSWORD=change_me_to_a_strong_password',
@@ -216,7 +220,7 @@ class DeployAcceptanceScriptTest extends TestCase
         }
     }
 
-    public function test_deploy_acceptance_rejects_nonportable_timezone_and_missing_module_signing_key(): void
+    public function test_deploy_acceptance_rejects_nonportable_timezone_and_missing_active_module_signing_key(): void
     {
         $base = [
             'APP_KEY=base64:'.base64_encode(str_repeat('a', 32)),
@@ -230,7 +234,12 @@ class DeployAcceptanceScriptTest extends TestCase
             'DB_PASSWORD=change_me_to_a_strong_password',
         ];
 
-        $badTimezone = $this->writeTempEnv([...$base, 'APP_TIMEZONE=PRC', 'MODULE_SIGNING_KEY='.str_repeat('k', 64)]);
+        $badTimezone = $this->writeTempEnv([
+            ...$base,
+            'APP_TIMEZONE=PRC',
+            'MODULE_SIGNING_ACTIVE_KEY_ID=release-v1',
+            'MODULE_SIGNING_KEYS={"release-v1":"'.str_repeat('k', 64).'"}',
+        ]);
         $missingSigningKey = $this->writeTempEnv([...$base, 'APP_TIMEZONE=Asia/Shanghai']);
 
         try {
@@ -244,10 +253,42 @@ class DeployAcceptanceScriptTest extends TestCase
             $this->assertNotSame(0, $timezoneProcess->getExitCode());
             $this->assertStringContainsString('APP_TIMEZONE must be Asia/Shanghai in production.', $timezoneProcess->getErrorOutput());
             $this->assertNotSame(0, $signingProcess->getExitCode());
-            $this->assertStringContainsString('MODULE_SIGNING_KEY is required in production.', $signingProcess->getErrorOutput());
+            $this->assertStringContainsString('MODULE_SIGNING_ACTIVE_KEY_ID is required in production.', $signingProcess->getErrorOutput());
         } finally {
             @unlink($badTimezone);
             @unlink($missingSigningKey);
+        }
+    }
+
+    public function test_deploy_acceptance_rejects_list_shaped_module_signing_key_ring(): void
+    {
+        $envFile = $this->writeTempEnv([
+            'APP_KEY=base64:'.base64_encode(str_repeat('a', 32)),
+            'APP_ENV=production',
+            'APP_DEBUG=false',
+            'APP_URL=https://example.com',
+            'APP_LOCALE=zh_CN',
+            'APP_TIMEZONE=Asia/Shanghai',
+            'SESSION_ENCRYPT=true',
+            'MODULE_SIGNING_ACTIVE_KEY_ID=0',
+            'MODULE_SIGNING_KEYS=["'.str_repeat('k', 64).'"]',
+            'DB_CONNECTION=mysql',
+            'DB_USERNAME=easyadmin_prod',
+            'DB_PASSWORD=change_me_to_a_strong_password',
+        ]);
+
+        try {
+            $process = $this->runDeployAcceptance([
+                '--skip-migrate', '--skip-menu-sync', '--skip-portal', '--skip-admin',
+            ], ['DEPLOY_ACCEPTANCE_ENV_FILE' => $envFile]);
+
+            $this->assertNotSame(0, $process->getExitCode());
+            $this->assertStringContainsString(
+                'MODULE_SIGNING_KEYS must be a JSON object in production.',
+                $process->getErrorOutput()
+            );
+        } finally {
+            @unlink($envFile);
         }
     }
 

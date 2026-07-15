@@ -31,6 +31,22 @@ return [
     'local_unsigned_types' => ['core', 'official', 'private'],
     'production_requires_signature_for' => ['partner', 'community'],
     'production_in_process_trust_levels' => ['core', 'official', 'private'],
+    'signing_active_key_id' => env('MODULE_SIGNING_ACTIVE_KEY_ID', ''),
+    'signing_keys' => (static function (): array {
+        $decoded = json_decode((string) env('MODULE_SIGNING_KEYS', '{}'), true);
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        $keys = [];
+        foreach ($decoded as $keyId => $key) {
+            if (is_string($keyId) && is_string($key) && trim($keyId) !== '') {
+                $keys[trim($keyId)] = trim($key);
+            }
+        }
+
+        return $keys;
+    })(),
     'signing_key' => env('MODULE_SIGNING_KEY', ''),
     'registration_ticket_key' => env('MODULE_REGISTRATION_TICKET_KEY', ''),
     'legacy_client_routes' => [
@@ -72,6 +88,8 @@ return [
     ],
     'cache_key' => 'easyadmin8.modules.enabled',
     'integrity_cache_seconds' => env('MODULE_INTEGRITY_CACHE_SECONDS', 60),
+    'retention_days' => max(1, (int) env('MODULE_RETENTION_DAYS', 90)),
+    'retention_limit' => max(1, min(5000, (int) env('MODULE_RETENTION_LIMIT', 500))),
     'api_default_daily_quota' => 500,
     'api_request_lease_seconds' => max(30, (int) env('MODULE_API_REQUEST_LEASE_SECONDS', 180)),
     'api_daily_quotas' => [

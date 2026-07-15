@@ -2,12 +2,14 @@
 
 use App\Models\SystemModule;
 use App\Modules\ModuleCenterMenuService;
+use App\Modules\ModuleHealthInspector;
 use App\Modules\ModuleInstaller;
 use App\Modules\ModuleManager;
 use App\Modules\ModuleManifest;
 use App\Modules\ModuleOperationRecovery;
 use App\Modules\ModuleReleaseManager;
 use App\Modules\ModuleRepository;
+use App\Modules\ModuleRetentionService;
 use App\Modules\ModuleReviewService;
 use App\User\BalanceReconciliationService;
 use App\User\NotificationOutboxDispatcher;
@@ -16,6 +18,7 @@ use App\User\UserOpsMenuService;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Schema;
 
 Artisan::command('inspire', function () {
@@ -172,54 +175,50 @@ Artisan::command('module:release-adopt-enabled {--admin-id=}', function () use (
     });
 })->purpose('Adopt runnable legacy modules into immutable release history with an administrator identity');
 
-Artisan::command('system:module-health', function (): int {
-    $requiredTables = [
-        'system_module',
-        'system_module_release',
-        'system_module_menu',
-        'module_api_request',
-        'user_api_sessions',
-        'user_api_refresh_tokens',
-    ];
-    foreach ($requiredTables as $table) {
-        if (! Schema::hasTable($table)) {
-            $this->error("缺少模块平台数据表：{$table}");
-
-            return Command::FAILURE;
+Artisan::command('system:module-health {--json}', function (): int {
+    $result = app(ModuleHealthInspector::class)->inspect();
+    if ((bool) $this->option('json')) {
+        $this->line(json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+    } else {
+        foreach ($result['issues'] as $issue) {
+            $this->error((string) $issue['message']);
         }
+        $this->info(
+            'enabled='.$result['metrics']['enabled_modules']
+            .' verified='.$result['metrics']['verified_modules']
+            .' issues='.$result['metrics']['issue_count']
+        );
     }
 
-    $enabled = SystemModule::query()->where('status', 'enabled')->orderBy('name')->get();
-    foreach ($enabled as $module) {
-        if ($module->active_release_id === null) {
-            $this->error("已启用模块未绑定不可变制品：{$module->name}");
-
-            return Command::FAILURE;
-        }
-    }
-
-    $loaded = app(ModuleManager::class)->enabled(true);
-    $missing = $enabled->pluck('name')->diff(array_keys($loaded))->values();
-    if ($missing->isNotEmpty()) {
-        $this->error('模块签名、完整性或加载检查失败：'.$missing->implode(', '));
-
-        return Command::FAILURE;
-    }
-
-    if (
-        $enabled->contains('name', 'qingyu_ip_agent')
-        && (! Schema::hasColumn('activation_code_batch', 'owner_module')
-            || ! Schema::hasColumn('activation_code_redemption', 'owner_module'))
-    ) {
-        $this->error('轻语模块数据归属字段未安装。');
-
-        return Command::FAILURE;
-    }
-
-    $this->info('enabled='.$enabled->count().' verified='.count($loaded));
-
-    return Command::SUCCESS;
+    return $result['ok'] ? Command::SUCCESS : Command::FAILURE;
 })->purpose('Verify module release, integrity, ownership, and API readiness');
+
+Artisan::command('system:module-retention:prune {--days=90} {--limit=500} {--json}', function (): int {
+    $days = filter_var($this->option('days'), FILTER_VALIDATE_INT);
+    $limit = filter_var($this->option('limit'), FILTER_VALIDATE_INT);
+    if ($days === false || $days < 1 || $days > 3650) {
+        $this->error('The retention period must be between 1 and 3650 days.');
+
+        return Command::FAILURE;
+    }
+    if ($limit === false || $limit < 1 || $limit > 5000) {
+        $this->error('The retention batch limit must be between 1 and 5000.');
+
+        return Command::FAILURE;
+    }
+
+    $result = app(ModuleRetentionService::class)->prune(now()->subDays($days), $limit);
+    if ((bool) $this->option('json')) {
+        $this->line(json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+    } else {
+        foreach ($result['deleted'] as $type => $deleted) {
+            $this->line($type.'='.$deleted);
+        }
+        $this->info('total_deleted='.$result['total_deleted'].' artifact_failures='.$result['artifact_failures']);
+    }
+
+    return $result['artifact_failures'] === 0 ? Command::SUCCESS : Command::FAILURE;
+})->purpose('Prune expired module platform operational history while preserving protected releases');
 
 Artisan::command('user:notifications:send {--limit=50}', function (): int {
     $result = app(NotificationOutboxDispatcher::class)->sendPending((int) $this->option('limit'));
@@ -290,3 +289,21 @@ Artisan::command('system:module-menu:sync', function (): int {
 
     return Command::SUCCESS;
 })->purpose('Synchronize EasyAdmin menu entry for module management');
+
+Schedule::command('user:notifications:send --limit=50')
+    ->everyMinute()
+    ->withoutOverlapping();
+Schedule::command('user:balance:reconcile --limit=1000')
+    ->hourly()
+    ->withoutOverlapping();
+Schedule::command('system:module-health --json')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();
+Schedule::command('system:module-operations:recover --minutes=15 --json')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$retentionDays = max(1, (int) config('modules.retention_days', 90));
+$retentionLimit = max(1, min(5000, (int) config('modules.retention_limit', 500)));
+Schedule::command("system:module-retention:prune --days={$retentionDays} --limit={$retentionLimit} --json")
+    ->dailyAt('03:30')
+    ->withoutOverlapping();

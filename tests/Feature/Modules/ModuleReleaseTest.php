@@ -14,6 +14,7 @@ use App\Modules\ModuleManifestPolicy;
 use App\Modules\ModuleMenuSynchronizer;
 use App\Modules\ModuleMigrationRunner;
 use App\Modules\ModuleReleaseManager;
+use App\Modules\ModuleReleaseSigner;
 use App\Modules\ModuleRepository;
 use App\Modules\ModuleReviewService;
 use App\Modules\ModuleRollbacker;
@@ -50,7 +51,11 @@ class ModuleReleaseTest extends TestCase
         Config::set('modules.path', $this->root);
         Config::set('modules.host_version', '8.0.0');
         Config::set('modules.allowed_permissions', ['menu:write', 'node:write', 'api:user']);
-        Config::set('modules.signing_key', 'test-module-signing-key');
+        Config::set('modules.signing_active_key_id', 'test-v1');
+        Config::set('modules.signing_keys', [
+            'test-v1' => str_repeat('s', 32),
+        ]);
+        Config::set('modules.signing_key', str_repeat('l', 32));
     }
 
     protected function tearDown(): void
@@ -65,6 +70,7 @@ class ModuleReleaseTest extends TestCase
     {
         $this->assertTrue(Schema::hasTable('system_module_release'));
         $this->assertTrue(Schema::hasTable('system_module_menu'));
+        $this->assertTrue(Schema::hasColumn('system_module_release', 'key_id'));
         $this->assertTrue(Schema::hasColumns('system_module', [
             'active_release_id',
             'pending_release_id',
@@ -173,6 +179,29 @@ class ModuleReleaseTest extends TestCase
         $this->assertSame($second->id, SystemModule::query()->where('name', 'blog')->value('pending_release_id'));
     }
 
+    public function test_reuploading_rejected_artifact_clears_previous_signing_key_id(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive extension is not available.');
+        }
+
+        $zipPath = $this->root.DIRECTORY_SEPARATOR.'blog-rejected.zip';
+        $this->createZip($zipPath, [
+            'Blog/module.json' => json_encode($this->manifest(), JSON_THROW_ON_ERROR),
+        ]);
+        $release = app(ModuleReleaseManager::class)->stageZip($zipPath, 'blog', 9);
+        app(ModuleReviewService::class)->approve('blog', 7);
+        app(ModuleReviewService::class)->reject('blog', 'needs changes', 7);
+        $this->assertSame('test-v1', $release->refresh()->key_id);
+
+        $restaged = app(ModuleReleaseManager::class)->stageZip($zipPath, 'blog', 9);
+
+        $this->assertSame($release->id, $restaged->id);
+        $this->assertSame('pending_review', $restaged->status);
+        $this->assertNull($restaged->signature_hash);
+        $this->assertNull($restaged->key_id);
+    }
+
     public function test_artifact_hasher_rejects_directory_symlinks(): void
     {
         if (PHP_OS_FAMILY === 'Windows') {
@@ -239,6 +268,7 @@ class ModuleReleaseTest extends TestCase
         $this->assertSame('active', $release->status);
         $this->assertSame(7, $release->reviewed_by);
         $this->assertNotNull($release->signature_hash);
+        $this->assertSame('test-v1', $release->key_id);
         $this->assertNull($module->active_operation_id);
         $this->assertDatabaseHas('system_node', [
             'owner_module' => 'blog',
@@ -251,6 +281,66 @@ class ModuleReleaseTest extends TestCase
             ->where('status', 'succeeded')
             ->whereNull('active_key')
             ->exists());
+    }
+
+    public function test_release_signing_records_the_active_key_id(): void
+    {
+        Config::set('modules.signing_active_key_id', 'release-v2');
+        Config::set('modules.signing_keys', [
+            'release-v2' => str_repeat('2', 32),
+        ]);
+        $release = $this->unsignedRelease();
+
+        $signature = app(ModuleReleaseSigner::class)->sign($release);
+
+        $this->assertSame('release-v2', $release->key_id);
+        $this->assertNotNull($signature);
+    }
+
+    public function test_previous_signing_key_verifies_release_after_rotation(): void
+    {
+        Config::set('modules.signing_active_key_id', 'release-v1');
+        Config::set('modules.signing_keys', [
+            'release-v1' => str_repeat('1', 32),
+        ]);
+        $release = $this->unsignedRelease();
+        $release->signature_hash = app(ModuleReleaseSigner::class)->sign($release);
+
+        Config::set('modules.signing_active_key_id', 'release-v2');
+        Config::set('modules.signing_keys', [
+            'release-v2' => str_repeat('2', 32),
+            'release-v1' => str_repeat('1', 32),
+        ]);
+
+        $this->assertTrue(app(ModuleReleaseSigner::class)->verify($release));
+        $this->assertSame('release-v1', $release->key_id);
+    }
+
+    public function test_unknown_release_signing_key_id_fails_closed(): void
+    {
+        $release = $this->unsignedRelease();
+        $release->forceFill([
+            'key_id' => 'retired-key',
+            'signature_hash' => str_repeat('a', 64),
+        ]);
+
+        $this->assertFalse(app(ModuleReleaseSigner::class)->verify($release));
+    }
+
+    public function test_legacy_single_key_release_is_compatible_only_outside_production(): void
+    {
+        Config::set('modules.signing_active_key_id', '');
+        Config::set('modules.signing_keys', []);
+        Config::set('modules.signing_key', str_repeat('l', 32));
+        $release = $this->unsignedRelease();
+        $release->signature_hash = app(ModuleReleaseSigner::class)->sign($release);
+
+        $this->assertNull($release->key_id);
+        $this->assertTrue(app(ModuleReleaseSigner::class)->verify($release));
+
+        $this->app['env'] = 'production';
+
+        $this->assertFalse(app(ModuleReleaseSigner::class)->verify($release));
     }
 
     public function test_failed_activation_compensates_migrations_when_menu_sync_fails(): void
@@ -759,6 +849,16 @@ PHP);
         );
 
         return $path;
+    }
+
+    private function unsignedRelease(): SystemModuleRelease
+    {
+        return new SystemModuleRelease([
+            'module' => 'blog',
+            'version' => '1.0.0',
+            'artifact_hash' => str_repeat('a', 64),
+            'trust_level' => 'community',
+        ]);
     }
 
     private function manifest(

@@ -188,6 +188,27 @@ function assertProductionDatabaseCredentials(array $env): void
     }
 }
 
+/**
+ * @param  array<string, string>  $env
+ */
+function assertProductionModuleSigningKeyRing(array $env): void
+{
+    $activeKeyId = envValue($env, 'MODULE_SIGNING_ACTIVE_KEY_ID');
+    if ($activeKeyId === '') {
+        throw new DeploymentAcceptanceFailure('MODULE_SIGNING_ACTIVE_KEY_ID is required in production.');
+    }
+
+    $keys = json_decode(envValue($env, 'MODULE_SIGNING_KEYS', '{}'), true);
+    if (! is_array($keys) || array_is_list($keys)) {
+        throw new DeploymentAcceptanceFailure('MODULE_SIGNING_KEYS must be a JSON object in production.');
+    }
+
+    $activeKey = $keys[$activeKeyId] ?? null;
+    if (! is_string($activeKey) || strlen(trim($activeKey)) < 32) {
+        throw new DeploymentAcceptanceFailure('MODULE_SIGNING_KEYS must contain the active production key.');
+    }
+}
+
 function checkDeploymentEnv(): void
 {
     $envPath = deploymentEnvPath();
@@ -217,9 +238,7 @@ function checkDeploymentEnv(): void
         assertProductionEnvValue($parsed, 'APP_TIMEZONE', 'Asia/Shanghai', 'APP_TIMEZONE must be Asia/Shanghai in production.');
         assertProductionDatabaseCredentials($parsed);
 
-        if (strlen(envValue($parsed, 'MODULE_SIGNING_KEY')) < 32) {
-            throw new DeploymentAcceptanceFailure('MODULE_SIGNING_KEY is required in production.');
-        }
+        assertProductionModuleSigningKeyRing($parsed);
 
         if (envValue($parsed, 'APP_URL') === '' || envValue($parsed, 'APP_URL') === 'http://localhost') {
             throw new DeploymentAcceptanceFailure('APP_URL must be a production URL in production.');
@@ -378,8 +397,12 @@ function deploymentCommands(array $options): array
             'command' => phpCommand($php, ['artisan', 'system:module-menu:sync']),
         ];
         $commands[] = [
-            'label' => 'artisan system:module-health',
-            'command' => phpCommand($php, ['artisan', 'system:module-health']),
+            'label' => 'artisan system:module-health --json',
+            'command' => phpCommand($php, ['artisan', 'system:module-health', '--json']),
+        ];
+        $commands[] = [
+            'label' => 'artisan schedule:list',
+            'command' => phpCommand($php, ['artisan', 'schedule:list']),
         ];
     }
 

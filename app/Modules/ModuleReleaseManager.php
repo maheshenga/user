@@ -138,6 +138,7 @@ final class ModuleReleaseManager
                     'manifest_json' => $artifactManifest->toArray(),
                     'status' => 'pending_review',
                     'signature_hash' => null,
+                    'key_id' => null,
                     'uploaded_by' => $actorId,
                     'reviewed_by' => null,
                     'reviewed_at' => null,
