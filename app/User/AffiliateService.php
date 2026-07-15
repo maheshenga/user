@@ -11,9 +11,7 @@ use InvalidArgumentException;
 
 final class AffiliateService
 {
-    public function __construct(private readonly BalanceLedgerService $balanceLedger)
-    {
-    }
+    public function __construct(private readonly BalanceLedgerService $balanceLedger) {}
 
     public function createForActivationCode(
         int $buyerUserId,
@@ -40,14 +38,14 @@ final class AffiliateService
         string|float $secondLevelRate,
         bool $isCommissionable
     ): array {
-        $baseAmount = (float) $this->money($amount);
+        $baseAmount = Money::from($amount);
 
         return $this->createForSource(
             'vip_order',
             $vipOrderId,
             $buyerUserId,
-            $this->money($baseAmount * (float) $firstLevelRate),
-            $this->money($baseAmount * (float) $secondLevelRate),
+            $baseAmount->multiplyRate($firstLevelRate)->toString(),
+            $baseAmount->multiplyRate($secondLevelRate)->toString(),
             $isCommissionable
         );
     }
@@ -155,7 +153,7 @@ final class AffiliateService
 
             $byStatus[$row->status] = [
                 'count' => (int) $row->count,
-                'amount' => $this->money($row->amount),
+                'amount' => Money::from($row->amount)->toString(),
             ];
         }
 
@@ -252,7 +250,7 @@ final class AffiliateService
             $commissions = [];
 
             foreach ($levels as $level => [$beneficiaryUserId, $amount]) {
-                if ($beneficiaryUserId <= 0 || $this->compare($amount, '0.00') <= 0) {
+                if ($beneficiaryUserId <= 0 || ! Money::from($amount)->isPositive()) {
                     continue;
                 }
 
@@ -317,7 +315,7 @@ final class AffiliateService
             'buyer_user_id' => (int) $commission->buyer_user_id,
             'beneficiary_user_id' => (int) $commission->beneficiary_user_id,
             'level' => (int) $commission->level,
-            'amount' => $this->money($commission->amount),
+            'amount' => Money::from($commission->amount)->toString(),
             'status' => $commission->status,
             'reason' => $commission->reason,
             'audit_admin_id' => $commission->audit_admin_id === null ? null : (int) $commission->audit_admin_id,
@@ -329,11 +327,6 @@ final class AffiliateService
 
     private function money(mixed $amount): string
     {
-        return number_format(round((float) $amount, 2), 2, '.', '');
-    }
-
-    private function compare(string $left, string $right): int
-    {
-        return ((int) round(((float) $left) * 100)) <=> ((int) round(((float) $right) * 100));
+        return Money::from($amount)->toString();
     }
 }

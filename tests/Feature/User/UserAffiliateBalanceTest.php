@@ -3,9 +3,9 @@
 namespace Tests\Feature\User;
 
 use App\Http\Middleware\CheckInstall;
-use App\Models\AffiliateCommission;
 use App\Models\ActivationCodeBatch;
 use App\Models\ActivationCodeRedemption;
+use App\Models\AffiliateCommission;
 use App\Models\UserAccount;
 use App\Models\UserBalanceLedger;
 use App\Models\UserInviteRelation;
@@ -14,10 +14,10 @@ use App\User\ActivationCodeService;
 use App\User\AffiliateService;
 use App\User\BalanceLedgerService;
 use Illuminate\Http\Request;
-use InvalidArgumentException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
+use InvalidArgumentException;
 use Tests\TestCase;
 
 class UserAffiliateBalanceTest extends TestCase
@@ -64,6 +64,7 @@ class UserAffiliateBalanceTest extends TestCase
             'type',
             'source_type',
             'source_id',
+            'operation_key',
             'remark',
             'admin_id',
             'create_time',
@@ -139,6 +140,70 @@ class UserAffiliateBalanceTest extends TestCase
         $this->expectExceptionMessage('可用余额不足。');
 
         app(BalanceLedgerService::class)->debit($user->id, '0.01', 'reversal', null, null, 'Too much');
+    }
+
+    public function test_balance_ledger_service_replays_the_same_business_operation_once(): void
+    {
+        $user = $this->createAccount('ledger-idempotent@example.com');
+        $service = app(BalanceLedgerService::class);
+
+        $first = $service->credit(
+            $user->id,
+            '5.00',
+            'affiliate_commission',
+            'affiliate_commission',
+            8001,
+            'Commission settlement',
+            7
+        );
+        $second = $service->credit(
+            $user->id,
+            '5.00',
+            'affiliate_commission',
+            'affiliate_commission',
+            8001,
+            'Commission settlement retry',
+            7
+        );
+
+        $this->assertSame($first['id'], $second['id']);
+        $this->assertSame('5.00', $second['balance_after']);
+        $this->assertSame('5.00', UserAccount::query()->findOrFail($user->id)->available_balance);
+        $this->assertSame(1, UserBalanceLedger::query()->where('user_id', $user->id)->count());
+        $this->assertNotNull(UserBalanceLedger::query()->firstOrFail()->operation_key);
+    }
+
+    public function test_balance_ledger_service_rejects_conflicting_business_operation_replay(): void
+    {
+        $user = $this->createAccount('ledger-idempotency-conflict@example.com');
+        $service = app(BalanceLedgerService::class);
+        $service->credit(
+            $user->id,
+            '5.00',
+            'affiliate_commission',
+            'affiliate_commission',
+            8002,
+            'Commission settlement',
+            7
+        );
+
+        try {
+            $service->credit(
+                $user->id,
+                '6.00',
+                'affiliate_commission',
+                'affiliate_commission',
+                8002,
+                'Conflicting retry',
+                7
+            );
+            $this->fail('Expected conflicting balance operation replay to fail.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('余额操作幂等键冲突。', $exception->getMessage());
+        }
+
+        $this->assertSame('5.00', UserAccount::query()->findOrFail($user->id)->available_balance);
+        $this->assertSame(1, UserBalanceLedger::query()->where('user_id', $user->id)->count());
     }
 
     public function test_balance_ledger_service_freezes_and_unfreezes_balance(): void

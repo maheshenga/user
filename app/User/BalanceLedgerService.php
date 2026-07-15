@@ -80,16 +80,16 @@ final class BalanceLedgerService
             throw new InvalidArgumentException('管理员 ID 不能为空。');
         }
 
-        $signedAmount = $this->normalizeSignedAmount($amount);
-        if ($signedAmount === '0.00') {
+        $signedAmount = Money::from($amount);
+        if ($signedAmount->isZero()) {
             throw new InvalidArgumentException('调整金额不能为 0。');
         }
 
-        $ledger = str_starts_with($signedAmount, '-')
-            ? $this->debit($userId, ltrim($signedAmount, '-'), 'admin_adjust', null, null, $reason, $adminId)
-            : $this->credit($userId, $signedAmount, 'admin_adjust', null, null, $reason, $adminId);
+        $ledger = $signedAmount->isNegative()
+            ? $this->debit($userId, $signedAmount->absolute()->toString(), 'admin_adjust', null, null, $reason, $adminId)
+            : $this->credit($userId, $signedAmount->toString(), 'admin_adjust', null, null, $reason, $adminId);
 
-        $ledger['signed_amount'] = $signedAmount;
+        $ledger['signed_amount'] = $signedAmount->toString();
 
         return $ledger;
     }
@@ -103,8 +103,8 @@ final class BalanceLedgerService
 
         return [
             'user_id' => (int) $user->id,
-            'available_balance' => $this->money($user->available_balance ?? 0),
-            'frozen_balance' => $this->money($user->frozen_balance ?? 0),
+            'available_balance' => Money::from($user->available_balance ?? 0)->toString(),
+            'frozen_balance' => Money::from($user->frozen_balance ?? 0)->toString(),
         ];
     }
 
@@ -131,7 +131,10 @@ final class BalanceLedgerService
         string $remark,
         ?int $adminId
     ): array {
-        $amount = $this->normalizePositiveAmount($amount);
+        $amount = Money::from($amount);
+        if (! $amount->isPositive()) {
+            throw new InvalidArgumentException('金额必须大于 0。');
+        }
 
         return DB::transaction(function () use ($userId, $amount, $direction, $type, $sourceType, $sourceId, $remark, $adminId): array {
             $user = UserAccount::query()->lockForUpdate()->find($userId);
@@ -139,28 +142,44 @@ final class BalanceLedgerService
                 throw new InvalidArgumentException('用户账户不存在。');
             }
 
-            $balanceBefore = $this->money($user->available_balance ?? 0);
-            $frozenBefore = $this->money($user->frozen_balance ?? 0);
+            $operationKey = BalanceOperationKey::make($userId, $direction, $type, $sourceType, $sourceId);
+            if ($operationKey !== null) {
+                $existing = UserBalanceLedger::query()
+                    ->where('operation_key', $operationKey)
+                    ->lockForUpdate()
+                    ->first();
+                if ($existing !== null) {
+                    if (Money::from($existing->amount)->compareTo($amount) !== 0) {
+                        throw new InvalidArgumentException('余额操作幂等键冲突。');
+                    }
+
+                    return $this->publicLedger($existing);
+                }
+            }
+
+            $balanceBefore = Money::from($user->available_balance ?? 0);
+            $frozenBefore = Money::from($user->frozen_balance ?? 0);
             [$balanceAfter, $frozenAfter] = $this->nextSnapshots($direction, $balanceBefore, $frozenBefore, $amount);
             $now = time();
 
             $user->forceFill([
-                'available_balance' => $balanceAfter,
-                'frozen_balance' => $frozenAfter,
+                'available_balance' => $balanceAfter->toString(),
+                'frozen_balance' => $frozenAfter->toString(),
                 'update_time' => $now,
             ])->save();
 
             $ledger = UserBalanceLedger::query()->create([
                 'user_id' => $user->id,
                 'direction' => $direction,
-                'amount' => $amount,
-                'balance_before' => $balanceBefore,
-                'balance_after' => $balanceAfter,
-                'frozen_before' => $frozenBefore,
-                'frozen_after' => $frozenAfter,
+                'amount' => $amount->toString(),
+                'balance_before' => $balanceBefore->toString(),
+                'balance_after' => $balanceAfter->toString(),
+                'frozen_before' => $frozenBefore->toString(),
+                'frozen_after' => $frozenAfter->toString(),
                 'type' => $type,
                 'source_type' => $sourceType,
                 'source_id' => $sourceId,
+                'operation_key' => $operationKey,
                 'remark' => trim($remark),
                 'admin_id' => $adminId,
                 'create_time' => $now,
@@ -170,69 +189,34 @@ final class BalanceLedgerService
         });
     }
 
-    private function nextSnapshots(string $direction, string $balanceBefore, string $frozenBefore, string $amount): array
+    private function nextSnapshots(string $direction, Money $balanceBefore, Money $frozenBefore, Money $amount): array
     {
         return match ($direction) {
-            'in' => [$this->add($balanceBefore, $amount), $frozenBefore],
+            'in' => [$balanceBefore->add($amount), $frozenBefore],
             'out' => [$this->subAvailable($balanceBefore, $amount), $frozenBefore],
-            'freeze' => [$this->subAvailable($balanceBefore, $amount), $this->add($frozenBefore, $amount)],
-            'unfreeze' => [$this->add($balanceBefore, $amount), $this->subFrozen($frozenBefore, $amount)],
+            'freeze' => [$this->subAvailable($balanceBefore, $amount), $frozenBefore->add($amount)],
+            'unfreeze' => [$balanceBefore->add($amount), $this->subFrozen($frozenBefore, $amount)],
             'settle_frozen' => [$balanceBefore, $this->subFrozen($frozenBefore, $amount)],
             default => throw new InvalidArgumentException('不支持的余额变动方向。'),
         };
     }
 
-    private function subAvailable(string $balance, string $amount): string
+    private function subAvailable(Money $balance, Money $amount): Money
     {
-        if ($this->compare($balance, $amount) < 0) {
+        if ($balance->compareTo($amount) < 0) {
             throw new InvalidArgumentException('可用余额不足。');
         }
 
-        return $this->sub($balance, $amount);
+        return $balance->subtract($amount);
     }
 
-    private function subFrozen(string $frozen, string $amount): string
+    private function subFrozen(Money $frozen, Money $amount): Money
     {
-        if ($this->compare($frozen, $amount) < 0) {
+        if ($frozen->compareTo($amount) < 0) {
             throw new InvalidArgumentException('冻结余额不足。');
         }
 
-        return $this->sub($frozen, $amount);
-    }
-
-    private function normalizePositiveAmount(string|float $amount): string
-    {
-        $amount = $this->money($amount);
-        if ($this->compare($amount, '0.00') <= 0) {
-            throw new InvalidArgumentException('金额必须大于 0。');
-        }
-
-        return $amount;
-    }
-
-    private function normalizeSignedAmount(string|float $amount): string
-    {
-        return $this->money($amount);
-    }
-
-    private function add(string $left, string $right): string
-    {
-        return $this->money((float) $left + (float) $right);
-    }
-
-    private function sub(string $left, string $right): string
-    {
-        return $this->money((float) $left - (float) $right);
-    }
-
-    private function compare(string $left, string $right): int
-    {
-        return ((int) round(((float) $left) * 100)) <=> ((int) round(((float) $right) * 100));
-    }
-
-    private function money(mixed $amount): string
-    {
-        return number_format(round((float) $amount, 2), 2, '.', '');
+        return $frozen->subtract($amount);
     }
 
     private function publicLedger(UserBalanceLedger $ledger): array
@@ -241,11 +225,11 @@ final class BalanceLedgerService
             'id' => (int) $ledger->id,
             'user_id' => (int) $ledger->user_id,
             'direction' => $ledger->direction === 'settle_frozen' ? 'out' : $ledger->direction,
-            'amount' => $this->money($ledger->amount),
-            'balance_before' => $this->money($ledger->balance_before),
-            'balance_after' => $this->money($ledger->balance_after),
-            'frozen_before' => $this->money($ledger->frozen_before),
-            'frozen_after' => $this->money($ledger->frozen_after),
+            'amount' => Money::from($ledger->amount)->toString(),
+            'balance_before' => Money::from($ledger->balance_before)->toString(),
+            'balance_after' => Money::from($ledger->balance_after)->toString(),
+            'frozen_before' => Money::from($ledger->frozen_before)->toString(),
+            'frozen_after' => Money::from($ledger->frozen_after)->toString(),
             'type' => $ledger->type,
             'source_type' => $ledger->source_type,
             'source_id' => $ledger->source_id === null ? null : (int) $ledger->source_id,

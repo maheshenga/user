@@ -26,7 +26,7 @@
 **Interfaces:**
 - Produces: `Money::from(mixed): Money`, `add()`, `subtract()`, `compareTo()`, `multiplyRate()`, `toString()`.
 
-- [ ] **Step 1: Write failing unit tests**
+- [x] **Step 1: Write failing unit tests**
 
 ```php
 $this->assertSame('0.30', Money::from('0.10')->add(Money::from('0.20'))->toString());
@@ -34,11 +34,11 @@ $this->assertSame('1.01', Money::from('1.005')->toString());
 $this->assertSame('12.35', Money::from('123.45')->multiplyRate('0.1000')->toString());
 ```
 
-- [ ] **Step 2: Verify tests fail because `Money` does not exist**
+- [x] **Step 2: Verify tests fail because `Money` does not exist**
 
-- [ ] **Step 3: Implement integer-cent parsing and arithmetic**
+- [x] **Step 3: Implement integer-cent parsing and arithmetic**
 
-- [ ] **Step 4: Run `MoneyTest` and verify it passes**
+- [x] **Step 4: Run `MoneyTest` and verify it passes**
 
 ### Task 2: Ledger Operation Identity
 
@@ -50,17 +50,17 @@ $this->assertSame('12.35', Money::from('123.45')->multiplyRate('0.1000')->toStri
 **Interfaces:**
 - Produces: `BalanceOperationKey::make(int, string, string, ?string, ?int): ?string` and `user_balance_ledger.operation_key`.
 
-- [ ] **Step 1: Write replay and conflict tests**
+- [x] **Step 1: Write replay and conflict tests**
 
 Call `credit()` twice with the same source and assert one ledger row. Repeat with a different amount and assert `InvalidArgumentException('余额操作幂等键冲突。')`.
 
-- [ ] **Step 2: Verify replay tests fail**
+- [x] **Step 2: Verify replay tests fail**
 
-- [ ] **Step 3: Add the operation-key migration**
+- [x] **Step 3: Add the operation-key migration**
 
 Backfill complete historical sources, reject duplicate canonical tuples, and add a unique index named `user_balance_ledger_operation_unique`.
 
-- [ ] **Step 4: Implement the operation-key builder**
+- [x] **Step 4: Implement the operation-key builder**
 
 Return `null` unless both source fields exist; otherwise hash JSON encoded tuple values with `JSON_THROW_ON_ERROR`.
 
@@ -74,15 +74,15 @@ Return `null` unless both source fields exist; otherwise hash JSON encoded tuple
 - Consumes: `Money` and `BalanceOperationKey`.
 - Produces: exact snapshots and replay-safe mutations.
 
-- [ ] **Step 1: Replace float helpers with `Money` operations**
+- [x] **Step 1: Replace float helpers with `Money` operations**
 
 Parse amount before entering the transaction, calculate all snapshots as `Money`, and persist `toString()` values.
 
-- [ ] **Step 2: Add replay lookup under the user lock**
+- [x] **Step 2: Add replay lookup under the user lock**
 
 Return an exact prior operation; reject a prior operation whose amount or identity does not match.
 
-- [ ] **Step 3: Run affiliate, withdrawal, activation, and admin balance tests**
+- [x] **Step 3: Run affiliate, withdrawal, activation, and admin balance tests**
 
 ### Task 4: Read-Only Reconciliation
 
@@ -94,15 +94,15 @@ Return an exact prior operation; reject a prior operation whose amount or identi
 **Interfaces:**
 - Produces: `inspect(?int $userId = null, int $limit = 1000): array` and `user:balance:reconcile`.
 
-- [ ] **Step 1: Write failing clean and tampered-balance tests**
+- [x] **Step 1: Write failing clean and tampered-balance tests**
 
 Assert a service-created ledger exits `0`; directly alter the account balance and assert exit `1` with `account_snapshot_mismatch`.
 
-- [ ] **Step 2: Implement continuity and account snapshot checks**
+- [x] **Step 2: Implement continuity and account snapshot checks**
 
 Return `checked_users`, `issue_count`, and issue arrays containing `user_id`, `code`, `ledger_id`, `expected`, and `actual`.
 
-- [ ] **Step 3: Register the read-only command**
+- [x] **Step 3: Register the read-only command**
 
 Support `--user` and `--limit`; emit each issue as JSON and return `Command::FAILURE` when issues exist.
 
@@ -111,7 +111,7 @@ Support `--user` and `--limit`; emit each issue as JSON and return `Command::FAI
 **Files:**
 - Review every file changed by Tasks 1-4.
 
-- [ ] **Step 1: Run Pint and focused tests**
-- [ ] **Step 2: Run the complete PHPUnit suite or equivalent clean directory groups**
-- [ ] **Step 3: Run migration up/down round trip and inspect staged diff**
-- [ ] **Step 4: Commit with `fix: enforce balance integrity`**
+- [x] **Step 1: Run Pint and focused tests**
+- [x] **Step 2: Run the complete PHPUnit suite or equivalent clean directory groups**
+- [x] **Step 3: Run migration up/down round trip and inspect staged diff**
+- [x] **Step 4: Commit with `fix: enforce balance integrity`**

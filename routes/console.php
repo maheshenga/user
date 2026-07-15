@@ -8,6 +8,7 @@ use App\Modules\ModuleManifest;
 use App\Modules\ModuleReleaseManager;
 use App\Modules\ModuleRepository;
 use App\Modules\ModuleReviewService;
+use App\User\BalanceReconciliationService;
 use App\User\NotificationOutboxDispatcher;
 use App\User\NotificationOutboxMaintenanceService;
 use App\User\UserOpsMenuService;
@@ -199,6 +200,26 @@ Artisan::command('user:notifications:purge {--days=30} {--limit=500}', function 
 
     return Command::SUCCESS;
 })->purpose('Purge old sent user notification outbox rows');
+
+Artisan::command('user:balance:reconcile {--user=} {--limit=1000}', function (): int {
+    $user = $this->option('user');
+    if ($user !== null && $user !== '' && (! ctype_digit((string) $user) || (int) $user <= 0)) {
+        $this->error('用户 ID 必须是正整数。');
+
+        return Command::FAILURE;
+    }
+    $result = app(BalanceReconciliationService::class)->inspect(
+        $user === null || $user === '' ? null : (int) $user,
+        (int) $this->option('limit')
+    );
+
+    foreach ($result['issues'] as $issue) {
+        $this->line(json_encode($issue, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+    }
+    $this->info('checked='.$result['checked_users'].' issues='.$result['issue_count']);
+
+    return $result['issue_count'] === 0 ? Command::SUCCESS : Command::FAILURE;
+})->purpose('Verify user account balances against immutable ledger snapshots');
 
 Artisan::command('user:ops-menu:sync', function (): int {
     try {

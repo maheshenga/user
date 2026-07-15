@@ -12,8 +12,7 @@ final class WithdrawalService
     public function __construct(
         private readonly BalanceLedgerService $balanceLedger,
         private readonly UserOpsSettings $settings
-    ) {
-    }
+    ) {}
 
     public function request(int $userId, string|float $amount, array $accountSnapshot, string $ip): array
     {
@@ -266,17 +265,21 @@ final class WithdrawalService
 
     private function positiveMoney(string|float $amount): string
     {
-        $money = $this->money($amount);
-        if ((float) $money <= 0) {
+        try {
+            $money = Money::from($amount);
+        } catch (InvalidArgumentException) {
+            throw new InvalidArgumentException('金额必须大于 0。');
+        }
+        if (! $money->isPositive()) {
             throw new InvalidArgumentException('金额必须大于 0。');
         }
 
-        return $money;
+        return $money->toString();
     }
 
     private function money(mixed $amount): string
     {
-        return number_format(round((float) $amount, 2), 2, '.', '');
+        return Money::from($amount)->toString();
     }
 
     private function assertAmountPolicy(string $amount): void
@@ -294,7 +297,7 @@ final class WithdrawalService
 
     private function compare(string $left, string $right): int
     {
-        return ((int) round(((float) $left) * 100)) <=> ((int) round(((float) $right) * 100));
+        return Money::from($left)->compareTo(Money::from($right));
     }
 
     private function withdrawalNo(): string
@@ -352,7 +355,7 @@ final class WithdrawalService
 
     private function isUniqueConstraintViolation(QueryException $exception): bool
     {
-        $message = strtolower($exception->getMessage() . ' ' . implode(' ', $exception->errorInfo ?? []));
+        $message = strtolower($exception->getMessage().' '.implode(' ', $exception->errorInfo ?? []));
 
         return str_contains($message, 'unique constraint')
             || str_contains($message, 'duplicate entry')
