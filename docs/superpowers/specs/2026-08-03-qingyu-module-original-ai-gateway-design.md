@@ -1,5 +1,7 @@
 # 轻语模块原版 AI 网关设计
 
+> 状态：已被 `2026-08-03-qingyu-client-capability-takeover-p0-design.md` 取代。原版服务不受本项目控制，本文中的“代理原版 AI”方案不进入实施。
+
 ## 1. 目标
 
 `QingyuIpAgent` 轻语模块统一承接轻语桌面客户端的 AI 能力。
