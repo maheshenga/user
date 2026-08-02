@@ -6,9 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\UserAccount;
 use App\Modules\ModuleApiException;
 use App\Modules\ModuleApiRequestService;
+use App\User\UserApiException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use InvalidArgumentException;
+use Modules\QingyuIpAgent\Exceptions\ContentCapabilityException;
+use Modules\QingyuIpAgent\Services\CapabilityStatusService;
 use Modules\QingyuIpAgent\Services\ClientApiService;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
@@ -61,6 +64,15 @@ class ApiController extends Controller
         );
     }
 
+    public function contentStatus(Request $request, CapabilityStatusService $service): JsonResponse
+    {
+        return $this->run(
+            $request,
+            'content.status',
+            fn (UserAccount $user): array => $service->forUser($user)
+        );
+    }
+
     private function run(Request $request, string $operation, callable $callback): JsonResponse
     {
         $requests = app(ModuleApiRequestService::class);
@@ -93,6 +105,20 @@ class ApiController extends Controller
     {
         try {
             return $callback($user);
+        } catch (ContentCapabilityException $exception) {
+            throw new ModuleApiException(
+                $exception->getMessage(),
+                $exception->httpStatus(),
+                $exception->errorCode(),
+                $exception
+            );
+        } catch (UserApiException $exception) {
+            throw new ModuleApiException(
+                $exception->getMessage(),
+                $exception->httpStatus(),
+                $exception->errorCode(),
+                $exception
+            );
         } catch (InvalidArgumentException $exception) {
             [$status, $code] = match ($operation) {
                 'activation.redeem' => [422, 'activation_invalid'],

@@ -3,6 +3,7 @@
 namespace Modules\QingyuIpAgent\Services;
 
 use App\User\VipService;
+use Closure;
 use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\UriResolver;
 use Illuminate\Support\Facades\Http;
@@ -22,7 +23,14 @@ final class VideoParserService
         'xhslink.com',
     ];
 
-    public function __construct(private readonly VipService $vip) {}
+    private readonly Closure $hostResolver;
+
+    public function __construct(private readonly VipService $vip, ?callable $hostResolver = null)
+    {
+        $this->hostResolver = $hostResolver === null
+            ? Closure::fromCallable([$this, 'resolveHostAddresses'])
+            : Closure::fromCallable($hostResolver);
+    }
 
     public function parse(array $user, array $input): array
     {
@@ -185,6 +193,10 @@ final class VideoParserService
         $currentUrl = $url;
 
         for ($redirects = 0; $redirects <= 5; $redirects++) {
+            if (! $this->isPublicFetchUrl($currentUrl)) {
+                return null;
+            }
+
             try {
                 $response = Http::withOptions(['allow_redirects' => false])->withHeaders([
                     'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -212,12 +224,21 @@ final class VideoParserService
                 return null;
             }
 
-            $html = $response->body();
-            if (trim($html) === '') {
+            if (! $this->isTextResponse((string) $response->header('Content-Type'))) {
                 return null;
             }
 
-            return substr($html, 0, self::MAX_HTML_BYTES);
+            $contentLength = trim((string) $response->header('Content-Length'));
+            if ($contentLength !== '' && ctype_digit($contentLength) && (int) $contentLength > self::MAX_HTML_BYTES) {
+                return null;
+            }
+
+            $html = $response->body();
+            if (trim($html) === '' || strlen($html) > self::MAX_HTML_BYTES) {
+                return null;
+            }
+
+            return $html;
         }
 
         return null;
@@ -236,6 +257,78 @@ final class VideoParserService
         }
 
         return $this->isSupportedUrl($url) ? $url : null;
+    }
+
+    private function isPublicFetchUrl(string $url): bool
+    {
+        if (! $this->isSupportedUrl($url)) {
+            return false;
+        }
+
+        $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        $addresses = ($this->hostResolver)($host);
+        if (! is_array($addresses) || $addresses === []) {
+            return false;
+        }
+
+        foreach (array_unique(array_map('strval', $addresses)) as $address) {
+            if (filter_var(
+                trim($address),
+                FILTER_VALIDATE_IP,
+                FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+            ) === false) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function resolveHostAddresses(string $host): array
+    {
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            return [$host];
+        }
+
+        $addresses = [];
+        $records = @dns_get_record($host, DNS_A | DNS_AAAA);
+        if (is_array($records)) {
+            foreach ($records as $record) {
+                if (! empty($record['ip'])) {
+                    $addresses[] = (string) $record['ip'];
+                }
+                if (! empty($record['ipv6'])) {
+                    $addresses[] = (string) $record['ipv6'];
+                }
+            }
+        }
+
+        if ($addresses === []) {
+            $ipv4 = @gethostbynamel($host);
+            if (is_array($ipv4)) {
+                $addresses = array_merge($addresses, $ipv4);
+            }
+        }
+
+        return array_values(array_unique($addresses));
+    }
+
+    private function isTextResponse(string $contentType): bool
+    {
+        $contentType = strtolower(trim(explode(';', $contentType, 2)[0]));
+        if ($contentType === '') {
+            return true;
+        }
+
+        return in_array($contentType, [
+            'text/html',
+            'text/plain',
+            'text/xml',
+            'application/json',
+            'application/ld+json',
+            'application/xhtml+xml',
+            'application/xml',
+        ], true);
     }
 
     private function extractMetadata(string $html): array

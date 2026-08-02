@@ -49,5 +49,7 @@ Route::prefix('api/v1/modules/qingyu-ip-agent')
                 ->middleware('api.ability:content:parse');
             Route::post('/content/rewrite', [ApiController::class, 'rewrite'])
                 ->middleware('api.ability:content:rewrite');
+            Route::get('/content/status', [ApiController::class, 'contentStatus'])
+                ->middleware('api.ability:content:rewrite');
         });
     });
