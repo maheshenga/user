@@ -3,7 +3,7 @@
   "name": "qingyu_ip_agent",
   "title": "轻语IP智能体",
   "vendor": "internal",
-  "version": "1.6.0",
+  "version": "1.6.2",
   "type": "private",
   "execution": {
     "mode": "in_process"

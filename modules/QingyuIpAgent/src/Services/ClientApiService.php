@@ -130,12 +130,11 @@ class ClientApiService
 
     private function parseContentForUserPayload(array $user, array $payload): array
     {
-
         return $this->recorded(
             'client.video.parse',
             'user_account',
             (int) $user['id'],
-            $payload,
+            ['input_length' => $this->contentInputLength($payload)],
             fn (): array => $this->videoParser->parse($user, $payload)
         );
     }
@@ -293,6 +292,22 @@ class ClientApiService
         }
 
         return max(1, (int) ceil(Carbon::now()->diffInDays($expiresAt, false)));
+    }
+
+    private function contentInputLength(array $payload): int
+    {
+        foreach (['text', 'content', 'shareText', 'raw', 'source', 'url', 'videoUrl', 'video_url', 'shareUrl', 'share_url', 'link'] as $key) {
+            if (! array_key_exists($key, $payload) || ! is_scalar($payload[$key])) {
+                continue;
+            }
+
+            $value = trim((string) $payload[$key]);
+            if ($value !== '') {
+                return mb_strlen($value, 'UTF-8');
+            }
+        }
+
+        return 0;
     }
 
     private function recorded(string $action, ?string $targetType, ?int $targetId, array $payload, callable $callback): array

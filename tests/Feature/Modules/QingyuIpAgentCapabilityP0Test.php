@@ -199,6 +199,31 @@ class QingyuIpAgentCapabilityP0Test extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_video_parser_audit_does_not_store_input_copy_or_url(): void
+    {
+        [, $accessToken] = $this->createVipUser('p0-parse-audit@example.com');
+        $copy = '这是一段不应进入操作日志的原始视频文案';
+        $url = 'https://www.douyin.com/video/7639590279997132072';
+        $input = $copy.' '.$url;
+
+        $this->withToken($accessToken)
+            ->withHeader('X-Request-ID', 'p0-parse-audit')
+            ->postJson('/api/v1/modules/qingyu-ip-agent/content/parse', ['text' => $input])
+            ->assertOk()
+            ->assertJsonPath('data.content', $copy);
+
+        $audit = (string) DB::table('qingyu_ip_agent_operation_logs')
+            ->where('action', 'client.video.parse')
+            ->latest('id')
+            ->value('masked_payload_json');
+        $payload = json_decode($audit, true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertStringNotContainsString($copy, $audit);
+        $this->assertStringNotContainsString($url, $audit);
+        $this->assertArrayNotHasKey('text', $payload);
+        $this->assertSame(mb_strlen($input, 'UTF-8'), $payload['input_length'] ?? null);
+    }
+
     private function enableQingyuModule(): void
     {
         $this->installApprovedModule('qingyu_ip_agent', 1);
