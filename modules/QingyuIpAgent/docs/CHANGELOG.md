@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.6.2 - 2026-08-03
+
+- Stopped storing raw parse copy and video URLs in Qingyu operation audit payloads.
+- Kept only the normalized input length for parse auditing and request correlation.
+- Preserved the User-managed member, VIP, activation, parse, and rewrite capability boundary.
+
+Upgrade notes:
+
+- Version `1.6.2` supersedes the immutable `1.6.1` production artifact and requires a new administrator review and signature.
+- This patch has no database migration.
+- Cloud rewrite remains unavailable until a valid server-side Qingyu LLM credential is configured.
+
+## 1.6.1 - 2026-08-03
+
+- Added the authenticated content capability status endpoint.
+- Routed video parsing and copy rewriting through the User Qingyu module API.
+- Added typed provider errors, outbound response bounds, redirect checks, and private-address rejection.
+
+Upgrade notes:
+
+- Version `1.6.1` introduced the P0 content capability release and was reviewed as an immutable private module artifact.
+- Provider URLs and credentials remain server-side and are not returned to the desktop client.
+
 ## 1.6.0 - 2026-07-15
 
 - Declared `execution.mode=in_process` explicitly for the private Qingyu module.
