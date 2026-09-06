@@ -35,7 +35,7 @@
             <div class="layui-form-item">
                 <label class="layui-form-label">数据库类型</label>
                 <div class="layui-input-block">
-                    <input class="layui-input" name="db_type" autocomplete="off" placeholder="请输入数据库类型" value="{{$envInfo['DB_TYPE']}}" disabled readonly>
+                    <input class="layui-input layui-disabled" name="db_type" autocomplete="off" placeholder="请输入数据库类型" value="{{$envInfo['DB_TYPE']}}" readonly>
                 </div>
             </div>
             <div class="layui-form-item">
@@ -83,7 +83,7 @@
             <div class="layui-form-item layui-hide">
                 <label class="layui-form-label">数据库字符集</label>
                 <div class="layui-input-block">
-                    <input type="text" class="layui-input" name="db_charset" autocomplete="off" value="{{$envInfo['DB_CHARSET']}}" disabled readonly>
+                    <input type="text" class="layui-input layui-disabled" name="db_charset" autocomplete="off" value="{{$envInfo['DB_CHARSET']}}" readonly>
                 </div>
             </div>
 
@@ -100,7 +100,7 @@
             <div class="layui-form-item">
                 <label class="layui-form-label">后台的地址</label>
                 <div class="layui-input-block">
-                    <input class="layui-input layui-disabled" id="admin_url" name="admin_url" autocomplete="off" lay-verify="required" lay-reqtext="请输入后台的地址" placeholder="为了后台安全，不建议将后台路径设置为admin" value="admin" readonly disabled>
+                    <input class="layui-input layui-disabled" id="admin_url" name="admin_url" autocomplete="off" lay-verify="required" lay-reqtext="请输入后台的地址" placeholder="为了后台安全，不建议将后台路径设置为admin" value="admin" readonly>
                     <span class="tips">登录地址,可在 .env 中修改 EASYADMIN.ADMIN</span>
                 </div>
             </div>
